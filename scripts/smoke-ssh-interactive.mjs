@@ -49,7 +49,7 @@ export async function runInteractiveSmokeTests(options = {}) {
     checks.push(
       fail(
         'SSH key auth',
-        `auth failed — check fixture key (${SSH_KEY}) and PUBLIC_KEY_FILE in docker compose`,
+        `auth failed — rebuild fixture after keygen and run tests/fixtures/verify-fixture.sh\n${sshOutput(authProbe)}`,
         log,
       ),
     );
@@ -57,20 +57,26 @@ export async function runInteractiveSmokeTests(options = {}) {
   }
   checks.push(pass('SSH key auth', log));
 
-  const vim = sshRun(
-    "vim -u NONE -es -c 'set term=xterm-256color' -c 'startinsert' -c 'put!\"smoke\"' -c ':wq' && echo vim-ok",
-    { tty: true },
-  );
+  const vim = sshRun([
+    'tmp=$(mktemp)',
+    "printf 'ismoke\\033:wq\\r' | TERM=xterm-256color vim -Nu NONE -n \"$tmp\" >/dev/null 2>&1",
+    'grep -q smoke "$tmp"',
+    'rm -f "$tmp"',
+    'echo vim-ok',
+  ].join('; '), { tty: true });
   if (vim.status === 0 && vim.stdout?.includes('vim-ok')) {
     checks.push(pass('vim (PTY) insert and quit', log));
   } else {
     checks.push(fail('vim (PTY) insert and quit', sshOutput(vim) || `exit ${vim.status}`, log));
   }
 
-  const tmux = sshRun(
-    "tmux new-session -d -s smoke 'bash -lc \"echo tmux-ok\"' && tmux capture-pane -p -t smoke -e && tmux kill-session -t smoke",
-    { tty: true },
-  );
+  const tmux = sshRun([
+    "tmux kill-session -t smoke >/dev/null 2>&1 || true",
+    "tmux new-session -d -s smoke 'bash -lc \"echo tmux-ok; sleep 5\"'",
+    'sleep 0.2',
+    'tmux capture-pane -p -t smoke:0.0 -e',
+    'tmux kill-session -t smoke',
+  ].join('; '), { tty: true });
   if (tmux.status === 0 && tmux.stdout?.includes('tmux-ok')) {
     checks.push(pass('tmux (PTY) session', log));
   } else {
@@ -105,7 +111,7 @@ async function main() {
   if (skipped) {
     console.log(`  ⚠ SSH fixture not reachable at ${SSH_HOST}:${SSH_PORT}`);
     console.log('    Start: cd tests/fixtures && docker compose up -d --build');
-    console.log('    Keys:  bash tests/fixtures/generate-keys.sh');
+    console.log('    Keys:  bash tests/fixtures/generate-keys.sh [--force]');
     console.log('\nSkipped (fixture offline).');
     process.exit(0);
   }

@@ -1,16 +1,17 @@
 # SSH test fixture
 
-Dockerized OpenSSH server with **vim**, **tmux**, and **fish** for local smoke tests.
+Minimal **Alpine** OpenSSH server with **vim**, **tmux**, and **fish** for local smoke tests (~30 MB image vs hundreds for linuxserver).
 
 Auth is **key-based** (fixture Ed25519 key). Password login is disabled.
 
 ## One-time: generate fixture keys
 
 ```bash
-bash tests/fixtures/generate-keys.sh
+bash tests/fixtures/generate-keys.sh          # create if missing
+bash tests/fixtures/generate-keys.sh --force  # replace existing keys
 ```
 
-Creates `tests/fixtures/keys/smoke` and `smoke.pub` (no passphrase, fixture-only).
+Creates `tests/fixtures/keys/smoke` and `smoke.pub` (no passphrase, fixture-only). **Rebuild** the image after creating or replacing keys.
 
 ## Start
 
@@ -28,7 +29,11 @@ Wait until healthy (`docker compose ps`).
 | User | `test` |
 | Private key | `tests/fixtures/keys/smoke` |
 
-The image extends `linuxserver/openssh-server`, installs interactive tools, and loads `smoke.pub` via `PUBLIC_KEY_FILE`.
+The public key is baked at build time into `/etc/ssh/authorized_keys.d/test` (OpenSSH system path, read as root).
+
+```bash
+bash tests/fixtures/verify-fixture.sh   # after container is up
+```
 
 ## Run smoke checks
 
@@ -55,3 +60,42 @@ Scripts skip gracefully when the fixture is offline; they exit non-zero when rea
 ```bash
 docker compose down
 ```
+
+## Troubleshooting
+
+### `no space left on device` during build
+
+The old `linuxserver/openssh-server` image is large. This fixture uses Alpine instead. Free Docker disk first:
+
+```bash
+docker system prune -a --volumes   # removes unused images, including old linuxserver layers
+docker builder prune -a
+df -h                            # confirm free space on /
+```
+
+Then rebuild:
+
+```bash
+cd tests/fixtures
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+bash verify-fixture.sh
+```
+
+If the host is still full, remove other large images/containers or expand the disk (common on ChromeOS Crostini).
+
+### SSH key auth fails (`Permission denied (publickey)`)
+
+Keys live in `/etc/ssh/authorized_keys.d/test` inside the image — rebuild after any key change:
+
+```bash
+bash tests/fixtures/generate-keys.sh --force   # only if replacing keys
+cd tests/fixtures
+docker compose down
+docker compose build --no-cache
+docker compose up -d
+bash verify-fixture.sh
+```
+
+`verify-fixture.sh` prints the account shadow state, local/container key fingerprints, the effective `AuthorizedKeysFile`, recent `sshd` logs, and a real `ssh -i keys/smoke ... echo fixture-ok` check. If auth fails with `User test not allowed because account is locked`, rebuild with the current Dockerfile; it sets a throwaway password only to unlock the account while `PasswordAuthentication no` keeps login key-only.
