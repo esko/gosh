@@ -1,6 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { AppSettings, Identity, KnownHost, Profile } from '../settings/types';
 import { DEFAULT_SETTINGS } from '../settings/defaults';
+import { identityExportFlags, normalizeIdentity } from './identityNormalize';
 
 interface IwaSshDb extends DBSchema {
   settings: {
@@ -96,17 +97,6 @@ export async function listIdentities(): Promise<Identity[]> {
   return raw.map(normalizeIdentity);
 }
 
-function normalizeIdentity(raw: Identity & { encryptedPrivateKey?: ArrayBuffer }): Identity {
-  if (raw.privateKeyPemBytesDevOnly) {
-    return raw;
-  }
-  if (raw.encryptedPrivateKey) {
-    const { encryptedPrivateKey, ...rest } = raw;
-    return { ...rest, privateKeyPemBytesDevOnly: encryptedPrivateKey };
-  }
-  return raw;
-}
-
 export async function getIdentity(id: string): Promise<Identity | undefined> {
   const db = await getDb();
   const raw = await db.get('identities', id);
@@ -161,11 +151,7 @@ export async function exportData(): Promise<string> {
       exportedAt: new Date().toISOString(),
       settings,
       profiles,
-      identities: identities.map(({ encryptedPrivateKey, privateKeyPemBytesDevOnly, ...rest }) => ({
-        ...rest,
-        hasEncryptedPrivateKey: Boolean(encryptedPrivateKey),
-        hasLegacyPlaintextKey: Boolean(privateKeyPemBytesDevOnly),
-      })),
+      identities: identities.map(identityExportFlags),
       knownHosts,
     },
     null,

@@ -41,13 +41,14 @@ export async function stageKnownHostsForNassh(): Promise<void> {
   const fs = await loadNasshFs();
   await fs.createDirectory('/.ssh');
 
+  const content = lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+  await fs.writeFile(KNOWN_HOSTS_PATH, new TextEncoder().encode(content).buffer);
+
   if (lines.length === 0) {
-    log.knownHosts.debug('no known_hosts lines to stage');
+    log.knownHosts.info('cleared nassh known_hosts (no trusted hosts)');
     return;
   }
 
-  const content = `${lines.join('\n')}\n`;
-  await fs.writeFile(KNOWN_HOSTS_PATH, new TextEncoder().encode(content).buffer);
   log.knownHosts.info('staged known_hosts for nassh', { lines: lines.length });
 }
 
@@ -107,5 +108,7 @@ export async function appendKnownHostLineToNassh(opensshLine: string): Promise<v
   await fs.createDirectory('/.ssh');
   const merged = existing.trim() ? `${existing.trim()}\n${opensshLine}\n` : `${opensshLine}\n`;
   await fs.writeFile(KNOWN_HOSTS_PATH, new TextEncoder().encode(merged).buffer);
-  log.knownHosts.debug('appended known_hosts line', { target: formatKnownHostTarget(parsed.host, parsed.port) });
+  log.knownHosts.debug('appended known_hosts line', {
+    markers: parsed.markers.map((m) => formatKnownHostTarget(m.host, m.port)).join(','),
+  });
 }

@@ -6,7 +6,7 @@ import { log, registerActiveSession, setLastSessionError, unregisterActiveSessio
 import { downloadTerminalCapture, recordTerminalOutput } from '../debug/terminalCapture';
 import { getProfile, loadSettings } from '../storage/indexedDb';
 import { mergeAppearance } from '../settings/defaults';
-import type { ConnectionStatus } from '../settings/types';
+import type { ConnectionStatus, SessionStatusMeta } from '../settings/types';
 import { Xterm6TerminalAdapter } from '../terminal/Xterm6TerminalAdapter';
 import { NasshSession } from '../ssh/NasshSession';
 import { loadSessionParams, storeSessionParams } from './connect';
@@ -119,7 +119,9 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
     }
   };
 
-  const updateStatus = (status: ConnectionStatus, error?: string) => {
+  let isReconnecting = false;
+
+  const updateStatus = (status: ConnectionStatus, error?: string, meta?: SessionStatusMeta) => {
     if (!statusEl) return;
     statusEl.dataset.status = status;
     statusEl.textContent = error ? `${STATUS_LABELS[status]}: ${error}` : STATUS_LABELS[status];
@@ -147,9 +149,11 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
 
     if (
       status === 'disconnected' &&
+      meta?.disconnectReason === 'transport' &&
       !error &&
       settings.behavior.reconnectOnDisconnect &&
-      !userInitiatedDisconnect
+      !userInitiatedDisconnect &&
+      !isReconnecting
     ) {
       clearAutoReconnect();
       autoReconnectTimer = setTimeout(() => {
@@ -166,9 +170,9 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
     username: params.username,
     identityId: params.identityId,
     startupCommand: params.startupCommand,
-    onStatus: (status, error) => {
+    onStatus: (status, error, meta) => {
       if (error) setLastSessionError(error);
-      updateStatus(status, error);
+      updateStatus(status, error, meta);
     },
   });
 
@@ -181,11 +185,13 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   });
 
   const reconnect = async () => {
+    isReconnecting = true;
     clearAutoReconnect();
     if (overlay) overlay.hidden = true;
     adapter.write('\x1b[2J\x1b[H');
-    await session.disconnect().catch(() => undefined);
+    await session.disconnect({ reason: 'reconnect' }).catch(() => undefined);
     await session.connect();
+    isReconnecting = false;
   };
 
   reconnectBtn?.addEventListener('click', () => void reconnect());
@@ -215,9 +221,10 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   window.addEventListener('resize', onWindowResize);
 
   const cleanup = () => {
+    userInitiatedDisconnect = true;
     clearAutoReconnect();
     window.removeEventListener('resize', onWindowResize);
-    void session.disconnect().catch(() => undefined);
+    void session.disconnect({ reason: 'user' }).catch(() => undefined);
     session.dispose();
     adapter.dispose();
     unregisterActiveSession(sessionId);

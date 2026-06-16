@@ -122,6 +122,12 @@ export type ConnectionStatus =
   | 'disconnected'
   | 'error';
 
+export type SessionDisconnectReason = 'user' | 'reconnect' | 'normal-exit' | 'transport';
+
+export type SessionStatusMeta = {
+  disconnectReason?: SessionDisconnectReason;
+};
+
 export type SessionState = {
   id: string;
   profileId?: string;

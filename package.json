@@ -15,6 +15,7 @@
     "bundle:iwa:unsigned": "node --experimental-strip-types iwa/build-bundle.mjs --unsigned-only",
     "smoke:e2e": "node scripts/smoke-terminal.mjs",
     "smoke:echo": "node scripts/smoke-echo.mjs",
+    "check:regression": "node --experimental-strip-types scripts/check-storage-regression.mjs",
     "iwa:keygen": "bash scripts/generate-iwa-signing-key.sh"
   },
   "dependencies": {

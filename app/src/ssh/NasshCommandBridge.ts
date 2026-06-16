@@ -4,7 +4,7 @@
 
 import { log } from '../debug/logger';
 import type { TerminalAdapter } from '../terminal/TerminalAdapter';
-import type { ConnectionStatus } from '../settings/types';
+import type { ConnectionStatus, SessionDisconnectReason, SessionStatusMeta } from '../settings/types';
 import type { NasshIoShimOptions } from './NasshIoShim';
 import { NasshIoShim } from './NasshIoShim';
 import { HostKeyGuard } from './HostKeyGuard';
@@ -27,7 +27,7 @@ export type NasshCommandBridgeOptions = {
   username: string;
   identityId?: string;
   startupCommand?: string;
-  onStatus?: (status: ConnectionStatus, error?: string) => void;
+  onStatus?: (status: ConnectionStatus, error?: string, meta?: SessionStatusMeta) => void;
 };
 
 let nasshModulesPromise: Promise<NasshCommandModule & NasshJsModule> | null = null;
@@ -202,7 +202,7 @@ export class NasshCommandBridge {
     }
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(options?: { reason?: SessionDisconnectReason }): Promise<void> {
     if (this.disposed) return;
     log.ssh.info('disconnecting nassh bridge');
     this.options.onStatus?.('disconnecting');
@@ -212,7 +212,9 @@ export class NasshCommandBridge {
     this.ioShim = null;
     this.hostKeyGuard?.reset();
     this.hostKeyGuard = null;
-    this.options.onStatus?.('disconnected');
+    this.options.onStatus?.('disconnected', undefined, {
+      disconnectReason: options?.reason ?? 'user',
+    });
   }
 
   dispose(): void {
@@ -237,6 +239,7 @@ export class NasshCommandBridge {
     this.ioShim?.dispose();
     this.ioShim = null;
     this.hostKeyGuard = null;
-    this.options.onStatus?.('disconnected');
+    const disconnectReason: SessionDisconnectReason = code === 0 ? 'normal-exit' : 'transport';
+    this.options.onStatus?.('disconnected', undefined, { disconnectReason });
   }
 }

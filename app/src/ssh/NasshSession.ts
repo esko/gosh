@@ -4,7 +4,7 @@
 
 import { log } from '../debug/logger';
 import type { TerminalAdapter, TerminalSubscription } from '../terminal/TerminalAdapter';
-import type { ConnectionStatus } from '../settings/types';
+import type { ConnectionStatus, SessionDisconnectReason, SessionStatusMeta } from '../settings/types';
 import { NasshCommandBridge } from './NasshCommandBridge';
 import type { AttachTerminalOptions } from './NasshIoShim';
 import { areUpstreamAssetsReady } from './upstreamAssets';
@@ -15,7 +15,7 @@ export type NasshSessionOptions = {
   username: string;
   identityId?: string;
   startupCommand?: string;
-  onStatus?: (status: ConnectionStatus, error?: string) => void;
+  onStatus?: (status: ConnectionStatus, error?: string, meta?: SessionStatusMeta) => void;
 };
 
 export type { AttachTerminalOptions } from './NasshIoShim';
@@ -72,18 +72,18 @@ export class NasshSession {
     await this.connectEchoStub();
   }
 
-  async disconnect(): Promise<void> {
+  async disconnect(options?: { reason?: SessionDisconnectReason }): Promise<void> {
     if (this.disposed) return;
 
     if (this.useBridge && this.bridge) {
-      await this.bridge.disconnect();
+      await this.bridge.disconnect(options);
       return;
     }
 
     this.setStatus('disconnecting');
     this.echoHandler = null;
     await this.delay(100);
-    this.setStatus('disconnected');
+    this.setStatus('disconnected', undefined, { disconnectReason: options?.reason ?? 'user' });
   }
 
   dispose(): void {
@@ -121,7 +121,7 @@ export class NasshSession {
       username: this.options.username,
       identityId: this.options.identityId,
       startupCommand: this.options.startupCommand,
-      onStatus: (status, error) => this.setStatus(status, error),
+      onStatus: (status, error, meta) => this.setStatus(status, error, meta),
     });
     this.bridge.attachTerminal(this.adapter, { onOutput: this.onOutput ?? undefined });
     this.useBridge = true;
@@ -174,10 +174,10 @@ export class NasshSession {
     }
   }
 
-  private setStatus(status: ConnectionStatus, error?: string): void {
+  private setStatus(status: ConnectionStatus, error?: string, meta?: SessionStatusMeta): void {
     this.status = status;
-    log.session.debug('status', { status, error });
-    this.options.onStatus?.(status, error);
+    log.session.debug('status', { status, error, meta });
+    this.options.onStatus?.(status, error, meta);
   }
 
   private delay(ms: number): Promise<void> {

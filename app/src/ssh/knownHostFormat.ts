@@ -2,9 +2,10 @@
  * OpenSSH known_hosts line parsing and SHA256 fingerprint helpers.
  */
 
+export type KnownHostMarker = { host: string; port: number };
+
 export type ParsedKnownHostLine = {
-  host: string;
-  port: number;
+  markers: KnownHostMarker[];
   keyType: string;
   base64Key: string;
   opensshLine: string;
@@ -15,7 +16,7 @@ export function formatKnownHostTarget(host: string, port: number): string {
   return port === 22 ? host : `[${host}]:${port}`;
 }
 
-function hostPortFromTarget(target: string): { host: string; port: number } {
+function hostPortFromTarget(target: string): KnownHostMarker {
   const bracketed = target.match(/^\[([^\]]+)\]:(\d+)$/);
   if (bracketed) {
     return { host: bracketed[1]!, port: Number(bracketed[2]) };
@@ -23,7 +24,18 @@ function hostPortFromTarget(target: string): { host: string; port: number } {
   return { host: target, port: 22 };
 }
 
-/** Parse a single non-comment, non-hashed known_hosts line. */
+/** Split the first known_hosts field into host:port markers (comma-separated aliases). */
+export function parseKnownHostMarkers(markersField: string): KnownHostMarker[] {
+  return markersField
+    .split(',')
+    .map((part) => hostPortFromTarget(part.trim()))
+    .filter((marker) => marker.host.length > 0);
+}
+
+/**
+ * Parse a single non-comment, non-hashed known_hosts line.
+ * Skips `#` comments and `|1|…` hashed-host lines (OpenSSH markers).
+ */
 export function parseKnownHostsLine(line: string): ParsedKnownHostLine | null {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|')) return null;
@@ -31,11 +43,22 @@ export function parseKnownHostsLine(line: string): ParsedKnownHostLine | null {
   const parts = trimmed.split(/\s+/);
   if (parts.length < 3) return null;
 
-  const [target, keyType, base64Key] = parts;
-  if (!target || !keyType || !base64Key) return null;
+  const [markersField, keyType, base64Key] = parts;
+  if (!markersField || !keyType || !base64Key) return null;
 
-  const { host, port } = hostPortFromTarget(target);
-  return { host, port, keyType, base64Key, opensshLine: trimmed };
+  const markers = parseKnownHostMarkers(markersField);
+  if (markers.length === 0) return null;
+
+  return { markers, keyType, base64Key, opensshLine: trimmed };
+}
+
+/** True when any marker on the line matches host and port exactly. */
+export function knownHostLineMatchesTarget(
+  line: ParsedKnownHostLine,
+  host: string,
+  port: number,
+): boolean {
+  return line.markers.some((marker) => marker.host === host && marker.port === port);
 }
 
 /** OpenSSH SHA256 fingerprint (`SHA256:…`, no padding). */
@@ -56,20 +79,18 @@ export async function fingerprintFromOpensshLine(line: string): Promise<string |
   return fingerprintFromBase64Key(parsed.base64Key);
 }
 
-/** Lines in known_hosts that apply to host:port (exact or wildcard hostname). */
+/** Lines in known_hosts that apply to host:port (exact host+port per marker). */
 export function knownHostLinesForTarget(
   fileText: string,
   host: string,
   port: number,
 ): ParsedKnownHostLine[] {
-  const target = formatKnownHostTarget(host, port);
   const results: ParsedKnownHostLine[] = [];
 
   for (const line of fileText.split(/\r?\n/)) {
     const parsed = parseKnownHostsLine(line);
     if (!parsed) continue;
-    const lineTarget = formatKnownHostTarget(parsed.host, parsed.port);
-    if (lineTarget === target || parsed.host === host) {
+    if (knownHostLineMatchesTarget(parsed, host, port)) {
       results.push(parsed);
     }
   }
