@@ -1,6 +1,7 @@
 import { Router } from '../app-shell/router';
 import { ensureHostTrusted, stubHostFingerprint } from '../ssh/KnownHostPrompt';
 import { identitySelectMarkup, wireIdentityImportButton } from '../ssh/KeyImport';
+import { areUpstreamAssetsReady } from '../ssh/upstreamAssets';
 import { getProfile, listIdentities, saveProfile } from '../storage/indexedDb';
 import type { Profile } from '../settings/types';
 import { escapeHtml, shell } from './shared';
@@ -121,8 +122,13 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
 
     if (!host || !username || !Number.isFinite(port)) return;
 
-    const trusted = await ensureHostTrusted(host, port, stubHostFingerprint(host, port));
-    if (!trusted) return;
+    const upstreamReady = await areUpstreamAssetsReady();
+    if (!upstreamReady) {
+      const trusted = await ensureHostTrusted(host, port, stubHostFingerprint(host, port), 'ssh-ed25519', {
+      useLiveVerification: false,
+    });
+      if (!trusted) return;
+    }
 
     let savedProfileId = profile?.id;
 

@@ -47,11 +47,32 @@ upstream/libapps/
 
 Integration point: `NasshSession` delegates to `NasshCommandBridge` → upstream `CommandInstance` for I/O while the adapter handles display/input/resize.
 
+### NasshIoShim (`hterm.Terminal` + `hterm.Terminal.IO`)
+
+`NasshIoShim.ts` implements the upstream IO surface without importing `hterm.js` (IWA CSP-safe). Audited against `nassh_command_instance.js` and `hterm_terminal_io.js`:
+
+| API | Implementation |
+|-----|----------------|
+| `terminal.interpret` | `TerminalAdapter.write` (SSH stdout) |
+| `terminal.clearHome` | CSI 2J + cursor home |
+| `terminal.screenSize` | xterm cols/rows; updated on resize |
+| `terminal.focus` | `TerminalAdapter.focus` |
+| `terminal.setProfile` | no-op |
+| `terminal.showOverlay` / `hideOverlay` | status banner in xterm (string or DOM text) |
+| `io.sendString` / `onVTKeystroke` | wired by wassh TTY; keyboard via `adapter.onInput` |
+| `io.onTerminalResize_` | propagates to wassh `SIGWINCH` handler |
+| `io.print` / `println` / `writeUTF8` | same as hterm IO (buffered when IO stacked) |
+| `io.push` / `pop` / `flush` | subcommand IO stacking (agent prompts, etc.) |
+| `io.setTerminalProfile` | no-op |
+| `CommandInstance.secureInput` | `SecureInputPrompt` modal (not hterm overlay) |
+
+Not implemented (deferred): hterm preference reads, DOM overlay UI for agent `promptUser`, SIXEL pixel sizing.
+
 ### Identity keys (IWA)
 
 Upstream `connectTo` accepts `identity` (basename under `/.ssh/identity/`). `NasshCommandBridge` stages keys from our IndexedDB `identities` store into nassh's indexeddb-fs (`nasshIdentity.ts`) before connect. Passphrase-protected PEM uses `SecureInputPrompt` via nassh `secureInput`.
 
-Not wired yet: syncing our IndexedDB `knownHosts` into nassh's `/.ssh/known_hosts` (host-key prompts remain stubbed in `KnownHostPrompt.ts`).
+`HostKeyGuard` intercepts OpenSSH fingerprint prompts during live SSH; `nasshKnownHosts.ts` stages trusted `known_hosts` lines into nassh FS before connect and syncs back after `Permanently added …`.
 
 ## Building Secure Shell (upstream)
 
@@ -85,9 +106,9 @@ nassh **0.78** (2026-06-04) enables Direct Sockets by default. Relevant paths:
 
 ## Building for this fork
 
-### Phase 1: fetch assets into `app/public/upstream/`
+### Phase 1: fetch assets into `app/upstream/`
 
-Copied assets are served by Vite at `/upstream/…` (from `app/public/upstream/`). Run after submodule init:
+Copied assets are served by Vite at `/upstream/…` (from `app/upstream/`). Run after submodule init:
 
 ```bash
 # 1. Submodule (once)
@@ -96,15 +117,15 @@ git submodule update --init --depth 1 upstream/libapps
 # 2. Download OpenSSH WASM plugin (or let fetch-assets do it)
 cd upstream/libapps/nassh && ./bin/plugin && cd ../../..
 
-# 3. Copy wassh worker + WASI bindings + plugin WASM into public/
+# 3. Copy wassh worker + WASI bindings + plugin WASM into app/upstream/
 npm run fetch-assets
 ```
 
 `npm run fetch-assets` runs `scripts/fetch-upstream-assets.mjs`, which:
 
 1. Executes `upstream/libapps/nassh/bin/plugin` when possible (downloads `0.77.tar.xz` from ChromeOS localmirror per `nassh/fetch.json`)
-2. Copies JS/WASM into `app/public/upstream/` preserving libapps-relative import paths
-3. Writes `app/public/upstream/manifest.json` and prints a file manifest
+2. Copies JS/WASM into `app/upstream/` preserving libapps-relative import paths
+3. Writes `app/upstream/manifest.json` and prints a file manifest
 
 **Example manifest output** (truncated; full list is 200+ files):
 
@@ -119,7 +140,7 @@ Copied upstream asset manifest:
     31.9 KiB  manifest.json
     …
 ────────────────────────────────────────────────────────────────────────
-217 file(s), 17682.9 KiB total → app/public/upstream/
+217 file(s), 17682.9 KiB total → app/upstream/
 ```
 
 `manifest.json` fields:
@@ -139,7 +160,7 @@ Runtime helpers in `app/src/ssh/upstreamAssets.ts`: `areUpstreamAssetsReady()`, 
 **Layout after a successful fetch:**
 
 ```text
-app/public/upstream/
+app/upstream/
   manifest.json
   wassh/js/
     worker.js          # module worker entry (imports wasi-js-bindings)
@@ -165,13 +186,13 @@ app/public/upstream/
 | `__IWA_PLUGIN_BASE__` | `/upstream/plugin` |
 | `__IWA_DEFAULT_SSH_WASM__` | `/upstream/plugin/wasm/ssh.wasm` |
 
-If `bin/plugin` or the submodule is unavailable, `fetch-assets` writes a stub tree under `app/public/upstream/` with `README.md` and `.gitkeep` placeholders (exit code 1).
+If `bin/plugin` or the submodule is unavailable, `fetch-assets` writes a stub tree under `app/upstream/` with `README.md` and `.gitkeep` placeholders (exit code 1).
 
-**Vite serving:** dev/preview set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (required for `SharedArrayBuffer` in wassh). The `iwa-upstream-asset-headers` plugin in `vite.config.ts` also forces `Content-Type: application/wasm` for `/upstream/**/*.wasm`.
+**Vite serving:** `upstreamStaticDev` in `vite.config.ts` serves `/upstream/*` from `app/upstream/` (not `public/`). Dev/preview set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (required for `SharedArrayBuffer` in wassh). WASM responses use `Content-Type: application/wasm`.
 
 ### Long-term build plan
 
-1. Build/copy `ssh_client` WASM plugin into a path Vite can import or serve from `app/public/`
+1. Build/copy `ssh_client` WASM plugin into `app/upstream/`
 2. Bundle wassh JS modules (or pre-build with Rollup) alongside the Vite app
 3. Optionally bind a custom socket probe for diagnostics (`DirectSocketProbe.ts`); live SSH uses upstream wassh
 

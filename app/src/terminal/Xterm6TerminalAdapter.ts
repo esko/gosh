@@ -20,6 +20,8 @@ export class Xterm6TerminalAdapter implements TerminalAdapter {
   private readonly fitAddon: FitAddon;
   private readonly searchAddon: SearchAddon;
   private resizeObserver: ResizeObserver | null = null;
+  private fitDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly fitDebounceMs = 100;
   private readonly inputListeners = new Set<(data: string) => void>();
   private readonly resizeListeners = new Set<(cols: number, rows: number) => void>();
   private container: HTMLElement | null = null;
@@ -82,7 +84,7 @@ export class Xterm6TerminalAdapter implements TerminalAdapter {
       this.keyboardBindings = applyKeyboardBindings(this.terminal, el, this.keyboard);
     }
     this.fitAddon.fit();
-    this.resizeObserver = new ResizeObserver(() => this.fit());
+    this.resizeObserver = new ResizeObserver(() => this.scheduleFit());
     this.resizeObserver.observe(el);
     this.terminal.focus();
   }
@@ -110,11 +112,22 @@ export class Xterm6TerminalAdapter implements TerminalAdapter {
     this.fitAddon.fit();
   }
 
+  /** Debounce rapid ResizeObserver events before propagating SIGWINCH via onResize. */
+  scheduleFit(): void {
+    if (this.fitDebounceTimer) clearTimeout(this.fitDebounceTimer);
+    this.fitDebounceTimer = setTimeout(() => {
+      this.fitDebounceTimer = null;
+      this.fit();
+    }, this.fitDebounceMs);
+  }
+
   getSize(): { cols: number; rows: number } {
     return { cols: this.terminal.cols, rows: this.terminal.rows };
   }
 
   dispose(): void {
+    if (this.fitDebounceTimer) clearTimeout(this.fitDebounceTimer);
+    this.fitDebounceTimer = null;
     this.keyboardBindings?.dispose();
     this.keyboardBindings = null;
     this.inputListeners.clear();

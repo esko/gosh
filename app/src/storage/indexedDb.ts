@@ -142,6 +142,11 @@ export async function listKnownHosts(): Promise<KnownHost[]> {
   return db.getAll('knownHosts');
 }
 
+export async function deleteKnownHost(host: string, port: number): Promise<void> {
+  const db = await getDb();
+  await db.delete('knownHosts', knownHostKey(host, port));
+}
+
 export async function exportData(): Promise<string> {
   const [settings, profiles, identities, knownHosts] = await Promise.all([
     loadSettings(),
@@ -156,9 +161,10 @@ export async function exportData(): Promise<string> {
       exportedAt: new Date().toISOString(),
       settings,
       profiles,
-      identities: identities.map(({ privateKeyPemBytesDevOnly, ...rest }) => ({
+      identities: identities.map(({ encryptedPrivateKey, privateKeyPemBytesDevOnly, ...rest }) => ({
         ...rest,
-        hasPrivateKeyDevOnly: Boolean(privateKeyPemBytesDevOnly),
+        hasEncryptedPrivateKey: Boolean(encryptedPrivateKey),
+        hasLegacyPlaintextKey: Boolean(privateKeyPemBytesDevOnly),
       })),
       knownHosts,
     },

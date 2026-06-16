@@ -107,8 +107,10 @@ export async function renderDebug(root: HTMLElement): Promise<void> {
             <dt>Native app tabs</dt><dd><code>${usesNativeAppTabs() ? 'yes' : 'no'}</code></dd>
             <dt>Simulated tabs</dt><dd><code>${usesSimulatedTabs() ? 'yes' : 'no'}</code></dd>
             <dt>Tab mode</dt><dd><code>${escapeHtml(caps.tabMode)}</code></dd>
-            <dt>xterm.js</dt><dd><code>6.x</code></dd>
-            <dt>Upstream assets</dt><dd><code>${upstreamReady ? 'ready' : 'missing'}</code></dd>
+            <dt>xterm.js</dt><dd><code>6.x beta</code></dd>
+            <dt>SSH transport</dt><dd><code>${upstreamReady && caps.directSockets ? 'nassh/wassh' : upstreamReady ? 'assets only (no Direct Sockets)' : 'echo stub'}</code></dd>
+            <dt>Kitty keyboard</dt><dd><code>${settings.keyboard.kittyKeyboardProtocol ? 'on' : 'off'}</code></dd>
+            <dt>Upstream assets</dt><dd><code>${upstreamReady ? 'ready' : 'missing'}</code> <span class="muted">(app/upstream/)</span></dd>
             <dt>Debug flags</dt><dd><code>debug=${flags.debug} sshLog=${flags.sshLogVerbose ? 'verbose' : 'off'} termTrace=${flags.termTrace}</code></dd>
           </dl>
           ${

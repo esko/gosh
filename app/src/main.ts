@@ -1,7 +1,9 @@
 import './security/trustedTypes';
 import { installBootErrorHandler, showBootError } from './security/bootError';
 import { createApp } from './app-shell/createApp';
+import { initLaunchHandler } from './app-shell/launchHandler';
 import { initTabManager } from './app-shell/TabManager';
+import { initSessionCloseGuard } from './app-shell/sessionCloseGuard';
 import { Router } from './app-shell/router';
 import { usesSimulatedTabs } from './app-shell/tabMode';
 import { initDebugFlagsFromUrl } from './debug/flags';
@@ -17,6 +19,8 @@ try {
   }
 
   initDebugFlagsFromUrl();
+  initSessionCloseGuard();
+  initLaunchHandler();
   log.app.info('boot', {
     tabMode: usesSimulatedTabs() ? 'simulated' : 'native',
     origin: window.location.origin,

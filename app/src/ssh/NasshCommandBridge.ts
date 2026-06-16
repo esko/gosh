@@ -7,8 +7,10 @@ import type { TerminalAdapter } from '../terminal/TerminalAdapter';
 import type { ConnectionStatus } from '../settings/types';
 import type { NasshIoShimOptions } from './NasshIoShim';
 import { NasshIoShim } from './NasshIoShim';
+import { HostKeyGuard } from './HostKeyGuard';
 import { installNasshChromePolyfill } from './nasshChromePolyfill';
 import { stageIdentityForNassh } from './nasshIdentity';
+import { stageKnownHostsForNassh, syncKnownHostsFromNassh } from './nasshKnownHosts';
 import { showSecureInputPrompt } from './SecureInputPrompt';
 import type {
   NasshCommandInstance,
@@ -50,6 +52,7 @@ export class NasshCommandBridge {
   private ioShim: NasshIoShim | null = null;
   private commandInstance: NasshCommandInstance | null = null;
   private attachOptions: NasshIoShimOptions | undefined;
+  private hostKeyGuard: HostKeyGuard | null = null;
   private hasExited = false;
   private disposed = false;
 
@@ -92,11 +95,28 @@ export class NasshCommandBridge {
     if (this.disposed) return;
 
     this.ioShim?.dispose();
+    this.hostKeyGuard?.reset();
+    this.hostKeyGuard = new HostKeyGuard({
+      host: this.options.host,
+      port: this.options.port,
+      sendResponse: (data) => {
+        this.ioShim?.io.sendString(data);
+      },
+      onDenied: () => {
+        this.options.onStatus?.('error', 'Host key verification rejected');
+      },
+    });
+
     this.ioShim = new NasshIoShim(this.adapter, {
-      onOutput: this.attachOptions?.onOutput,
+      onOutput: (data) => {
+        this.attachOptions?.onOutput?.(data);
+        void this.hostKeyGuard?.handleOutput(data);
+      },
     });
     this.ioShim.bindInput();
     this.ioShim.resize(this.adapter.getSize().cols, this.adapter.getSize().rows);
+
+    await stageKnownHostsForNassh();
 
     const noopLocation = {
       href: globalThis.location?.href ?? '',
@@ -140,7 +160,13 @@ export class NasshCommandBridge {
 
     let identity: string | undefined;
     if (this.options.identityId) {
-      identity = await stageIdentityForNassh(this.options.identityId);
+      try {
+        identity = await stageIdentityForNassh(this.options.identityId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.options.onStatus?.('error', message);
+        throw error;
+      }
       if (!identity) {
         log.ssh.warn('continuing without identity key', { identityId: this.options.identityId });
       }
@@ -163,6 +189,9 @@ export class NasshCommandBridge {
       });
       await instance.connectTo(connectParams);
       if (this.disposed) return;
+      await syncKnownHostsFromNassh(this.options.host, this.options.port).catch((error) => {
+        log.knownHosts.warn('post-connect known_hosts sync failed', { error });
+      });
       log.session.info('nassh connected', { host: this.options.host, port: this.options.port });
       this.options.onStatus?.('connected');
     } catch (error) {
@@ -181,6 +210,8 @@ export class NasshCommandBridge {
     this.commandInstance = null;
     this.ioShim?.dispose();
     this.ioShim = null;
+    this.hostKeyGuard?.reset();
+    this.hostKeyGuard = null;
     this.options.onStatus?.('disconnected');
   }
 
@@ -190,6 +221,7 @@ export class NasshCommandBridge {
     this.commandInstance = null;
     this.ioShim?.dispose();
     this.ioShim = null;
+    this.hostKeyGuard = null;
     this.adapter = null;
   }
 
@@ -204,6 +236,7 @@ export class NasshCommandBridge {
     this.commandInstance = null;
     this.ioShim?.dispose();
     this.ioShim = null;
+    this.hostKeyGuard = null;
     this.options.onStatus?.('disconnected');
   }
 }

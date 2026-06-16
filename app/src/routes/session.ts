@@ -1,5 +1,6 @@
 import { Router } from '../app-shell/router';
 import { getTabManager } from '../app-shell/TabManager';
+import { usesSimulatedTabs } from '../app-shell/tabMode';
 import { applyDebugFlags, getDebugFlags, parseDebugFlags } from '../debug/flags';
 import { log, registerActiveSession, setLastSessionError, unregisterActiveSession } from '../debug/logger';
 import { downloadTerminalCapture, recordTerminalOutput } from '../debug/terminalCapture';
@@ -54,6 +55,9 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
 
   const title = `${params.username}@${params.host}`;
   getTabManager()?.setActiveTitle(title);
+  if (!usesSimulatedTabs()) {
+    document.title = `${title} — iwa-ssh`;
+  }
   log.session.info('open', { sessionId, host: params.host, port: params.port });
 
   root.innerHTML = `
@@ -105,6 +109,15 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   if (!terminalHost) return;
 
   let focusTerminal: (() => void) | null = null;
+  let autoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let userInitiatedDisconnect = false;
+
+  const clearAutoReconnect = () => {
+    if (autoReconnectTimer) {
+      clearTimeout(autoReconnectTimer);
+      autoReconnectTimer = null;
+    }
+  };
 
   const updateStatus = (status: ConnectionStatus, error?: string) => {
     if (!statusEl) return;
@@ -131,6 +144,19 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
     if (status === 'connected') {
       window.requestAnimationFrame(() => focusTerminal?.());
     }
+
+    if (
+      status === 'disconnected' &&
+      !error &&
+      settings.behavior.reconnectOnDisconnect &&
+      !userInitiatedDisconnect
+    ) {
+      clearAutoReconnect();
+      autoReconnectTimer = setTimeout(() => {
+        autoReconnectTimer = null;
+        void reconnect();
+      }, 1500);
+    }
   };
 
   const adapter = new Xterm6TerminalAdapter({ appearance, keyboard: settings.keyboard });
@@ -155,18 +181,24 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   });
 
   const reconnect = async () => {
+    clearAutoReconnect();
     if (overlay) overlay.hidden = true;
+    adapter.write('\x1b[2J\x1b[H');
     await session.disconnect().catch(() => undefined);
     await session.connect();
   };
 
   reconnectBtn?.addEventListener('click', () => void reconnect());
   root.querySelector('#session-overlay-reconnect')?.addEventListener('click', () => void reconnect());
+  root.querySelector('#session-overlay-home')?.addEventListener('click', () => {
+    userInitiatedDisconnect = true;
+    clearAutoReconnect();
+    Router.go('/');
+  });
   root.querySelector('#session-overlay-view-terminal')?.addEventListener('click', () => {
     if (overlay) overlay.hidden = true;
     focusTerminal?.();
   });
-  root.querySelector('#session-overlay-home')?.addEventListener('click', () => Router.go('/'));
   root.querySelector('#session-duplicate')?.addEventListener('click', () => {
     const duplicateId = crypto.randomUUID();
     storeSessionParams({ ...params, id: duplicateId });
@@ -179,10 +211,11 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
     downloadTerminalCapture(sessionId);
   });
 
-  const onWindowResize = () => adapter.fit();
+  const onWindowResize = () => adapter.scheduleFit();
   window.addEventListener('resize', onWindowResize);
 
   const cleanup = () => {
+    clearAutoReconnect();
     window.removeEventListener('resize', onWindowResize);
     void session.disconnect().catch(() => undefined);
     session.dispose();

@@ -1,3 +1,4 @@
+import { encryptPrivateKey } from '../security/KeyCrypto';
 import { listIdentities, saveIdentity } from '../storage/indexedDb';
 import type { Identity } from '../settings/types';
 
@@ -12,8 +13,7 @@ export type ParsedOpenSshKey = {
 type ParseError = { ok: false; message: string };
 type ParseSuccess = { ok: true; value: ParsedOpenSshKey };
 
-// TODO(security): encrypt privateKeyBytes with WebCrypto + user passphrase before persisting.
-// Dev-only: raw PEM bytes are stored in Identity.privateKeyPemBytesDevOnly until encryption lands.
+// Private keys are encrypted at rest with WebCrypto (AES-GCM + PBKDF2).
 
 function readUint32BE(buf: Uint8Array, offset: number): [number, number] {
   const view = new DataView(buf.buffer, buf.byteOffset + offset, buf.byteLength - offset);
@@ -142,17 +142,28 @@ export function parseOpenSshPrivateKeyPem(pem: string, labelHint?: string): Pars
   };
 }
 
-export async function importIdentityFromPem(pem: string, label?: string): Promise<Identity> {
+export async function importIdentityFromPem(
+  pem: string,
+  label?: string,
+  storagePassphrase?: string,
+): Promise<Identity> {
   const parsed = parseOpenSshPrivateKeyPem(pem, label);
   if (!parsed.ok) {
     throw new Error(parsed.message);
   }
 
+  if (!storagePassphrase?.trim()) {
+    throw new Error('A storage passphrase is required to encrypt the private key.');
+  }
+
+  const encryptedPrivateKey = await encryptPrivateKey(parsed.value.privateKeyBytes, storagePassphrase.trim());
+
   const identity: Identity = {
     id: crypto.randomUUID(),
     label: label?.trim() || parsed.value.label,
     publicKey: parsed.value.publicKey,
-    privateKeyPemBytesDevOnly: parsed.value.privateKeyBytes,
+    encryptedPrivateKey,
+    opensshKeyEncrypted: parsed.value.isEncrypted,
     createdAt: Date.now(),
   };
 
@@ -163,11 +174,18 @@ export async function importIdentityFromPem(pem: string, label?: string): Promis
 export function identitySelectMarkup(identities: Identity[], selectedId?: string): string {
   return [
     '<option value="">Default (no key)</option>',
-    ...identities.map(
-      (identity) =>
-        `<option value="${escapeHtml(identity.id)}"${selectedId === identity.id ? ' selected' : ''}>${escapeHtml(identity.label)}</option>`,
-    ),
+    ...identities.map((identity) => {
+      const suffix = identity.encryptedPrivateKey ? ' 🔒' : identity.privateKeyPemBytesDevOnly ? ' (legacy)' : '';
+      return `<option value="${escapeHtml(identity.id)}"${selectedId === identity.id ? ' selected' : ''}>${escapeHtml(identity.label)}${suffix}</option>`;
+    }),
   ].join('');
+}
+
+/** Short preview of an OpenSSH public key line for settings UI. */
+export function formatPublicKeyPreview(publicKey: string, maxLen = 48): string {
+  const trimmed = publicKey.trim();
+  if (trimmed.length <= maxLen) return trimmed;
+  return `${trimmed.slice(0, maxLen)}…`;
 }
 
 function escapeHtml(value: string): string {
@@ -204,13 +222,23 @@ export function showKeyImportDialog(): Promise<Identity | null> {
       </header>
       <form id="key-import-form" class="modal-dialog__body form form--compact">
         <p class="muted modal-dialog__intro">
-          OpenSSH private key PEM only. Keys are stored as raw PEM bytes locally (not encrypted yet).
-          Passphrase-protected keys can be imported; decryption at connect time is not wired yet.
+          OpenSSH private key PEM only. Keys are encrypted at rest with your storage passphrase (AES-GCM).
+          Passphrase-protected OpenSSH keys are supported; ssh will prompt for the key passphrase at connect time.
         </p>
         <div class="form-row">
           <label for="key-import-label">Label</label>
           <input id="key-import-label" name="label" type="text" autocomplete="off" spellcheck="false"
             placeholder="Optional display name" />
+        </div>
+        <div class="form-row">
+          <label for="key-import-passphrase">Storage passphrase</label>
+          <input id="key-import-passphrase" name="passphrase" type="password" autocomplete="new-password"
+            spellcheck="false" required placeholder="Encrypts key in local storage" />
+        </div>
+        <div class="form-row">
+          <label for="key-import-passphrase-confirm">Confirm passphrase</label>
+          <input id="key-import-passphrase-confirm" name="passphraseConfirm" type="password"
+            autocomplete="new-password" spellcheck="false" required />
         </div>
         <div class="form-row">
           <label for="key-import-file">Key file</label>
@@ -274,9 +302,23 @@ export function showKeyImportDialog(): Promise<Identity | null> {
       }
 
       const label = (dialog.querySelector<HTMLInputElement>('#key-import-label')?.value ?? '').trim();
+      const passphrase = (dialog.querySelector<HTMLInputElement>('#key-import-passphrase')?.value ?? '').trim();
+      const passphraseConfirm =
+        (dialog.querySelector<HTMLInputElement>('#key-import-passphrase-confirm')?.value ?? '').trim();
+
+      if (!passphrase) {
+        errorEl.textContent = 'Storage passphrase is required.';
+        errorEl.hidden = false;
+        return;
+      }
+      if (passphrase !== passphraseConfirm) {
+        errorEl.textContent = 'Passphrases do not match.';
+        errorEl.hidden = false;
+        return;
+      }
 
       try {
-        const identity = await importIdentityFromPem(pem, label || undefined);
+        const identity = await importIdentityFromPem(pem, label || undefined, passphrase);
         finish(identity);
       } catch (error) {
         errorEl.textContent = error instanceof Error ? error.message : 'Import failed.';

@@ -1,24 +1,40 @@
-# E2E smoke tests (manual)
+# E2E smoke tests
 
-Automated Playwright/CDP tests are not wired yet. Use these checklists to verify the terminal UI and app shell before and after SSH wiring.
+## Automated
 
-## When to run
+| Script | What it checks |
+|--------|----------------|
+| `npm run smoke:echo` | CDP: Vite up, connect form loads (needs `npm run dev:chrome`) |
+| `npm run smoke:e2e` | SSH fixture TCP/auth + echo CDP + manual checklist reminder |
+
+### SSH fixture (optional)
+
+```bash
+cd tests/fixtures && docker compose up -d
+export SSH_HOST=127.0.0.1 SSH_PORT=2222 SSH_USER=test SSH_PASS=test
+npm run smoke:e2e
+```
+
+See [tests/fixtures/README.md](../fixtures/README.md).
+
+## Manual
 
 | Checklist | Runtime | SSH required |
 |-----------|---------|--------------|
-| This file (simulated mode) | `npm run dev` or `npm run dev:chrome` in a normal browser tab | No — echo stub is enough |
-| [smoke-terminal.spec.md](./smoke-terminal.spec.md) | IWA via Dev Mode Proxy or signed `.swbn` | Yes — real `sshd` |
+| Echo-stub UI below | `npm run dev` in normal browser | No |
+| [smoke-terminal.spec.md](./smoke-terminal.spec.md) | IWA (Dev Mode Proxy or `.swbn`) | Yes |
 
-**Simulated mode** shows an in-app tab strip (`simulated tabs` badge). Native ChromeOS app tabs appear only after a tabbed IWA install (`display_override: ["tabbed"]`).
+**Simulated mode** shows an in-app tab strip. Native ChromeOS app tabs appear after tabbed IWA install (`display_override: ["tabbed"]`).
 
 ## Setup (simulated mode)
 
 ```bash
 npm install
-npm run fetch-assets   # optional for these UI tests; required before real SSH
+npm run fetch-assets   # required before real SSH
 npm run dev            # http://127.0.0.1:5173
 # or
-npm run dev:chrome     # same + opens /dev with CDP on 9222
+npm run dev:chrome     # same + opens /debug with CDP on 9222
+npm run smoke:echo     # optional automated UI checks
 ```
 
 Open `http://127.0.0.1:5173/` in Chrome. Confirm the tab strip badge reads **simulated tabs**.

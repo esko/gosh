@@ -1,6 +1,17 @@
 import { Router } from '../app-shell/router';
-import { loadSettings, saveSettings } from '../storage/indexedDb';
-import type { AppSettings, CursorStyle, ThemePresetId } from '../settings/types';
+import { refreshSessionCloseSetting } from '../app-shell/sessionCloseGuard';
+import { isStubHostFingerprint } from '../ssh/KnownHostPrompt';
+import { formatPublicKeyPreview } from '../ssh/KeyImport';
+import { identityHasPrivateKey, identityUsesStorageEncryption } from '../ssh/identitySecrets';
+import {
+  deleteIdentity,
+  deleteKnownHost,
+  listIdentities,
+  listKnownHosts,
+  loadSettings,
+  saveSettings,
+} from '../storage/indexedDb';
+import type { AppSettings, CursorStyle, Identity, KnownHost, ThemePresetId } from '../settings/types';
 import { THEME_PRESETS } from '../settings/themes';
 import { resolveTheme } from '../settings/themes';
 import { escapeHtml, shell } from './shared';
@@ -41,8 +52,89 @@ function numberField(id: string, label: string, value: number, min?: number, max
   `;
 }
 
-function renderSettingsForm(settings: AppSettings, popup: boolean): string {
-  const { appearance, keyboard } = settings;
+function renderKnownHostsSection(hosts: KnownHost[]): string {
+  if (hosts.length === 0) {
+    return `
+      <section class="panel settings-section">
+        <h2>Known hosts</h2>
+        <p class="muted">No trusted hosts saved. Connect via live SSH — host-key prompts appear when OpenSSH detects an unknown server.</p>
+      </section>
+    `;
+  }
+
+  const rows = hosts
+    .map((host) => {
+      const target = host.port === 22 ? host.host : `${host.host}:${host.port}`;
+      const stub = isStubHostFingerprint(host.fingerprint);
+      return `
+        <li class="known-host-row" data-host="${escapeHtml(host.host)}" data-port="${host.port}">
+          <div class="known-host-row__info">
+            <strong><code>${escapeHtml(target)}</code></strong>
+            <span class="muted">${escapeHtml(host.keyType)}${stub ? ' · stub fingerprint' : ''}</span>
+            <code class="known-host-fingerprint">${escapeHtml(host.fingerprint)}</code>
+          </div>
+          <button type="button" class="btn danger" data-action="delete-known-host">Remove</button>
+        </li>
+      `;
+    })
+    .join('');
+
+  return `
+    <section class="panel settings-section">
+      <h2>Known hosts</h2>
+      <p class="muted">Trusted hosts with real fingerprints (from live SSH). OpenSSH also maintains <code>/.ssh/known_hosts</code> in nassh during sessions.</p>
+      <ul class="known-host-list">${rows}</ul>
+    </section>
+  `;
+}
+
+function renderIdentitiesSection(identities: Identity[]): string {
+  if (identities.length === 0) {
+    return `
+      <section class="panel settings-section">
+        <h2>SSH identities</h2>
+        <p class="muted">No keys imported. Use <strong>Import key</strong> on the Connect or Profiles screen.</p>
+      </section>
+    `;
+  }
+
+  const rows = identities
+    .map((identity) => {
+      const storage = identityUsesStorageEncryption(identity)
+        ? 'encrypted at rest'
+        : identityHasPrivateKey(identity)
+          ? 'legacy plaintext'
+          : 'public key only';
+      const openssh = identity.opensshKeyEncrypted ? ' · OpenSSH passphrase' : '';
+      return `
+        <li class="identity-row" data-identity-id="${escapeHtml(identity.id)}">
+          <div class="identity-row__info">
+            <strong>${escapeHtml(identity.label)}</strong>
+            <span class="muted">${escapeHtml(storage)}${openssh}</span>
+            <code class="identity-pubkey">${escapeHtml(formatPublicKeyPreview(identity.publicKey))}</code>
+          </div>
+          <button type="button" class="btn danger" data-action="delete-identity">Remove</button>
+        </li>
+      `;
+    })
+    .join('');
+
+  return `
+    <section class="panel settings-section">
+      <h2>SSH identities</h2>
+      <p class="muted">Imported private keys. Storage passphrase is required at connect time for encrypted keys.</p>
+      <ul class="identity-list">${rows}</ul>
+    </section>
+  `;
+}
+
+function renderSettingsForm(
+  settings: AppSettings,
+  popup: boolean,
+  knownHosts: KnownHost[],
+  identities: Identity[],
+): string {
+  const { appearance, keyboard, behavior } = settings;
 
   const themeOptions = THEME_PRESETS_LIST.map(
     (preset) =>
@@ -54,7 +146,7 @@ function renderSettingsForm(settings: AppSettings, popup: boolean): string {
       `<option value="${style}"${appearance.cursorStyle === style ? ' selected' : ''}>${escapeHtml(style)}</option>`,
   ).join('');
 
-  const body = `
+  const formHtml = `
     <p class="muted settings-note">Changes apply to new terminal sessions only.</p>
     <form id="settings-form" class="form${popup ? ' form--compact' : ''}">
       <section class="panel settings-section">
@@ -104,6 +196,12 @@ function renderSettingsForm(settings: AppSettings, popup: boolean): string {
         ${checkbox('kittyKeyboardProtocol', 'Kitty keyboard protocol', keyboard.kittyKeyboardProtocol, 'Allows terminal programs to request enhanced keyboard reporting.')}
       </section>
 
+      <section class="panel settings-section">
+        <h2>Session behavior</h2>
+        ${checkbox('confirmCloseTab', 'Confirm before closing tab', behavior.confirmCloseTab)}
+        ${checkbox('reconnectOnDisconnect', 'Auto-reconnect on disconnect', behavior.reconnectOnDisconnect, 'Retries the SSH connection when the remote session ends unexpectedly.')}
+      </section>
+
       <div class="button-row settings-actions">
         <button type="submit" class="btn primary">Save settings</button>
         ${popup ? '' : '<button type="button" id="settings-cancel" class="btn">Cancel</button>'}
@@ -112,23 +210,52 @@ function renderSettingsForm(settings: AppSettings, popup: boolean): string {
     </form>
   `;
 
+  const extraSections = popup ? '' : `${renderIdentitiesSection(identities)}${renderKnownHostsSection(knownHosts)}`;
+
   if (popup) {
-    return `<div class="popup-settings">${body}</div>`;
+    return `<div class="popup-settings">${formHtml}</div>`;
   }
 
-  return shell('Settings', body, `<button type="button" id="header-home" class="btn">Home</button>`);
+  return shell('Settings', `${formHtml}${extraSections}`, `<button type="button" id="header-home" class="btn">Home</button>`);
 }
 
 export async function renderSettings(root: HTMLElement, query: URLSearchParams): Promise<void> {
   const popup = query.get('popup') === '1';
-  const settings = await loadSettings();
+  const [settings, knownHosts, identities] = await Promise.all([
+    loadSettings(),
+    listKnownHosts(),
+    listIdentities(),
+  ]);
 
   root.classList.toggle('popup-root', popup);
-  root.innerHTML = renderSettingsForm(settings, popup);
+  root.innerHTML = renderSettingsForm(settings, popup, knownHosts, identities);
 
   if (!popup) {
     root.querySelector('#header-home')?.addEventListener('click', () => Router.go('/'));
     root.querySelector('#settings-cancel')?.addEventListener('click', () => Router.go('/'));
+
+    root.querySelectorAll('.known-host-row').forEach((row) => {
+      const host = (row as HTMLElement).dataset.host;
+      const port = Number((row as HTMLElement).dataset.port);
+      if (!host || !Number.isFinite(port)) return;
+
+      row.querySelector('[data-action="delete-known-host"]')?.addEventListener('click', async () => {
+        if (!window.confirm(`Remove trusted host ${host}?`)) return;
+        await deleteKnownHost(host, port);
+        await renderSettings(root, query);
+      });
+    });
+
+    root.querySelectorAll('.identity-row').forEach((row) => {
+      const identityId = (row as HTMLElement).dataset.identityId;
+      if (!identityId) return;
+
+      row.querySelector('[data-action="delete-identity"]')?.addEventListener('click', async () => {
+        if (!window.confirm('Remove this SSH identity? Profiles using it will fall back to no key.')) return;
+        await deleteIdentity(identityId);
+        await renderSettings(root, query);
+      });
+    });
   }
 
   root.querySelector('#settings-form')?.addEventListener('submit', async (event) => {
@@ -172,9 +299,14 @@ export async function renderSettings(root: HTMLElement, query: URLSearchParams):
         deleteSendsEscapeSequence: data.get('deleteSendsEscapeSequence') === 'on',
         kittyKeyboardProtocol: data.get('kittyKeyboardProtocol') === 'on',
       },
+      behavior: {
+        confirmCloseTab: data.get('confirmCloseTab') === 'on',
+        reconnectOnDisconnect: data.get('reconnectOnDisconnect') === 'on',
+      },
     };
 
     await saveSettings(nextSettings);
+    await refreshSessionCloseSetting();
 
     const status = root.querySelector<HTMLElement>('#settings-status');
     if (status) {

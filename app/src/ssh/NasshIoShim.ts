@@ -14,6 +14,18 @@ export type NasshIoShimOptions = {
 /** @deprecated Use NasshIoShimOptions */
 export type AttachTerminalOptions = NasshIoShimOptions;
 
+function overlayMessageToText(message: unknown): string | null {
+  if (typeof message === 'string') return message;
+  if (message instanceof Node) return message.textContent?.trim() ?? null;
+  return null;
+}
+
+function formatOverlayBanner(text: string): string {
+  const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
+  if (lines.length === 0) return '';
+  return `\r\n\x1b[90m── ${lines.join('\r\n── ')}\x1b[0m\r\n`;
+}
+
 class NasshTerminalIo implements HtermTerminalIo {
   terminal_: HtermStubTerminal;
   previousIO_: NasshTerminalIo | null = null;
@@ -122,12 +134,36 @@ export class NasshIoShim {
   readonly io: HtermTerminalIo;
   private readonly stubTerminal: HtermStubTerminal;
   private inputSubscription: TerminalSubscription | null = null;
+  private overlayHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly adapter: TerminalAdapter,
     private readonly options: NasshIoShimOptions = {},
   ) {
     const { cols, rows } = adapter.getSize();
+
+    const showOverlay = (message: unknown, timeout?: number | null): void => {
+      const text = overlayMessageToText(message);
+      if (text) {
+        this.adapter.write(formatOverlayBanner(text));
+      }
+      if (this.overlayHideTimer) {
+        clearTimeout(this.overlayHideTimer);
+        this.overlayHideTimer = null;
+      }
+      if (timeout != null && timeout > 0) {
+        this.overlayHideTimer = setTimeout(() => {
+          this.overlayHideTimer = null;
+        }, timeout);
+      }
+    };
+
+    const hideOverlay = (): void => {
+      if (this.overlayHideTimer) {
+        clearTimeout(this.overlayHideTimer);
+        this.overlayHideTimer = null;
+      }
+    };
 
     this.stubTerminal = {
       interpret: (message) => {
@@ -139,8 +175,8 @@ export class NasshIoShim {
       },
       setProfile: () => {},
       screenSize: { width: cols, height: rows },
-      showOverlay: () => {},
-      hideOverlay: () => {},
+      showOverlay,
+      hideOverlay,
       focus: () => {
         this.adapter.focus();
       },
@@ -173,6 +209,8 @@ export class NasshIoShim {
   }
 
   dispose(): void {
+    if (this.overlayHideTimer) clearTimeout(this.overlayHideTimer);
+    this.overlayHideTimer = null;
     this.inputSubscription?.dispose();
     this.inputSubscription = null;
   }

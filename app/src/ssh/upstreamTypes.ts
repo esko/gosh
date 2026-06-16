@@ -15,6 +15,8 @@ export type HtermStubTerminal = {
 
 export type HtermTerminalIo = {
   terminal_: HtermStubTerminal;
+  columnCount?: number;
+  rowCount?: number;
   sendString: (data: string) => void;
   onVTKeystroke: (data: string) => void;
   onTerminalResize_: (width: number, height: number) => void;

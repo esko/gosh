@@ -7,26 +7,22 @@ iwa-ssh is a **high-trust IWA** — packaged, signed, isolated. Security choices
 | Rule | Implementation |
 |------|----------------|
 | **No plaintext passwords** | Key-based auth only; no password field in profiles or storage |
-| **Encrypted private keys** | **Not yet implemented** — see `privateKeyPemBytesDevOnly` below |
+| **Encrypted private keys** | AES-GCM + PBKDF2 via `app/src/security/KeyCrypto.ts` |
 | **No silent auth** | Connecting requires explicit user action (connect button / profile select) |
 
 Passphrase is never written to IndexedDB or export JSON.
 
 ### Implemented (MVP)
 
-- **Key import UI** (`app/src/ssh/KeyImport.ts`): OpenSSH private key PEM via file or paste; public key extracted and stored.
+- **Key import UI** (`app/src/ssh/KeyImport.ts`): OpenSSH private key PEM via file or paste; encrypted at rest with a user-chosen storage passphrase.
 - **Identity picker** on connect and profile editor with import button.
+- **Storage passphrase prompt** at connect time (`identitySecrets.ts`); cached in memory for the session only.
+- **OpenSSH-encrypted PEM keys**: imported and stored; ssh prompts for the key passphrase via `SecureInputPrompt` at connect time.
 - **No password fields** anywhere in the UI or storage layer.
 
-### Dev-only / not production-ready
+### Legacy / migration
 
-- **`Identity.privateKeyPemBytesDevOnly`**: raw PEM bytes at rest (misleading name avoided on purpose). Field name signals that WebCrypto encryption is not implemented.
-- **Passphrase prompt at connect** for encrypted PEM keys (import accepts bcrypt-protected keys but SSH auth cannot use them yet).
-
-### Deferred
-
-- **WebCrypto passphrase encryption** of private keys at rest.
-- **SSH auth wiring** — identities stage into nassh FS when upstream assets are present; encrypted-at-rest keys pending.
+- **`Identity.privateKeyPemBytesDevOnly`**: plaintext PEM from early imports; still readable for staging until re-imported. Settings shows these as “legacy plaintext”.
 
 ## Host trust
 
@@ -39,19 +35,17 @@ Passphrase is never written to IndexedDB or export JSON.
 ### Implemented (MVP)
 
 - **Trust modal** (`app/src/ssh/KnownHostPrompt.ts`): UI for host trust decisions.
-- **Connect gate** (`app/src/routes/connect.ts`): `ensureHostTrusted()` runs before navigating to a session.
-- **Dev inspector** (`/debug`, development only): host-trust probe exercises the modal.
+- **HostKeyGuard** (`app/src/ssh/HostKeyGuard.ts`): intercepts OpenSSH fingerprint prompts during live SSH; sends `yes`/`no` after user choice.
+- **known_hosts sync** (`app/src/ssh/nasshKnownHosts.ts`): stages trusted lines into nassh FS before connect; syncs back after `Permanently added …`.
+- **Connect gate** (`app/src/routes/connect.ts`): stub prompt only when upstream assets are missing.
+- **Settings UI**: list and remove trusted hosts and SSH identities.
+- **Dev inspector** (`/debug`): host-trust probe (stub mode).
 
-### Dev-only / not production-ready
+### Dev-only / echo stub
 
-- **Host key verification is stubbed** (`isHostKeyVerificationStubbed()`): fingerprints are placeholders (`SHA256:STUB-…`). The modal states this explicitly; **Trust always** is hidden and nothing is persisted while stubbed.
-- **Stub-era `knownHosts` records** (if any) used fake fingerprints and should be cleared before real verification lands.
-
-### Deferred
-
-- **Live host key fingerprint** from wassh over Direct Sockets.
-- **Session reconnect** does not re-prompt (trust is checked at connect-screen submit only).
-- **Removing or editing** known host entries in settings UI.
+- Pre-connect stub prompt when upstream wassh is unavailable (`SHA256:STUB-…` fingerprints).
+- **Session reconnect** does not re-prompt for host trust (checked at connect-screen submit in stub mode only).
+- **Removing or editing** known host entries: remove via Settings; no inline edit yet.
 
 ## Network
 
@@ -102,7 +96,7 @@ Cross-Origin-Resource-Policy: same-origin
 
 - IWA storage is separate from normal browser profile storage
 - Each Web Bundle ID gets its own `isolated-app://` origin
-- Export JSON omits private key bytes (`hasPrivateKeyDevOnly` flag only)
+- Export JSON omits private key bytes (`hasEncryptedPrivateKey` / `hasLegacyPlaintextKey` flags only)
 
 ## Dev mode caveats
 

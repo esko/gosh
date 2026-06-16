@@ -2,19 +2,22 @@
 /**
  * Build production dist/ and package an IWA Signed Web Bundle.
  *
- * Usage: npm run bundle:iwa
+ * Usage:
+ *   npm run bundle:iwa              # build + unsigned + sign (if key present)
+ *   npm run bundle:iwa:unsigned     # build + unsigned only
  *
  * Requires (for signing): wbn, wbn-sign — fetched via npx if not installed.
- * Signing key: iwa/keys/encrypted_key.pem (see docs/IWA_DEV_SETUP.md)
+ * Signing key: iwa/keys/encrypted_key.pem (npm run iwa:keygen)
  */
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
+const unsignedOnly = process.argv.includes('--unsigned-only');
 
 /** @type {import('./webbundle.config.ts').WebBundleConfig} */
 let bundleConfig;
@@ -27,6 +30,14 @@ try {
   );
   console.error('or run the manual steps printed below.\n', error);
   process.exit(1);
+}
+
+// Sync version from package.json
+try {
+  const pkg = JSON.parse(readFileSync(resolve(repoRoot, 'package.json'), 'utf8'));
+  if (pkg.version) bundleConfig.version = pkg.version;
+} catch {
+  // keep config default
 }
 
 function run(cmd, args, opts = {}) {
@@ -81,6 +92,15 @@ npx('wbn', [
   '--output',
   bundleConfig.unsignedBundle,
 ]);
+
+if (unsignedOnly) {
+  console.log(`
+✓ Unsigned bundle: ${bundleConfig.unsignedBundle}
+  Version: ${bundleConfig.version}
+  Install via chrome://web-app-internals (unsigned requires dev tooling)
+`);
+  process.exit(0);
+}
 
 if (!existsSync(keyPath)) {
   console.log(`

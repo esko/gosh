@@ -5,6 +5,7 @@
 import { log } from '../debug/logger';
 import { listIdentities } from '../storage/indexedDb';
 import type { Identity } from '../settings/types';
+import { identityHasPrivateKey, resolveIdentityPrivateKeyPem } from './identitySecrets';
 import { upstreamImport } from './upstreamUrls';
 
 type NasshFsModule = {
@@ -44,9 +45,23 @@ export async function stageIdentityForNassh(identityId: string): Promise<string 
     return undefined;
   }
 
-  if (!identity.privateKeyPemBytesDevOnly) {
+  if (!identityHasPrivateKey(identity)) {
     log.ssh.warn('identity has no private key material', { identityId, label: identity.label });
     return undefined;
+  }
+
+  let pemBytes: ArrayBuffer;
+  try {
+    const resolved = await resolveIdentityPrivateKeyPem(identity);
+    if (!resolved) {
+      log.ssh.warn('identity passphrase not provided', { identityId, label: identity.label });
+      return undefined;
+    }
+    pemBytes = resolved;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.ssh.error('failed to decrypt identity', { identityId, message });
+    throw error;
   }
 
   const filename = nasshIdentityFilename(identityId);
@@ -55,7 +70,7 @@ export async function stageIdentityForNassh(identityId: string): Promise<string 
 
   await fileSystem.createDirectory('/.ssh');
   await fileSystem.createDirectory('/.ssh/identity');
-  await fileSystem.writeFile(`/.ssh/identity/${filename}`, identity.privateKeyPemBytesDevOnly);
+  await fileSystem.writeFile(`/.ssh/identity/${filename}`, pemBytes);
 
   if (identity.publicKey) {
     const pubBytes = new TextEncoder().encode(`${identity.publicKey.trim()}\n`);

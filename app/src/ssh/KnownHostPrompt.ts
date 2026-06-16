@@ -9,15 +9,22 @@ export type KnownHostPromptOptions = {
   keyType?: string;
   /** Set when a stored host key does not match the server offer. */
   previousFingerprint?: string;
+  /** When true, show stub UI (echo-stub / dev probe only). */
+  stubbed?: boolean;
 };
 
-/** True until wassh supplies real server host keys over Direct Sockets. */
-export function isHostKeyVerificationStubbed(): boolean {
-  return true;
+export type EnsureHostTrustedOptions = {
+  /** Use real fingerprint verification (live SSH via HostKeyGuard). */
+  useLiveVerification?: boolean;
+};
+
+/** True for echo-stub pre-connect prompts; false during live SSH host-key interception. */
+export function isHostKeyVerificationStubbed(live = false): boolean {
+  return !live;
 }
 
 /**
- * Stub fingerprint until wassh provides the real server host key over Direct Sockets.
+ * Placeholder fingerprint for echo-stub connect gate when upstream assets are missing.
  */
 export function stubHostFingerprint(host: string, port: number): string {
   return `SHA256:STUB-${host}:${port}`;
@@ -35,10 +42,16 @@ function formatTarget(host: string, port: number): string {
  * Modal dialog for unknown or changed host keys. Resolves when the user chooses.
  */
 export function showKnownHostPrompt(options: KnownHostPromptOptions): Promise<HostTrustChoice> {
-  const { host, port, fingerprint, keyType = 'ssh-ed25519', previousFingerprint } = options;
+  const {
+    host,
+    port,
+    fingerprint,
+    keyType = 'ssh-ed25519',
+    previousFingerprint,
+    stubbed = false,
+  } = options;
   const target = formatTarget(host, port);
   const changed = Boolean(previousFingerprint);
-  const stubbed = isHostKeyVerificationStubbed();
 
   return new Promise((resolve) => {
     const backdrop = document.createElement('div');
@@ -59,7 +72,7 @@ export function showKnownHostPrompt(options: KnownHostPromptOptions): Promise<Ho
         : `The authenticity of <strong>${escapeHtml(target)}</strong> cannot be established.`;
 
     const stubWarning = stubbed
-      ? `<p class="modal-dialog__warning" role="note">Trust is not persisted. Real SSH host-key protection will arrive when wassh fingerprints are wired.</p>`
+      ? `<p class="modal-dialog__warning" role="note">Trust is not persisted. Use live SSH to verify real host keys.</p>`
       : '';
 
     dialog.innerHTML = `
@@ -146,9 +159,12 @@ export async function ensureHostTrusted(
   port: number,
   fingerprint = stubHostFingerprint(host, port),
   keyType = 'ssh-ed25519',
+  options?: EnsureHostTrustedOptions,
 ): Promise<boolean> {
-  if (isHostKeyVerificationStubbed()) {
-    const choice = await showKnownHostPrompt({ host, port, fingerprint, keyType });
+  const stubbed = !options?.useLiveVerification;
+
+  if (stubbed) {
+    const choice = await showKnownHostPrompt({ host, port, fingerprint, keyType, stubbed: true });
     return choice === 'once';
   }
 
@@ -163,6 +179,7 @@ export async function ensureHostTrusted(
     port,
     fingerprint,
     keyType,
+    stubbed: false,
     previousFingerprint: existing && existing.fingerprint !== fingerprint ? existing.fingerprint : undefined,
   });
 

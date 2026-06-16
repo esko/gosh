@@ -1,4 +1,5 @@
 import { loadSettings } from '../storage/indexedDb';
+import { confirmCloseSessionTab } from './sessionCloseGuard';
 import { usesSimulatedTabs } from './tabMode';
 
 export type SimTab = {
@@ -148,16 +149,9 @@ export class TabManager {
 
   closeActiveTab(): boolean {
     if (!usesSimulatedTabs()) return false;
-    const idx = this.tabs.findIndex((t) => t.id === this.activeId);
-    if (idx < 0) return false;
-    const tab = this.tabs[idx];
-    if (tab.pinned) return false;
-    this.tabs.splice(idx, 1);
-    const next = this.tabs[Math.min(idx, this.tabs.length - 1)] ?? this.tabs[0];
-    this.activeId = next.id;
-    saveTabs(this.tabs, this.activeId);
-    this.render();
-    this.navigate(next.path);
+    const tab = this.tabs.find((t) => t.id === this.activeId);
+    if (!tab || tab.pinned) return false;
+    void this.closeTab(tab.id);
     return true;
   }
 
@@ -180,9 +174,13 @@ export class TabManager {
     this.navigate(tab.path);
   }
 
-  private closeTab(tabId: string): void {
+  private async closeTab(tabId: string): Promise<void> {
     const tab = this.tabs.find((t) => t.id === tabId);
     if (!tab || tab.pinned) return;
+
+    const ok = await confirmCloseSessionTab(tab.path);
+    if (!ok) return;
+
     const idx = this.tabs.findIndex((t) => t.id === tabId);
     this.tabs.splice(idx, 1);
     if (this.activeId === tabId) {

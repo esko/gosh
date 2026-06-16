@@ -60,11 +60,11 @@ git submodule update --init --depth 1 upstream/libapps
 | Phase | Focus | Status |
 |-------|-------|--------|
 | **0** | Repo bootstrap, app shell, echo stub session, Direct Sockets probe | Done |
-| **1** | Upstream libapps assets; wire nassh CommandInstance + wassh | In progress (bridge + fetch-assets; needs ChromeOS IWA verify) |
-| **2** | Terminal adapter, xterm.js, session I/O, resize/window-change | Done (adapter + HtermIoBridge; live SSH pending verify) |
+| **1** | Upstream libapps assets; wire nassh CommandInstance + wassh | Done (IWA verify on ChromeOS) |
+| **2** | Terminal adapter, xterm.js 6 beta, session I/O, resize/window-change | Done |
 | **3** | Profiles, connect screen, settings shell | Done |
-| **4** | Tabbed manifest, appearance/keyboard settings, known_hosts, key import | Partial (host-key + key storage are dev stubs) |
-| **5** | E2E smoke tests (vim/tmux/fish), signed bundle, security notes | Partial (docs + bundle script; signing key placeholder) |
+| **4** | Tabbed manifest, appearance/keyboard settings, known_hosts, key import | Mostly done (native tabs need signed IWA install) |
+| **5** | E2E smoke tests (vim/tmux/fish), signed bundle, security notes | Partial (smoke runner + bundle scripts; manual vim/tmux/fish) |
 
 Track work on the [issue tracker](https://github.com/esko/iwa-ssh/issues).
 

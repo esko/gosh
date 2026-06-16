@@ -46,27 +46,28 @@ app/src/terminal/
 
 `NasshSession` bridges wassh I/O to the adapter (stdin/stdout, window-change on resize). hterm-specific UI and preferences are not carried over.
 
-### Phase 1: nassh session bridge (hterm.IO stub)
+### Phase 1: nassh session bridge (NasshIoShim)
 
-Upstream `CommandInstance` still expects `hterm.Terminal.IO`. We do not mount hterm UI; a stub terminal satisfies the API and pipes bytes through xterm:
+Upstream `CommandInstance` still expects `hterm.Terminal.IO`. We do not mount hterm UI; `NasshIoShim` satisfies the API and pipes bytes through xterm:
 
 ```text
 app/src/ssh/
   NasshSession.ts          # tries NasshCommandBridge, falls back to echo stub
-  NasshCommandBridge.ts      # dynamic import upstream CommandInstance + connectTo
-  HtermIoBridge.ts           # stub hterm.Terminal + hterm.Terminal.IO → TerminalAdapter
-  upstreamAssets.ts          # HEAD checks for /upstream manifest + worker + wasm
-  upstreamUrls.ts            # runtime import URLs (__IWA_UPSTREAM_BASE__)
+  NasshCommandBridge.ts    # dynamic import upstream CommandInstance + connectTo
+  NasshIoShim.ts           # CSP-safe hterm.Terminal + hterm.Terminal.IO → TerminalAdapter
+  upstreamAssets.ts        # HEAD checks for /upstream manifest + worker + wasm
+  upstreamUrls.ts          # literal @vite-ignore imports for nassh modules
 ```
 
 | Direction | Path |
 |-----------|------|
-| SSH → screen | `stubTerminal.interpret` → `TerminalAdapter.write` → xterm |
-| keyboard → SSH | xterm `onData` → `io.sendString` → wassh stdin (via disposable `onInput` subscriptions) |
+| SSH → screen | `interpret` → `TerminalAdapter.write` → xterm |
+| keyboard → SSH | xterm `onData` → `io.sendString` → wassh stdin |
 | resize | `adapter.onResize` → `screenSize` + `io.onTerminalResize_` → SIGWINCH |
-| passphrase | `CommandInstance.secureInput` → `prompt()` (MVP) |
+| passphrase | `CommandInstance.secureInput` → `SecureInputPrompt` modal |
+| status overlays | `io.showOverlay` → dim banner text in xterm |
 
-Upstream JS is loaded at runtime from `app/public/upstream/` (`npm run fetch-assets`), not bundled by Vite. `vite.config.ts` defines worker/plugin URL constants; dev/preview set COOP/COEP for `SharedArrayBuffer` (wassh worker).
+Upstream JS is loaded at runtime from `app/upstream/` (`npm run fetch-assets`), not bundled by Vite. `vite.config.ts` serves `/upstream/*` via `upstreamStaticDev` and copies to `dist/upstream/` on build; dev/preview set COOP/COEP for `SharedArrayBuffer` (wassh worker).
 
 If assets are missing, `NasshSession` keeps the Phase 0 local echo stub so the session UI remains usable.
 

@@ -216,7 +216,10 @@ If `TCPSocket` is undefined:
 npm install
 npm run dev          # dev server
 npm run build        # production dist/
-npm run bundle:iwa   # dist/ + .swbn packaging steps
+npm run bundle:iwa   # dist/ + .swbn packaging (signs if key present)
+npm run bundle:iwa:unsigned  # unsigned .wbn only
+npm run iwa:keygen   # generate Ed25519 signing key
+npm run smoke:e2e    # SSH fixture + CDP echo checks
 npm run typecheck
 ```
 
