@@ -251,6 +251,11 @@ async function copyNasshBridgeModules() {
     path.join(OUT_DIR, 'nassh/js'),
     { filter: jsFilter },
   );
+  count += await copyTree(
+    path.join(LIBAPPS, 'nassh/third_party/google-smart-card'),
+    path.join(OUT_DIR, 'nassh/third_party/google-smart-card'),
+    { filter: jsFilter },
+  );
 
   // nassh/js imports ../wassh/js/* — mirror upstream nassh/wassh → ../../wassh/js symlink.
   const nasshWasshLink = path.join(OUT_DIR, 'nassh/wassh/js');
@@ -265,7 +270,33 @@ async function copyNasshBridgeModules() {
     source: 'symlink → ../../wassh/js',
   });
 
+  // Browser module resolution is URL-based, not symlink-target based.  When a
+  // module is requested as /upstream/nassh/wassh/js/process.js, its
+  // ../../wasi-js-bindings import resolves under /upstream/nassh/.
+  const nasshWasiLink = path.join(OUT_DIR, 'nassh/wasi-js-bindings');
+  if (exists(nasshWasiLink)) {
+    await fsp.rm(nasshWasiLink, { recursive: true, force: true });
+  }
+  await fsp.symlink('../wasi-js-bindings', nasshWasiLink);
+  manifest.push({
+    dest: 'nassh/wasi-js-bindings',
+    bytes: 0,
+    source: 'symlink → ../wasi-js-bindings',
+  });
+
   return count;
+}
+
+async function patchNasshRuntimeUrls() {
+  const subprocPath = path.join(OUT_DIR, 'nassh/js/nassh_subproc_wasm.js');
+  let source = await fsp.readFile(subprocPath, 'utf8');
+  const before = "sanitizeScriptUrl(`../wassh/js/worker.js?trace=${this.trace_}`)";
+  const after = "sanitizeScriptUrl(`/upstream/wassh/js/worker.js?trace=${this.trace_}`)";
+  if (!source.includes(before)) {
+    throw new Error('nassh_subproc_wasm.js worker URL pattern not found');
+  }
+  source = source.replace(before, after);
+  await fsp.writeFile(subprocPath, source, 'utf8');
 }
 
 function printManifest() {
@@ -315,6 +346,7 @@ async function main() {
   const wasiCount = await copyWasiBindings();
   const pluginCount = await copyPluginAssets();
   const nasshCount = await copyNasshBridgeModules();
+  await patchNasshRuntimeUrls();
 
   if (wasshCount === 0) {
     throw new Error('no wassh/js/*.js files copied');

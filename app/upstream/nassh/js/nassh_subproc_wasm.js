@@ -324,7 +324,7 @@ export class WasmSubproc {
     await this.initHandler_(settings.handler);
 
     this.process_ = new WasshProcess.Background(
-        sanitizeScriptUrl(`../wassh/js/worker.js?trace=${this.trace_}`),
+        sanitizeScriptUrl(`/upstream/wassh/js/worker.js?trace=${this.trace_}`),
         settings);
   }
 

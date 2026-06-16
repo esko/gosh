@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-06-16T10:25:40.308Z",
+  "generatedAt": "2026-06-16T12:57:56.385Z",
   "upstreamBase": "/upstream",
   "workerUrl": "/upstream/wassh/js/worker.js",
   "pluginBase": "/upstream/plugin",
@@ -1082,9 +1082,19 @@
       "source": "upstream/libapps/nassh/js/ssh_policy_tests.js"
     },
     {
+      "dest": "nassh/third_party/google-smart-card/google-smart-card-client-library.js",
+      "bytes": 61442,
+      "source": "upstream/libapps/nassh/third_party/google-smart-card/google-smart-card-client-library.js"
+    },
+    {
       "dest": "nassh/wassh/js",
       "bytes": 0,
       "source": "symlink → ../../wassh/js"
+    },
+    {
+      "dest": "nassh/wasi-js-bindings",
+      "bytes": 0,
+      "source": "symlink → ../wasi-js-bindings"
     }
   ]
 }
