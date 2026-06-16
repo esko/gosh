@@ -50,6 +50,7 @@ export class NasshCommandBridge {
   private ioShim: NasshIoShim | null = null;
   private commandInstance: NasshCommandInstance | null = null;
   private attachOptions: NasshIoShimOptions | undefined;
+  private hasExited = false;
   private disposed = false;
 
   constructor(private readonly options: NasshCommandBridgeOptions) {}
@@ -78,6 +79,7 @@ export class NasshCommandBridge {
     }
 
     this.options.onStatus?.('connecting');
+    this.hasExited = false;
     log.ssh.info('connecting via nassh CommandInstance', {
       host: this.options.host,
       port: this.options.port,
@@ -112,9 +114,7 @@ export class NasshCommandBridge {
       syncStorage,
       terminalLocation: noopLocation,
       onExit: (code) => {
-        if (this.disposed) return;
-        log.ssh.info('nassh exited', { code });
-        this.options.onStatus?.('disconnected');
+        this.handleExit(code, 'nassh');
       },
     });
 
@@ -129,9 +129,11 @@ export class NasshCommandBridge {
     };
 
     instance.onPluginExit = async (code) => {
-      if (this.disposed) return;
-      log.ssh.info('wassh plugin exited', { code });
-      this.options.onStatus?.('disconnected');
+      this.handleExit(code, 'wassh');
+    };
+
+    instance.exit = (code, noReconnect) => {
+      this.handleExit(code, 'nassh-exit', { noReconnect });
     };
 
     this.commandInstance = instance;
@@ -189,5 +191,19 @@ export class NasshCommandBridge {
     this.ioShim?.dispose();
     this.ioShim = null;
     this.adapter = null;
+  }
+
+  private handleExit(
+    code: number,
+    source: 'nassh' | 'nassh-exit' | 'wassh',
+    detail?: Record<string, unknown>,
+  ): void {
+    if (this.disposed || this.hasExited) return;
+    this.hasExited = true;
+    log.ssh.info('nassh bridge exited', { code, source, ...detail });
+    this.commandInstance = null;
+    this.ioShim?.dispose();
+    this.ioShim = null;
+    this.options.onStatus?.('disconnected');
   }
 }

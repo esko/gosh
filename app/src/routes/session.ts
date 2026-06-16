@@ -104,6 +104,8 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
 
   if (!terminalHost) return;
 
+  let focusTerminal: (() => void) | null = null;
+
   const updateStatus = (status: ConnectionStatus, error?: string) => {
     if (!statusEl) return;
     statusEl.dataset.status = status;
@@ -125,6 +127,10 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
       }
     }
     if (reconnectBtn) reconnectBtn.disabled = status === 'connecting' || status === 'connected';
+
+    if (status === 'connected') {
+      window.requestAnimationFrame(() => focusTerminal?.());
+    }
   };
 
   const adapter = new Xterm6TerminalAdapter({ appearance, keyboard: settings.keyboard });
@@ -141,6 +147,7 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   });
 
   adapter.open(terminalHost);
+  focusTerminal = () => adapter.focus();
   session.attachTerminal(adapter, {
     onOutput: (data) => {
       recordTerminalOutput(sessionId, data, 'out');
@@ -157,6 +164,7 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   root.querySelector('#session-overlay-reconnect')?.addEventListener('click', () => void reconnect());
   root.querySelector('#session-overlay-view-terminal')?.addEventListener('click', () => {
     if (overlay) overlay.hidden = true;
+    focusTerminal?.();
   });
   root.querySelector('#session-overlay-home')?.addEventListener('click', () => Router.go('/'));
   root.querySelector('#session-duplicate')?.addEventListener('click', () => {
