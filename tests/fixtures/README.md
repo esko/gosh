@@ -99,3 +99,20 @@ bash verify-fixture.sh
 ```
 
 `verify-fixture.sh` prints the account shadow state, local/container key fingerprints, the effective `AuthorizedKeysFile`, recent `sshd` logs, and a real `ssh -i keys/smoke ... echo fixture-ok` check. If auth fails with `User test not allowed because account is locked`, rebuild with the current Dockerfile; it sets a throwaway password only to unlock the account while `PasswordAuthentication no` keeps login key-only.
+
+### Connecting from the IWA (ChromeOS)
+
+On ChromeOS the IWA's loopback is **not** the Crostini loopback, so `127.0.0.1:2222` from
+the IWA does not reach this container. Connect to the **Crostini IP** instead:
+
+```bash
+hostname -I   # in the Crostini terminal; use the first address as the IWA host
+```
+
+`docker compose build` (especially `--no-cache`) regenerates the container's host key, so a
+previously trusted fixture key will no longer match. The CLI smoke scripts handle this on
+their own, but the IWA stores the old key in IndexedDB. After a rebuild OpenSSH would
+normally fail hard with `REMOTE HOST IDENTIFICATION HAS CHANGED` and no yes/no prompt — the
+app now detects this, shows the changed-key prompt with the new fingerprint, and (on
+approval) clears the stale key and reconnects. You can also clear it manually under
+**Settings → Known hosts**.

@@ -1,0 +1,20 @@
+# ADR 0001: Near-Upstream Terminal Reset
+
+## Status
+
+Accepted
+
+## Context
+
+`iwa-ssh` has grown custom SSH manager behavior around an IWA/nassh experiment. The reset goal is to converge on Google Terminal and nassh behavior so the app can track upstream more easily.
+
+## Decision
+
+`iwa-ssh` follows Google Terminal/nassh architecture by default. Current custom route, session, profile, and dashboard UI is not preserved unless it matches upstream behavior or an approved local delta.
+
+## Consequences
+
+- Upstream behavior wins during conflicts.
+- Existing bespoke product surfaces are candidates for removal.
+- IWA packaging and Direct Sockets remain local adaptation concerns.
+

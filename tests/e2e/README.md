@@ -28,9 +28,9 @@ See [tests/fixtures/README.md](../fixtures/README.md).
 | Echo-stub UI below | `npm run dev` in normal browser | No |
 | [smoke-terminal.spec.md](./smoke-terminal.spec.md) | IWA (Dev Mode Proxy or `.swbn`) | Yes |
 
-**Simulated mode** shows an in-app tab strip. Native ChromeOS app tabs appear after tabbed IWA install (`display_override: ["tabbed"]`).
+Native ChromeOS app tabs appear after tabbed IWA install (`display_override: ["tabbed"]`). Browser/dev mode opens new sessions with regular browser tabs.
 
-## Setup (simulated mode)
+## Setup
 
 ```bash
 npm install
@@ -41,13 +41,13 @@ npm run dev:chrome     # same + opens /debug with CDP on 9222
 npm run smoke:echo     # optional automated UI checks
 ```
 
-Open `http://127.0.0.1:5173/` in Chrome. Confirm the tab strip badge reads **simulated tabs**.
+Open `http://127.0.0.1:5173/` in Chrome. Use `/debug` for read-only runtime and asset diagnostics.
 
 ## Smoke: shell input (echo stub)
 
 Runs against the local echo stub when upstream wassh is unavailable, or against a live session after SSH is wired.
 
-1. **Connect** or **Debug → Open session tab** with any host (e.g. `dev.local`).
+1. Open **Connect** with any host (e.g. `dev.local`).
 2. Wait for status **Connected** and a `$` prompt.
 3. Type `hello` — characters appear on screen.
 4. Press **Enter** — new line and `$` prompt (echo stub) or remote echo (live SSH).
@@ -59,7 +59,6 @@ Runs against the local echo stub when upstream wassh is unavailable, or against 
 
 1. Open a session tab; focus the terminal (`#terminal-host`).
 2. Shrink the browser window width/height — xterm reflows; prompt stays visible.
-3. On `/debug`, use **Open in this tab** for a session, then resize — same behavior.
 
 **Pass:** no blank terminal, no overlapping toolbar; `FitAddon` keeps content in view.
 
@@ -73,17 +72,6 @@ Runs against the local echo stub when upstream wassh is unavailable, or against 
 4. Paste at the prompt — full string appears.
 
 **Pass:** round-trip copy/paste works; no duplicated control characters.
-
-## Smoke: simulated tabs
-
-1. From **Home**, click **Connect** — tab strip shows **Connect** tab.
-2. **Debug → Open session tab** — new tab appears; first tab unchanged.
-3. Switch tabs via strip — correct route loads each time.
-4. **Ctrl+W** (or tab close button) — tab closes; another tab becomes active.
-5. **Ctrl+T** or **+** — new **Home** tab.
-6. **Duplicate tab** on a session — second session tab opens.
-
-**Pass:** open, switch, close, and duplicate behave without full page reload glitches.
 
 ## Reporting
 

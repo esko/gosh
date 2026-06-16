@@ -1,75 +1,89 @@
 # iwa-ssh
 
-ChromeOS **Isolated Web App (IWA)** SSH client. Reuses Chromium's **nassh/wassh** (OpenSSH in WASM) for the protocol stack and **xterm.js 6** for the terminal UI, with **Direct Sockets** (`TCPSocket`) for raw TCP instead of a browser extension relay.
+ChromeOS Isolated Web App terminal client. The project is being reset into a near-upstream port of Google Terminal + nassh, with upstream behavior as the default and a small set of documented local deltas.
+
+Primary upstream references:
+
+- Google Terminal: https://chromium.googlesource.com/apps/libapps/+/HEAD/terminal/
+- nassh: https://chromium.googlesource.com/apps/libapps/+/HEAD/nassh/
+- wassh: `upstream/libapps/wassh/`
+
+## Reset Direction
+
+The app should follow Google Terminal/nassh architecture unless IWA packaging or Direct Sockets requires an adaptation.
+
+Allowed local deltas:
+
+- xterm.js `6.1.0-beta` with kitty keyboard protocol support.
+- Arbitrary terminal font family strings, including Nerd Fonts.
+- Stronger theme, scrollback, and renderer/performance controls.
+- Mosh support through upstream nassh/wassh.
+
+Everything else should be upstream-shaped by default. Custom SSH-manager flows, simulated tabs, debug-first screens, fixture-specific UX, and bespoke dashboards are not reset goals.
+
+See:
+
+- [Reset PRD](docs/RESET_PRD.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Upstream Sync](docs/UPSTREAM_SYNC.md)
+- [Terminal Deltas](docs/TERMINAL_DELTAS.md)
+- [Mosh](docs/MOSH.md)
+- [Test Plan](docs/TEST_PLAN.md)
+- [Agent Guide](docs/AGENT_GUIDE.md)
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  IWA shell (Vite + TypeScript)                          │
-│  ┌─────────────┐  ┌──────────────┐  ┌─────────────────┐ │
-│  │ App router  │  │ Settings /   │  │ IndexedDB       │ │
-│  │ home/connect│  │ profiles UI  │  │ profiles, keys  │ │
-│  └──────┬──────┘  └──────────────┘  └─────────────────┘ │
-│         │                                               │
-│  ┌──────▼──────────────────────────────────────────┐   │
-│  │ TerminalAdapter  ←→  Xterm6TerminalAdapter       │   │
-│  └──────┬──────────────────────────────────────────┘   │
-│         │                                               │
-│  ┌──────▼──────────┐      ┌─────────────────────────┐  │
-│  │ NasshSession    │─────▶│ wassh via nassh (Direct Sockets) │  │
-│  │ (wassh bridge)  │      │ DirectSocketProbe = dev checks   │  │
-│  └─────────────────┘      └─────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-         ▲
-         │ upstream/libapps (git submodule)
-         │ nassh · wassh · libdot
-```
+```text
+IWA terminal shell
+  home, SSH/Mosh launch, profiles, settings, sessions
+        │
+        ├── TerminalEmulator
+        │     xterm.js 6.1 beta, kitty keyboard, fonts, themes, scrollback
+        │
+        ├── NasshRuntime adapter
+        │     upstream CommandInstance.connectTo(), ssh and mosh paths
+        │
+        └── IWA adapter layer
+              Chrome polyfills, Direct Sockets, asset URLs, web bundle constraints
 
-| Layer | Location | Notes |
-|-------|----------|-------|
-| UI / routing | `app/src/app-shell/`, `app/src/routes/` | Hash-free client router |
-| Terminal | `app/src/terminal/` | `TerminalAdapter` + xterm.js 6 |
-| SSH session | `app/src/ssh/` | `NasshSession` + `NasshCommandBridge` (wassh via Direct Sockets) |
-| Persistence | `app/src/storage/` | Profiles, settings, identities, known hosts |
-| Upstream | `upstream/libapps/` | Chromium libapps (nassh/wassh) |
+Copied upstream assets
+  nassh, wassh, wasi-js-bindings, OpenSSH/Mosh WASM plugin files
+```
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # Vite dev server → http://localhost:5173
-npm run dev:chrome  # Vite + Chrome on /debug (CDP port 9222)
-npm run build    # typecheck + production bundle → dist/
+npm run dev
+npm run dev:chrome
+npm run fetch-assets
 npm run typecheck
-npm run preview  # serve dist/ locally
+npm run build
 ```
 
-**IWA install on ChromeOS** (local only — Dev Mode Proxy or `.swbn` from disk): see [docs/IWA_DEV_SETUP.md](docs/IWA_DEV_SETUP.md). Reference apps: [IWA Kitchen Sink](https://github.com/chromeos/iwa-sink), [Telnet client](https://github.com/GoogleChromeLabs/telnet-client). Direct Sockets: [Chrome docs](https://developer.chrome.com/docs/iwa/direct-sockets).
+IWA install on ChromeOS is documented in [docs/IWA_DEV_SETUP.md](docs/IWA_DEV_SETUP.md). Upstream asset handling is documented in [docs/UPSTREAM_SYNC.md](docs/UPSTREAM_SYNC.md) and [docs/UPSTREAM_NASSH_NOTES.md](docs/UPSTREAM_NASSH_NOTES.md).
 
-**Upstream nassh/wassh build and submodule:** see [docs/UPSTREAM_NASSH_NOTES.md](docs/UPSTREAM_NASSH_NOTES.md).
-
-Initialize the libapps submodule:
+Initialize upstream libapps when needed:
 
 ```bash
 git submodule update --init --depth 1 upstream/libapps
 ```
 
-## MVP status & roadmap
+## Verification
 
-| Phase | Focus | Status |
-|-------|-------|--------|
-| **0** | Repo bootstrap, app shell, echo stub session, Direct Sockets probe | Done |
-| **1** | Upstream libapps assets; wire nassh CommandInstance + wassh | Done (IWA verify on ChromeOS) |
-| **2** | Terminal adapter, xterm.js 6 beta, session I/O, resize/window-change | Done |
-| **3** | Profiles, connect screen, settings shell | Done |
-| **4** | Tabbed manifest, appearance/keyboard settings, known_hosts, key import | Mostly done (native tabs need signed IWA install) |
-| **5** | E2E smoke tests (vim/tmux/fish), signed bundle, security notes | Partial (smoke runner + bundle scripts; manual vim/tmux/fish) |
+Final reset acceptance requires:
 
-Track work on the [issue tracker](https://github.com/esko/iwa-ssh/issues).
+- `npm run typecheck`
+- `npm run build`
+- reset unit tests
+- installed-IWA SSH smoke to a known working host
+- installed-IWA Mosh smoke to a host with `mosh-server`
+- live font/theme application
+- kitty keyboard option propagation
+- large-output and long-scrollback smoke
 
-Security model and threat assumptions: [docs/SECURITY.md](docs/SECURITY.md).
+Device results should be recorded in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## License
 
-Upstream libapps is Chromium-licensed. See submodule tree for details.
+Upstream libapps is Chromium-licensed. xterm.js is MIT. Preserve upstream notices for copied runtime and plugin assets.

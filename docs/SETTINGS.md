@@ -77,7 +77,7 @@ Keyboard settings are loaded from IndexedDB in `renderSession()` and passed to `
 | Setting | Where applied |
 |---------|----------------|
 | `ctrlShiftCopyPaste`, `ctrlCopyPaste` | Custom key handler on xterm (`attachCustomKeyEventHandler`) |
-| `ctrlTNewTab`, `ctrlWCloseTab`, `ctrlTabSwitch`, `altNumberSwitchTab` | `TabManager` window keydown handler (simulated tabs only) |
+| `ctrlTNewTab`, `ctrlWCloseTab`, `ctrlTabSwitch`, `altNumberSwitchTab` | Reserved for native tab/window handling; simulated tabs were removed in the reset |
 | `copyOnSelect` | `mouseup` on terminal element |
 | `rightClickPaste`, `middleClickPaste` | `contextmenu` / `auxclick` on terminal element |
 | `scrollToBottomOnKeypress` | xterm `scrollOnUserInput` option |
@@ -152,4 +152,4 @@ Keyed by `host:port` in IndexedDB. While `isHostKeyVerificationStubbed()` is tru
 
 ## Import / export
 
-`exportData()` writes JSON with `settings`, `profiles`, `knownHosts`, and identity metadata (not decrypted private keys). Import validates schema before merge (planned).
+Settings, profiles, known hosts, and identity metadata live in IndexedDB. Backup/import is deferred until a reset-compatible storage export format is specified.

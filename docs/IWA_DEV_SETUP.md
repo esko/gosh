@@ -99,7 +99,7 @@ Dev Mode Proxy serves your **live** Vite server — you usually do **not** need 
 | Upstream assets | ready (`npm run fetch-assets`) |
 | Target host | reachable on port 22 from the Chromebook |
 
-See [tests/e2e/README.md](../tests/e2e/README.md) for terminal UI smoke tests (simulated tabs) and [tests/e2e/smoke-terminal.spec.md](../tests/e2e/smoke-terminal.spec.md) for vim/tmux/fish once SSH is wired.
+See [tests/e2e/README.md](../tests/e2e/README.md) for terminal UI smoke tests and [tests/e2e/smoke-terminal.spec.md](../tests/e2e/smoke-terminal.spec.md) for vim/tmux/fish once SSH is wired.
 
 ## Local-only workflow (recommended)
 

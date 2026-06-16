@@ -1,136 +1,118 @@
 # Architecture
 
-ChromeOS IWA SSH client. Keeps nassh/wassh for SSH; replaces hterm with an xterm.js 6 adapter; packages as a signed web bundle.
+`iwa-ssh` is resetting toward a near-upstream Google Terminal + nassh architecture. The app is an Isolated Web App shell around upstream-shaped terminal flows, upstream nassh/wassh runtime code, xterm.js `6.1.0-beta`, and a thin IWA/Direct Sockets adapter layer.
 
-## Stack
-
-```text
-┌─────────────────────────────────────────────────────────┐
-│  IWA window (tabbed PWA, isolated-app:// origin)        │
-├─────────────────────────────────────────────────────────┤
-│  Routes: /, /connect, /session/:id, /settings, /profiles│
-├──────────────┬──────────────────────┬───────────────────┤
-│  App shell   │  Xterm6TerminalAdapter│  Settings / UI   │
-│  (router)    │  (TerminalAdapter)    │  (profiles, etc.)│
-├──────────────┴──────────┬───────────┴───────────────────┤
-│  NasshSession           │  IndexedDB (settings, profiles)│
-├─────────────────────────┴───────────────────────────────┤
-│  wassh (OpenSSH WASM) via nassh CommandInstance (Direct Sockets) │
-└─────────────────────────┬───────────────────────────────┘
-                          │ TCP :22
-                          ▼
-                    remote sshd
-```
-
-No proxy, Crostini daemon, or local shell. Direct Sockets only for MVP.
-
-## What we keep from upstream libapps
-
-| Component | Role |
-|-----------|------|
-| `wassh/` | WASI syscall bridge, socket abstraction, SSH client runtime |
-| `ssh_client/` | OpenSSH compiled to WASM |
-| `nassh/` (subset) | Session/command logic, known_hosts, identity/key handling |
-
-See [UPSTREAM_NASSH_NOTES.md](./UPSTREAM_NASSH_NOTES.md) for build and integration details.
-
-## What we replace
-
-**hterm** → **`TerminalAdapter`** + **`Xterm6TerminalAdapter`**
+## Target Shape
 
 ```text
-app/src/terminal/
-  TerminalAdapter.ts       # interface: open, write, onInput/onResize (disposable), focus, dispose
-  Xterm6TerminalAdapter.ts # @xterm/xterm 6 + fit, web-links, search, clipboard
+┌────────────────────────────────────────────────────────────┐
+│ IWA terminal shell                                          │
+│  home, SSH/Mosh launch, profile picker, settings, sessions  │
+├────────────────────────────────────────────────────────────┤
+│ Upstream-shaped UI modules                                  │
+│  SSH/Mosh dialog, profiles, terminal settings               │
+├──────────────────────────────┬─────────────────────────────┤
+│ TerminalEmulator              │ NasshRuntime adapter         │
+│ xterm 6.1 beta                │ CommandInstance.connectTo()  │
+│ kitty keyboard, fonts, theme  │ ssh and mosh command paths   │
+├──────────────────────────────┴─────────────────────────────┤
+│ IWA adapter layer                                            │
+│ Chrome polyfills, Direct Sockets, assets, permissions, CSP   │
+├──────────────────────────────────────────────────────────────┤
+│ Copied upstream assets: nassh, wassh, wasi-js-bindings, wasm │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-`NasshSession` bridges wassh I/O to the adapter (stdin/stdout, window-change on resize). hterm-specific UI and preferences are not carried over.
+Upstream behavior wins when current app behavior conflicts with Google Terminal/nassh. Local code exists to adapt upstream to IWA packaging, Direct Sockets, and the four approved product deltas.
 
-### Phase 1: nassh session bridge (NasshIoShim)
+## Module Boundaries
 
-Upstream `CommandInstance` still expects `hterm.Terminal.IO`. We do not mount hterm UI; `NasshIoShim` satisfies the API and pipes bytes through xterm:
+| Layer | Responsibility | Current / Target location |
+| --- | --- | --- |
+| Terminal shell | App bootstrap, navigation, session lifecycle, install/runtime checks | `app/src/app-shell/`, `app/src/routes/` |
+| SSH/Mosh dialog | Upstream-style command parsing, protocol selection, profile save/load | target `app/src/terminal-shell/` or `app/src/connections/` |
+| Terminal emulator | Own xterm construction and all terminal capabilities | `app/src/terminal/` |
+| Settings | Terminal preferences, profiles, fonts, themes, scrollback, performance | `app/src/settings/`, settings route |
+| nassh runtime | Small adapter over upstream `CommandInstance.connectTo()` | `app/src/ssh/` |
+| IWA adapter | Chrome API polyfills, Direct Sockets gates, web bundle and asset URLs | `app/src/ssh/*Polyfill*`, `app/src/ssh/*Bootstrap*`, `vite.config.ts` |
+| Upstream assets | Generated/copy-only nassh, wassh, WASI, plugin WASM, locales | `app/upstream/` |
 
-```text
-app/src/ssh/
-  NasshSession.ts          # tries NasshCommandBridge, falls back to echo stub
-  NasshCommandBridge.ts    # dynamic import upstream CommandInstance + connectTo
-  NasshIoShim.ts           # CSP-safe hterm.Terminal + hterm.Terminal.IO → TerminalAdapter
-  upstreamAssets.ts        # HEAD checks for /upstream manifest + worker + wasm
-  upstreamUrls.ts          # literal @vite-ignore imports for nassh modules
+## Terminal Shell
+
+The shell should mirror Google Terminal concepts:
+
+- Home shows recent and saved connections.
+- SSH/Mosh launch is a focused dialog or page, not a bespoke dashboard.
+- Session views are terminal-first.
+- Settings are grouped around terminal behavior and connection profiles.
+- Native IWA/tab behavior is preferred over simulated in-app tabs unless upstream behavior requires an app surface.
+
+## SSH/Mosh Dialog And Profiles
+
+Connection input should follow upstream parsing semantics from `terminal_ssh_dialog.js` and nassh command expectations. The local profile model should represent the final connection intent:
+
+```ts
+type TerminalProtocol = 'ssh' | 'mosh';
+
+interface TerminalConnectionSpec {
+  protocol: TerminalProtocol;
+  username?: string;
+  hostname: string;
+  port?: number;
+  args: string[];
+  profileId?: string;
+}
 ```
 
-| Direction | Path |
-|-----------|------|
-| SSH → screen | `interpret` → `TerminalAdapter.write` → xterm |
-| keyboard → SSH | xterm `onData` → `io.sendString` → wassh stdin |
-| resize | `adapter.onResize` → `screenSize` + `io.onTerminalResize_` → SIGWINCH |
-| passphrase | `CommandInstance.secureInput` → `SecureInputPrompt` modal |
-| status overlays | `io.showOverlay` → dim banner text in xterm |
+Parser tests must cover plain `ssh user@host`, `ssh://` URLs, `-p`, quoted usernames, and explicit Mosh selection.
 
-Upstream JS is loaded at runtime from `app/upstream/` (`npm run fetch-assets`), not bundled by Vite. `vite.config.ts` serves `/upstream/*` via `upstreamStaticDev` and copies to `dist/upstream/` on build; dev/preview set COOP/COEP for `SharedArrayBuffer` (wassh worker).
+## Terminal Emulator
 
-If assets are missing, `NasshSession` keeps the Phase 0 local echo stub so the session UI remains usable.
+`TerminalEmulator` owns xterm.js integration:
 
-## Direct Sockets
+- create/open/dispose lifecycle
+- write/input/resize
+- copy, paste, search, and bell behavior
+- theme and font live application
+- scrollback and renderer/performance settings
+- `vtExtensions.kittyKeyboard` propagation
 
-SSH TCP is opened by upstream wassh inside nassh `CommandInstance` (`--field-trial-direct-sockets`).
+Upstream hterm UI is not ported. nassh receives a compatibility I/O surface only where `CommandInstance` requires one.
 
-`DirectSocketProbe.ts` is **not** the live transport — it exposes `isDirectSocketsAvailable()` and `openDirectTcpSocket()` for dev probes (e.g. `/debug`):
+## Settings
 
-- Manifest `permissions_policy` per [Direct Sockets (Chrome docs)](https://developer.chrome.com/docs/iwa/direct-sockets) and [IWA Kitchen Sink](https://github.com/chromeos/iwa-sink)
-- Requires IWA install with `direct-sockets` permission (ChromeOS 120+)
-- Reference terminal client: [GoogleChromeLabs/telnet-client](https://github.com/GoogleChromeLabs/telnet-client)
-- Upstream nassh 0.78+ enables Direct Sockets by default
+Settings should preserve exact user values where that matters:
 
-UDP/Mosh paths exist upstream but are deferred in this fork.
+- Arbitrary CSS `font-family` strings, including fallback chains.
+- xterm theme JSON import/export.
+- ANSI palette editing.
+- Dark and light presets.
+- Per-profile overrides where useful.
+- Scrollback size and renderer/performance options.
 
-## Routing
+Settings changes that can apply live should not require reconnecting.
 
-Hash-free history API router (`app/src/app-shell/router.ts`):
+## Nassh Runtime
 
-| Path | Purpose |
-|------|---------|
-| `/` | Home — recent profiles, quick actions |
-| `/connect` | Connection form; `?profile=` pre-fills from saved profile |
-| `/session/:id` | Full-window terminal session |
-| `/settings` | Appearance, keyboard, behavior; `?popup=1` for popup window |
-| `/profiles` | Profile manager |
+Runtime code wraps upstream nassh instead of reimplementing SSH or Mosh:
 
-Each SSH session is intended to run in a **native app tab** (`display_override: ["tabbed"]` in the web manifest), not an in-app tab strip.
+- `CommandInstance.connectTo()` remains the core connection path.
+- SSH uses upstream wassh/OpenSSH WASM over Direct Sockets.
+- Mosh uses nassh's existing mosh command path and `mosh-client.wasm`.
+- Host key, identity, locale, and known-host adaptation should stay in the runtime adapter layer.
 
-Session connection params are passed via `sessionStorage` until wassh wiring is complete.
+## IWA Adapter Layer
 
-## Storage
+IWA-specific behavior belongs outside emulator and upstream-shaped UI:
 
-IndexedDB database `iwa-ssh` (`app/src/storage/indexedDb.ts`):
+- Chrome extension API polyfills required by nassh.
+- Direct Sockets availability and error reporting.
+- asset URL resolution for `/upstream/*`
+- COOP/COEP and SharedArrayBuffer requirements.
+- web bundle manifest and install diagnostics.
 
-| Store | Contents |
-|-------|----------|
-| `settings` | Single `AppSettings` record (`key: 'app'`) |
-| `profiles` | SSH profiles, indexed by `lastConnectedAt` |
-| `identities` | SSH keys (`privateKeyPemBytesDevOnly` — raw PEM until WebCrypto) |
-| `knownHosts` | Host key fingerprints (`host:port` key); stub-era entries may be invalid |
+Upstream modules should not learn app-specific storage, route, or UI concepts.
 
-`exportData()` produces JSON for backup (private key material omitted; `hasPrivateKeyDevOnly` flag only).
+## Obsolete Code Policy
 
-## Build output
-
-- **Dev:** Vite serves `app/` on port 5173; use IWA Dev Mode Proxy for Direct Sockets.
-- **Prod:** `npm run build` → `dist/` static assets → `npm run bundle:iwa` → unsigned/signed `.swbn`.
-
-Vite excludes xterm 6 from re-minification (`vite.config.ts`) — re-minifying breaks the terminal bundle.
-
-## Phases (summary)
-
-| Phase | Goal |
-|-------|------|
-| 0 | IWA + Direct Sockets + upstream build verified |
-| 1 | xterm adapter wired to wassh session I/O via hterm.IO stub + CommandInstance |
-| 2 | App shell, routes, tabbed manifest |
-| 3 | Settings persistence, import/export |
-| 4 | Security hardening (see [SECURITY.md](./SECURITY.md)) |
-| 5 | Polish — reconnect overlay, search, command palette |
-
-## Deferred
-
-Mosh, SFTP UI, port forwarding, agent forwarding, passkeys, jump hosts, multi-pane splits.
+Custom simulated tabs, debug-first routes, old session overlays, fixture-driven product paths, and bespoke SSH manager flows are removal candidates during the reset. Keep them only if they become thin diagnostics or match upstream behavior.

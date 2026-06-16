@@ -119,7 +119,7 @@ New imports always use `Identity.encryptedPrivateKey` — a versioned blob (`for
 - **known_hosts sync** (`app/src/ssh/nasshKnownHosts.ts`): stages trusted lines into nassh FS before connect; syncs back after `Permanently added …`.
 - **Connect gate** (`app/src/routes/connect.ts`): stub prompt only when upstream assets are missing.
 - **Settings UI**: list and remove trusted hosts and SSH identities.
-- **Dev inspector** (`/debug`): host-trust probe (stub mode).
+- **Debug inspector** (`/debug`): read-only diagnostics for runtime capabilities and upstream assets.
 
 ### Dev-only / echo stub
 
