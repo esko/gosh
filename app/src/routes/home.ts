@@ -44,8 +44,8 @@ export async function renderHome(root: HTMLElement): Promise<void> {
     `<button type="button" id="header-connect" class="btn primary">Connect</button>`,
   );
 
-  root.querySelector('#new-connection')?.addEventListener('click', () => Router.openTab('/connect', 'Connect'));
-  root.querySelector('#header-connect')?.addEventListener('click', () => Router.openTab('/connect', 'Connect'));
+  root.querySelector('#new-connection')?.addEventListener('click', () => Router.openTab('/connect'));
+  root.querySelector('#header-connect')?.addEventListener('click', () => Router.openTab('/connect'));
   root.querySelector('#manage-profiles')?.addEventListener('click', () => Router.go('/profiles'));
   root.querySelector('#open-settings')?.addEventListener('click', () => Router.go('/settings'));
   root.querySelector('#open-dev')?.addEventListener('click', () => Router.go('/debug'));

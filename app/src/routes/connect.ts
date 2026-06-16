@@ -9,7 +9,6 @@ import { parseTerminalConnectionCommand } from '../connections/sshCommandParser'
 import { escapeHtml, shell } from './shared';
 
 export type StoredSessionParams = {
-  id: string;
   profileId?: string;
   protocol?: 'ssh' | 'mosh';
   host: string;
@@ -20,22 +19,42 @@ export type StoredSessionParams = {
   startupCommand?: string;
 };
 
-function sessionStorageKey(id: string): string {
-  return `session:${id}`;
+/**
+ * Encode the connection into the session URL, mirroring upstream nassh/Terminal
+ * which carry the connection (profile-id or ssh:// string) in the URL rather
+ * than in storage. A new tab/window reconstructs the session from its own URL,
+ * so it works across browsing contexts. Only non-secret params live here; key
+ * material and passphrases never do.
+ */
+export function buildSessionPath(id: string, params: StoredSessionParams): string {
+  const q = new URLSearchParams();
+  q.set('host', params.host);
+  q.set('port', String(params.port));
+  q.set('user', params.username);
+  if (params.protocol) q.set('protocol', params.protocol);
+  if (params.profileId) q.set('profile', params.profileId);
+  if (params.identityId) q.set('identity', params.identityId);
+  if (params.connectionArgs) q.set('args', params.connectionArgs);
+  if (params.startupCommand) q.set('startup', params.startupCommand);
+  return `/session/${encodeURIComponent(id)}?${q.toString()}`;
 }
 
-export function storeSessionParams(params: StoredSessionParams): void {
-  sessionStorage.setItem(sessionStorageKey(params.id), JSON.stringify(params));
-}
-
-export function loadSessionParams(id: string): StoredSessionParams | null {
-  const raw = sessionStorage.getItem(sessionStorageKey(id));
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as StoredSessionParams;
-  } catch {
-    return null;
-  }
+/** Reconstruct connection params from a session URL query (see buildSessionPath). */
+export function sessionParamsFromQuery(query: URLSearchParams): StoredSessionParams | null {
+  const host = query.get('host')?.trim();
+  const username = query.get('user')?.trim();
+  if (!host || !username) return null;
+  const port = Number(query.get('port'));
+  return {
+    host,
+    username,
+    port: Number.isFinite(port) && port > 0 ? port : 22,
+    protocol: query.get('protocol') === 'mosh' ? 'mosh' : 'ssh',
+    profileId: query.get('profile') || undefined,
+    identityId: query.get('identity') || undefined,
+    connectionArgs: query.get('args') || undefined,
+    startupCommand: query.get('startup') || undefined,
+  };
 }
 
 export async function renderConnect(root: HTMLElement, query: URLSearchParams): Promise<void> {
@@ -174,18 +193,17 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
     }
 
     const sessionId = crypto.randomUUID();
-    storeSessionParams({
-      id: sessionId,
-      profileId: savedProfileId,
-      protocol,
-      host,
-      port,
-      username,
-      identityId,
-      connectionArgs,
-      startupCommand,
-    });
-
-    Router.openTab(`/session/${encodeURIComponent(sessionId)}`, `${protocol} ${username}@${host}`);
+    Router.openTab(
+      buildSessionPath(sessionId, {
+        profileId: savedProfileId,
+        protocol,
+        host,
+        port,
+        username,
+        identityId,
+        connectionArgs,
+        startupCommand,
+      }),
+    );
   });
 }

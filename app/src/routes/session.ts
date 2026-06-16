@@ -8,7 +8,7 @@ import { subscribeSettingsChanged } from '../settings/settingsBroadcast';
 import type { ConnectionStatus, SessionStatusMeta } from '../settings/types';
 import { TerminalEmulator } from '../terminal/TerminalEmulator';
 import { NasshRuntime } from '../ssh/NasshRuntime';
-import { loadSessionParams } from './connect';
+import { sessionParamsFromQuery } from './connect';
 import { escapeHtml } from './shared';
 
 const STATUS_LABELS: Record<ConnectionStatus, string> = {
@@ -33,7 +33,7 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
   const debugFlags = { ...getDebugFlags(), ...parseDebugFlags(`?${query.toString()}`) };
   applyDebugFlags(debugFlags);
 
-  const params = loadSessionParams(sessionId);
+  const params = sessionParamsFromQuery(query);
   if (!params) {
     root.innerHTML = `
       <div class="page session-page">
@@ -215,7 +215,7 @@ export async function renderSession(root: HTMLElement, sessionId: string, query 
     focusTerminal?.();
   });
   root.querySelector('#session-settings')?.addEventListener('click', () => {
-    Router.openTab('/settings?popup=1', 'Settings');
+    Router.openTab('/settings?popup=1');
   });
   root.querySelector('#session-debug-download')?.addEventListener('click', () => {
     downloadTerminalCapture(sessionId);

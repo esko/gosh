@@ -84,8 +84,10 @@ export class Router {
     window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
-  /** Open a new app tab (simulated strip in dev, browser tab in native IWA). */
-  static openTab(path: string, title?: string): void {
-    window.open(path, '_blank', title ? `noopener,noreferrer` : 'noopener,noreferrer');
+  /** Open the path in a new app tab (native tab strip in a tabbed IWA). */
+  static openTab(path: string): void {
+    // No window-features string: passing one makes Chrome open a popup window
+    // instead of a tab. A tabbed-mode IWA opens a real tab for a bare _blank.
+    window.open(path, '_blank');
   }
 }
