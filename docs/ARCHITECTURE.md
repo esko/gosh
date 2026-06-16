@@ -46,6 +46,30 @@ app/src/terminal/
 
 `NasshSession` bridges wassh I/O to the adapter (stdin/stdout, window-change on resize). hterm-specific UI and preferences are not carried over.
 
+### Phase 1: nassh session bridge (hterm.IO stub)
+
+Upstream `CommandInstance` still expects `hterm.Terminal.IO`. We do not mount hterm UI; a stub terminal satisfies the API and pipes bytes through xterm:
+
+```text
+app/src/ssh/
+  NasshSession.ts          # tries NasshCommandBridge, falls back to echo stub
+  NasshCommandBridge.ts      # dynamic import upstream CommandInstance + connectTo
+  HtermIoBridge.ts           # stub hterm.Terminal + hterm.Terminal.IO → TerminalAdapter
+  upstreamAssets.ts          # HEAD checks for /upstream manifest + worker + wasm
+  upstreamUrls.ts            # runtime import URLs (__IWA_UPSTREAM_BASE__)
+```
+
+| Direction | Path |
+|-----------|------|
+| SSH → screen | `stubTerminal.interpret` → `TerminalAdapter.write` → xterm |
+| keyboard → SSH | xterm `onData` → `io.sendString` → wassh stdin |
+| resize | `adapter.onResize` → `screenSize` + `io.onTerminalResize_` → SIGWINCH |
+| passphrase | `CommandInstance.secureInput` → `prompt()` (MVP) |
+
+Upstream JS is loaded at runtime from `app/public/upstream/` (`npm run fetch-assets`), not bundled by Vite. `vite.config.ts` defines worker/plugin URL constants; dev/preview set COOP/COEP for `SharedArrayBuffer` (wassh worker).
+
+If assets are missing, `NasshSession` keeps the Phase 0 local echo stub so the session UI remains usable.
+
 ## Direct Sockets transport
 
 `DirectSocketTransport.ts` wraps the IWA `TCPSocket` API and exposes a read/write handle for wassh:
@@ -97,7 +121,7 @@ Vite excludes xterm 6 from re-minification (`vite.config.ts`) — re-minifying b
 | Phase | Goal |
 |-------|------|
 | 0 | IWA + Direct Sockets + upstream build verified |
-| 1 | xterm adapter wired to wassh session I/O |
+| 1 | xterm adapter wired to wassh session I/O via hterm.IO stub + CommandInstance |
 | 2 | App shell, routes, tabbed manifest |
 | 3 | Settings persistence, import/export |
 | 4 | Security hardening (see [SECURITY.md](./SECURITY.md)) |

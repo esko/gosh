@@ -1,0 +1,66 @@
+/**
+ * Minimal upstream libapps types for Phase 1 nassh/hterm bridge (not full Closure typings).
+ */
+
+export type HtermStubTerminal = {
+  interpret: (message: string) => void;
+  clearHome: () => void;
+  setProfile: (profileId: string) => void;
+  screenSize: { width: number; height: number };
+  showOverlay: (message: unknown, timeout?: number | null) => void;
+  hideOverlay: () => void;
+  io: HtermTerminalIo;
+};
+
+export type HtermTerminalIo = {
+  terminal_: HtermStubTerminal;
+  sendString: (data: string) => void;
+  onVTKeystroke: (data: string) => void;
+  onTerminalResize_: (width: number, height: number) => void;
+  onTerminalResize: (width: number, height: number) => void;
+  print: (data: string) => void;
+  println: (data: string) => void;
+  push: () => HtermTerminalIo;
+  pop: () => void;
+  showOverlay: (message: unknown, timeout?: number | null) => void;
+  hideOverlay: () => void;
+};
+
+export type HtermNamespace = {
+  Terminal: {
+    IO: new (terminal: HtermStubTerminal) => HtermTerminalIo;
+    DEFAULT_PROFILE_ID: string;
+  };
+};
+
+export type NasshConnectParams = {
+  hostname: string;
+  port?: number;
+  username: string;
+  command?: string;
+  nasshOptions?: string;
+};
+
+export type NasshCommandInstance = {
+  connectTo: (params: NasshConnectParams) => Promise<void>;
+  secureInput: (prompt: string, bufLen: number, echo: boolean) => Promise<string>;
+  onPluginExit: (code: number) => Promise<void>;
+  terminateProgram_: () => void;
+  exit: (code: number, noReconnect: boolean) => void;
+};
+
+export type NasshCommandInstanceCtor = new (argv: {
+  io: HtermTerminalIo;
+  syncStorage: unknown;
+  onExit?: (code: number) => void;
+  terminalLocation?: { href: string; hash: string; replace: (url: string) => void };
+}) => NasshCommandInstance;
+
+export type NasshJsModule = {
+  getSyncStorage: () => unknown;
+  setupForWebApp: () => Promise<void>;
+};
+
+export type NasshCommandModule = {
+  CommandInstance: NasshCommandInstanceCtor;
+};

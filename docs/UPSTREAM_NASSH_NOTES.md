@@ -79,7 +79,91 @@ Our `DirectSocketTransport.ts` mirrors the browser API surface wassh expects.
 
 ## Building for this fork
 
-Long-term build plan:
+### Phase 1: fetch assets into `app/public/upstream/`
+
+Copied assets are served by Vite at `/upstream/…` (from `app/public/upstream/`). Run after submodule init:
+
+```bash
+# 1. Submodule (once)
+git submodule update --init --depth 1 upstream/libapps
+
+# 2. Download OpenSSH WASM plugin (or let fetch-assets do it)
+cd upstream/libapps/nassh && ./bin/plugin && cd ../../..
+
+# 3. Copy wassh worker + WASI bindings + plugin WASM into public/
+npm run fetch-assets
+```
+
+`npm run fetch-assets` runs `scripts/fetch-upstream-assets.mjs`, which:
+
+1. Executes `upstream/libapps/nassh/bin/plugin` when possible (downloads `0.77.tar.xz` from ChromeOS localmirror per `nassh/fetch.json`)
+2. Copies JS/WASM into `app/public/upstream/` preserving libapps-relative import paths
+3. Writes `app/public/upstream/manifest.json` and prints a file manifest
+
+**Example manifest output** (truncated; full list is 200+ files):
+
+```text
+Copied upstream asset manifest:
+────────────────────────────────────────────────────────────────────────
+  2132.9 KiB  plugin/wasm/ssh.wasm
+     1.2 KiB  wassh/js/worker.js
+    56.1 KiB  nassh/js/nassh_command_instance.js
+     0.9 KiB  libdot/index.js
+     1.2 KiB  hterm/index.js
+    31.9 KiB  manifest.json
+    …
+────────────────────────────────────────────────────────────────────────
+217 file(s), 17682.9 KiB total → app/public/upstream/
+```
+
+`manifest.json` fields:
+
+| Field | Example |
+|-------|---------|
+| `generatedAt` | ISO timestamp |
+| `upstreamBase` | `/upstream` |
+| `workerUrl` | `/upstream/wassh/js/worker.js` |
+| `pluginBase` | `/upstream/plugin` |
+| `defaultSshWasm` | `/upstream/plugin/wasm/ssh.wasm` |
+| `nasshCommandUrl` | `/upstream/nassh/js/nassh_command_instance.js` |
+| `files` | `{ dest, bytes, source }[]` per copied file |
+
+Runtime helpers in `app/src/ssh/upstreamAssets.ts`: `areUpstreamAssetsReady()`, `getWasshWorkerUrl()`, `getPluginBase()`.
+
+**Layout after a successful fetch:**
+
+```text
+app/public/upstream/
+  manifest.json
+  wassh/js/
+    worker.js          # module worker entry (imports wasi-js-bindings)
+    process.js, sockets.js, syscall_*.js, vfs.js, constants.js, …
+  wasi-js-bindings/
+    index.js
+    js/…               # WASI runtime used by the worker
+  plugin/
+    .hash
+    wasm/
+      ssh.wasm         # default OpenSSH client (nassh sshClientVersion_ = "wasm")
+      scp.wasm, sftp.wasm, mosh-client.wasm, ssh-keygen.wasm
+    wasm-openssh-8.6/  # alternate plugin tree (--ssh-client-version)
+      ssh.wasm, …
+```
+
+**Vite worker / plugin URLs** (defined in `vite.config.ts` for Phase 2 wiring):
+
+| Constant | Value |
+|----------|-------|
+| `__IWA_UPSTREAM_BASE__` | `/upstream` |
+| `__IWA_WASSH_WORKER_URL__` | `/upstream/wassh/js/worker.js` |
+| `__IWA_PLUGIN_BASE__` | `/upstream/plugin` |
+| `__IWA_DEFAULT_SSH_WASM__` | `/upstream/plugin/wasm/ssh.wasm` |
+
+If `bin/plugin` or the submodule is unavailable, `fetch-assets` writes a stub tree under `app/public/upstream/` with `README.md` and `.gitkeep` placeholders (exit code 1).
+
+**Vite serving:** dev/preview set `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` (required for `SharedArrayBuffer` in wassh). The `iwa-upstream-asset-headers` plugin in `vite.config.ts` also forces `Content-Type: application/wasm` for `/upstream/**/*.wasm`.
+
+### Long-term build plan
 
 1. Build/copy `ssh_client` WASM plugin into a path Vite can import or serve from `app/public/`
 2. Bundle wassh JS modules (or pre-build with Rollup) alongside the Vite app

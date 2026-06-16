@@ -36,16 +36,18 @@ export async function renderHome(root: HTMLElement): Promise<void> {
           <button type="button" id="new-connection" class="btn primary">New connection</button>
           <button type="button" id="manage-profiles" class="btn">Manage profiles</button>
           <button type="button" id="open-settings" class="btn">Settings</button>
+          ${import.meta.env.DEV ? '<button type="button" id="open-dev" class="btn">Dev inspector</button>' : ''}
         </div>
       </section>
     `,
     `<button type="button" id="header-connect" class="btn primary">Connect</button>`,
   );
 
-  root.querySelector('#new-connection')?.addEventListener('click', () => Router.go('/connect'));
-  root.querySelector('#header-connect')?.addEventListener('click', () => Router.go('/connect'));
+  root.querySelector('#new-connection')?.addEventListener('click', () => Router.openTab('/connect', 'Connect'));
+  root.querySelector('#header-connect')?.addEventListener('click', () => Router.openTab('/connect', 'Connect'));
   root.querySelector('#manage-profiles')?.addEventListener('click', () => Router.go('/profiles'));
   root.querySelector('#open-settings')?.addEventListener('click', () => Router.go('/settings'));
+  root.querySelector('#open-dev')?.addEventListener('click', () => Router.go('/dev'));
 
   root.querySelectorAll('[data-profile-id]').forEach((el) => {
     el.addEventListener('click', () => {

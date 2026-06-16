@@ -1,0 +1,1090 @@
+{
+  "generatedAt": "2026-06-16T08:49:06.467Z",
+  "upstreamBase": "/upstream",
+  "workerUrl": "/upstream/wassh/js/worker.js",
+  "pluginBase": "/upstream/plugin",
+  "defaultSshWasm": "/upstream/plugin/wasm/ssh.wasm",
+  "nasshCommandUrl": "/upstream/nassh/js/nassh_command_instance.js",
+  "files": [
+    {
+      "dest": "wassh/js/chrome_net_error_list.js",
+      "bytes": 10654,
+      "source": "upstream/libapps/wassh/js/chrome_net_error_list.js"
+    },
+    {
+      "dest": "wassh/js/constants.js",
+      "bytes": 424,
+      "source": "upstream/libapps/wassh/js/constants.js"
+    },
+    {
+      "dest": "wassh/js/process.js",
+      "bytes": 1414,
+      "source": "upstream/libapps/wassh/js/process.js"
+    },
+    {
+      "dest": "wassh/js/sockets.js",
+      "bytes": 53611,
+      "source": "upstream/libapps/wassh/js/sockets.js"
+    },
+    {
+      "dest": "wassh/js/syscall_entry.js",
+      "bytes": 13122,
+      "source": "upstream/libapps/wassh/js/syscall_entry.js"
+    },
+    {
+      "dest": "wassh/js/syscall_handler.js",
+      "bytes": 26144,
+      "source": "upstream/libapps/wassh/js/syscall_handler.js"
+    },
+    {
+      "dest": "wassh/js/vfs.js",
+      "bytes": 27893,
+      "source": "upstream/libapps/wassh/js/vfs.js"
+    },
+    {
+      "dest": "wassh/js/worker.js",
+      "bytes": 1245,
+      "source": "upstream/libapps/wassh/js/worker.js"
+    },
+    {
+      "dest": "wasi-js-bindings/index.js",
+      "bytes": 706,
+      "source": "upstream/libapps/wasi-js-bindings/index.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/dataview.js",
+      "bytes": 14108,
+      "source": "upstream/libapps/wasi-js-bindings/js/dataview.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/process.js",
+      "bytes": 9399,
+      "source": "upstream/libapps/wasi-js-bindings/js/process.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/program.js",
+      "bytes": 3114,
+      "source": "upstream/libapps/wasi-js-bindings/js/program.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/syscall_entry.js",
+      "bytes": 30917,
+      "source": "upstream/libapps/wasi-js-bindings/js/syscall_entry.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/syscall_handler.js",
+      "bytes": 8485,
+      "source": "upstream/libapps/wasi-js-bindings/js/syscall_handler.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/syscall_lock.js",
+      "bytes": 5765,
+      "source": "upstream/libapps/wasi-js-bindings/js/syscall_lock.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/util.js",
+      "bytes": 2677,
+      "source": "upstream/libapps/wasi-js-bindings/js/util.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/advice.js",
+      "bytes": 374,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/advice.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/clock.js",
+      "bytes": 344,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/clock.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/errno.js",
+      "bytes": 2324,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/errno.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/eventtype.js",
+      "bytes": 329,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/eventtype.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/fdflags.js",
+      "bytes": 354,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/fdflags.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/filetype.js",
+      "bytes": 463,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/filetype.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/fstflags.js",
+      "bytes": 324,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/fstflags.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/lookupflags.js",
+      "bytes": 259,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/lookupflags.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/oflags.js",
+      "bytes": 323,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/oflags.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/rights.js",
+      "bytes": 1324,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/rights.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/signal.js",
+      "bytes": 944,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/signal.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi/whence.js",
+      "bytes": 281,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi/whence.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/wasi.js",
+      "bytes": 932,
+      "source": "upstream/libapps/wasi-js-bindings/js/wasi.js"
+    },
+    {
+      "dest": "wasi-js-bindings/js/worker.js",
+      "bytes": 3574,
+      "source": "upstream/libapps/wasi-js-bindings/js/worker.js"
+    },
+    {
+      "dest": "plugin/.hash",
+      "bytes": 64,
+      "source": "upstream/libapps/nassh/plugin/.hash"
+    },
+    {
+      "dest": "plugin/wasm/mosh-client.wasm",
+      "bytes": 3683554,
+      "source": "upstream/libapps/nassh/plugin/wasm/mosh-client.wasm"
+    },
+    {
+      "dest": "plugin/wasm/scp.wasm",
+      "bytes": 516825,
+      "source": "upstream/libapps/nassh/plugin/wasm/scp.wasm"
+    },
+    {
+      "dest": "plugin/wasm/sftp.wasm",
+      "bytes": 518442,
+      "source": "upstream/libapps/nassh/plugin/wasm/sftp.wasm"
+    },
+    {
+      "dest": "plugin/wasm/ssh-keygen.wasm",
+      "bytes": 1574068,
+      "source": "upstream/libapps/nassh/plugin/wasm/ssh-keygen.wasm"
+    },
+    {
+      "dest": "plugin/wasm/ssh.wasm",
+      "bytes": 2184101,
+      "source": "upstream/libapps/nassh/plugin/wasm/ssh.wasm"
+    },
+    {
+      "dest": "plugin/wasm-openssh-8.6/scp.wasm",
+      "bytes": 954890,
+      "source": "upstream/libapps/nassh/plugin/wasm-openssh-8.6/scp.wasm"
+    },
+    {
+      "dest": "plugin/wasm-openssh-8.6/sftp.wasm",
+      "bytes": 1002156,
+      "source": "upstream/libapps/nassh/plugin/wasm-openssh-8.6/sftp.wasm"
+    },
+    {
+      "dest": "plugin/wasm-openssh-8.6/ssh-keygen.wasm",
+      "bytes": 1658904,
+      "source": "upstream/libapps/nassh/plugin/wasm-openssh-8.6/ssh-keygen.wasm"
+    },
+    {
+      "dest": "plugin/wasm-openssh-8.6/ssh.wasm",
+      "bytes": 2167836,
+      "source": "upstream/libapps/nassh/plugin/wasm-openssh-8.6/ssh.wasm"
+    },
+    {
+      "dest": "libdot/js/deps_resources.shim.js",
+      "bytes": 396,
+      "source": "upstream/libapps/libdot/js/deps_resources.shim.js"
+    },
+    {
+      "dest": "libdot/js/lib.js",
+      "bytes": 1559,
+      "source": "upstream/libapps/libdot/js/lib.js"
+    },
+    {
+      "dest": "libdot/js/lib_codec.js",
+      "bytes": 1723,
+      "source": "upstream/libapps/libdot/js/lib_codec.js"
+    },
+    {
+      "dest": "libdot/js/lib_codec_tests.js",
+      "bytes": 1227,
+      "source": "upstream/libapps/libdot/js/lib_codec_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_colors.js",
+      "bytes": 44289,
+      "source": "upstream/libapps/libdot/js/lib_colors.js"
+    },
+    {
+      "dest": "libdot/js/lib_colors_tests.js",
+      "bytes": 10114,
+      "source": "upstream/libapps/libdot/js/lib_colors_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_event.js",
+      "bytes": 1240,
+      "source": "upstream/libapps/libdot/js/lib_event.js"
+    },
+    {
+      "dest": "libdot/js/lib_event_tests.js",
+      "bytes": 2114,
+      "source": "upstream/libapps/libdot/js/lib_event_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_f.js",
+      "bytes": 11408,
+      "source": "upstream/libapps/libdot/js/lib_f.js"
+    },
+    {
+      "dest": "libdot/js/lib_f_tests.js",
+      "bytes": 4784,
+      "source": "upstream/libapps/libdot/js/lib_f_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_i18n.js",
+      "bytes": 4288,
+      "source": "upstream/libapps/libdot/js/lib_i18n.js"
+    },
+    {
+      "dest": "libdot/js/lib_i18n_tests.js",
+      "bytes": 2096,
+      "source": "upstream/libapps/libdot/js/lib_i18n_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_message_manager.js",
+      "bytes": 7766,
+      "source": "upstream/libapps/libdot/js/lib_message_manager.js"
+    },
+    {
+      "dest": "libdot/js/lib_message_manager_tests.js",
+      "bytes": 3281,
+      "source": "upstream/libapps/libdot/js/lib_message_manager_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_polyfill.js",
+      "bytes": 279,
+      "source": "upstream/libapps/libdot/js/lib_polyfill.js"
+    },
+    {
+      "dest": "libdot/js/lib_polyfill_tests.js",
+      "bytes": 203,
+      "source": "upstream/libapps/libdot/js/lib_polyfill_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_preference_manager.js",
+      "bytes": 27062,
+      "source": "upstream/libapps/libdot/js/lib_preference_manager.js"
+    },
+    {
+      "dest": "libdot/js/lib_preference_manager_tests.js",
+      "bytes": 8300,
+      "source": "upstream/libapps/libdot/js/lib_preference_manager_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage.js",
+      "bytes": 4103,
+      "source": "upstream/libapps/libdot/js/lib_storage.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_chrome.js",
+      "bytes": 2510,
+      "source": "upstream/libapps/libdot/js/lib_storage_chrome.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_chrome_tests.js",
+      "bytes": 4960,
+      "source": "upstream/libapps/libdot/js/lib_storage_chrome_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_condenser.js",
+      "bytes": 3695,
+      "source": "upstream/libapps/libdot/js/lib_storage_condenser.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_condenser_tests.js",
+      "bytes": 1812,
+      "source": "upstream/libapps/libdot/js/lib_storage_condenser_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_local.js",
+      "bytes": 2812,
+      "source": "upstream/libapps/libdot/js/lib_storage_local.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_local_tests.js",
+      "bytes": 543,
+      "source": "upstream/libapps/libdot/js/lib_storage_local_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_memory.js",
+      "bytes": 2089,
+      "source": "upstream/libapps/libdot/js/lib_storage_memory.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_memory_tests.js",
+      "bytes": 434,
+      "source": "upstream/libapps/libdot/js/lib_storage_memory_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_terminal_private.js",
+      "bytes": 5290,
+      "source": "upstream/libapps/libdot/js/lib_storage_terminal_private.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_terminal_private_tests.js",
+      "bytes": 2862,
+      "source": "upstream/libapps/libdot/js/lib_storage_terminal_private_tests.js"
+    },
+    {
+      "dest": "libdot/js/lib_storage_test_util.js",
+      "bytes": 6602,
+      "source": "upstream/libapps/libdot/js/lib_storage_test_util.js"
+    },
+    {
+      "dest": "libdot/js/lib_test_main.js",
+      "bytes": 793,
+      "source": "upstream/libapps/libdot/js/lib_test_main.js"
+    },
+    {
+      "dest": "libdot/js/lib_test_util.js",
+      "bytes": 3515,
+      "source": "upstream/libapps/libdot/js/lib_test_util.js"
+    },
+    {
+      "dest": "libdot/index.js",
+      "bytes": 893,
+      "source": "upstream/libapps/libdot/index.js"
+    },
+    {
+      "dest": "libdot/dist/js/libdot.js",
+      "bytes": 117950,
+      "source": "upstream/libapps/libdot/dist/js/libdot.js"
+    },
+    {
+      "dest": "libdot/dist/js/libdot_resources.js",
+      "bytes": 99,
+      "source": "upstream/libapps/libdot/dist/js/libdot_resources.js"
+    },
+    {
+      "dest": "hterm/js/deps_punycode.rollup.js",
+      "bytes": 8036,
+      "source": "upstream/libapps/hterm/js/deps_punycode.rollup.js"
+    },
+    {
+      "dest": "hterm/js/deps_punycode.shim.js",
+      "bytes": 354,
+      "source": "upstream/libapps/hterm/js/deps_punycode.shim.js"
+    },
+    {
+      "dest": "hterm/js/deps_resources.shim.js",
+      "bytes": 1064,
+      "source": "upstream/libapps/hterm/js/deps_resources.shim.js"
+    },
+    {
+      "dest": "hterm/js/hterm.js",
+      "bytes": 13100,
+      "source": "upstream/libapps/hterm/js/hterm.js"
+    },
+    {
+      "dest": "hterm/js/hterm_accessibility_reader.js",
+      "bytes": 15449,
+      "source": "upstream/libapps/hterm/js/hterm_accessibility_reader.js"
+    },
+    {
+      "dest": "hterm/js/hterm_accessibility_reader_tests.js",
+      "bytes": 20750,
+      "source": "upstream/libapps/hterm/js/hterm_accessibility_reader_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_contextmenu.js",
+      "bytes": 4105,
+      "source": "upstream/libapps/hterm/js/hterm_contextmenu.js"
+    },
+    {
+      "dest": "hterm/js/hterm_contextmenu_tests.js",
+      "bytes": 1348,
+      "source": "upstream/libapps/hterm/js/hterm_contextmenu_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_find_bar.js",
+      "bytes": 22831,
+      "source": "upstream/libapps/hterm/js/hterm_find_bar.js"
+    },
+    {
+      "dest": "hterm/js/hterm_find_bar_tests.js",
+      "bytes": 19078,
+      "source": "upstream/libapps/hterm/js/hterm_find_bar_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard.js",
+      "bytes": 19586,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard_bindings.js",
+      "bytes": 6419,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard_bindings.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard_keymap.js",
+      "bytes": 36311,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard_keymap.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard_keymap_tests.js",
+      "bytes": 3219,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard_keymap_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard_keypattern.js",
+      "bytes": 3026,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard_keypattern.js"
+    },
+    {
+      "dest": "hterm/js/hterm_keyboard_tests.js",
+      "bytes": 1381,
+      "source": "upstream/libapps/hterm/js/hterm_keyboard_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_mock_notification.js",
+      "bytes": 1431,
+      "source": "upstream/libapps/hterm/js/hterm_mock_notification.js"
+    },
+    {
+      "dest": "hterm/js/hterm_mock_row_provider.js",
+      "bytes": 3977,
+      "source": "upstream/libapps/hterm/js/hterm_mock_row_provider.js"
+    },
+    {
+      "dest": "hterm/js/hterm_mock_terminal_mouseevent.js",
+      "bytes": 1175,
+      "source": "upstream/libapps/hterm/js/hterm_mock_terminal_mouseevent.js"
+    },
+    {
+      "dest": "hterm/js/hterm_notifications.js",
+      "bytes": 4105,
+      "source": "upstream/libapps/hterm/js/hterm_notifications.js"
+    },
+    {
+      "dest": "hterm/js/hterm_notifications_tests.js",
+      "bytes": 1627,
+      "source": "upstream/libapps/hterm/js/hterm_notifications_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_options.js",
+      "bytes": 1547,
+      "source": "upstream/libapps/hterm/js/hterm_options.js"
+    },
+    {
+      "dest": "hterm/js/hterm_parser.js",
+      "bytes": 9306,
+      "source": "upstream/libapps/hterm/js/hterm_parser.js"
+    },
+    {
+      "dest": "hterm/js/hterm_parser_identifiers.js",
+      "bytes": 7380,
+      "source": "upstream/libapps/hterm/js/hterm_parser_identifiers.js"
+    },
+    {
+      "dest": "hterm/js/hterm_parser_tests.js",
+      "bytes": 5092,
+      "source": "upstream/libapps/hterm/js/hterm_parser_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_preference_manager.js",
+      "bytes": 33816,
+      "source": "upstream/libapps/hterm/js/hterm_preference_manager.js"
+    },
+    {
+      "dest": "hterm/js/hterm_preference_manager_tests.js",
+      "bytes": 5258,
+      "source": "upstream/libapps/hterm/js/hterm_preference_manager_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_pubsub.js",
+      "bytes": 2816,
+      "source": "upstream/libapps/hterm/js/hterm_pubsub.js"
+    },
+    {
+      "dest": "hterm/js/hterm_pubsub_tests.js",
+      "bytes": 3070,
+      "source": "upstream/libapps/hterm/js/hterm_pubsub_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_screen.js",
+      "bytes": 34750,
+      "source": "upstream/libapps/hterm/js/hterm_screen.js"
+    },
+    {
+      "dest": "hterm/js/hterm_screen_tests.js",
+      "bytes": 20793,
+      "source": "upstream/libapps/hterm/js/hterm_screen_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_scrollport.js",
+      "bytes": 67124,
+      "source": "upstream/libapps/hterm/js/hterm_scrollport.js"
+    },
+    {
+      "dest": "hterm/js/hterm_scrollport_tests.js",
+      "bytes": 34067,
+      "source": "upstream/libapps/hterm/js/hterm_scrollport_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_terminal.js",
+      "bytes": 128533,
+      "source": "upstream/libapps/hterm/js/hterm_terminal.js"
+    },
+    {
+      "dest": "hterm/js/hterm_terminal_io.js",
+      "bytes": 6419,
+      "source": "upstream/libapps/hterm/js/hterm_terminal_io.js"
+    },
+    {
+      "dest": "hterm/js/hterm_terminal_io_tests.js",
+      "bytes": 4385,
+      "source": "upstream/libapps/hterm/js/hterm_terminal_io_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_terminal_tests.js",
+      "bytes": 31960,
+      "source": "upstream/libapps/hterm/js/hterm_terminal_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_test_main.js",
+      "bytes": 1036,
+      "source": "upstream/libapps/hterm/js/hterm_test_main.js"
+    },
+    {
+      "dest": "hterm/js/hterm_tests.js",
+      "bytes": 2273,
+      "source": "upstream/libapps/hterm/js/hterm_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_text_attributes.js",
+      "bytes": 18500,
+      "source": "upstream/libapps/hterm/js/hterm_text_attributes.js"
+    },
+    {
+      "dest": "hterm/js/hterm_text_attributes_tests.js",
+      "bytes": 10710,
+      "source": "upstream/libapps/hterm/js/hterm_text_attributes_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_vt.js",
+      "bytes": 90675,
+      "source": "upstream/libapps/hterm/js/hterm_vt.js"
+    },
+    {
+      "dest": "hterm/js/hterm_vt_canned_tests.js",
+      "bytes": 6094,
+      "source": "upstream/libapps/hterm/js/hterm_vt_canned_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_vt_character_map.js",
+      "bytes": 13058,
+      "source": "upstream/libapps/hterm/js/hterm_vt_character_map.js"
+    },
+    {
+      "dest": "hterm/js/hterm_vt_character_map_tests.js",
+      "bytes": 6691,
+      "source": "upstream/libapps/hterm/js/hterm_vt_character_map_tests.js"
+    },
+    {
+      "dest": "hterm/js/hterm_vt_tests.js",
+      "bytes": 113888,
+      "source": "upstream/libapps/hterm/js/hterm_vt_tests.js"
+    },
+    {
+      "dest": "hterm/index.js",
+      "bytes": 1226,
+      "source": "upstream/libapps/hterm/index.js"
+    },
+    {
+      "dest": "hterm/dist/js/hterm.js",
+      "bytes": 704417,
+      "source": "upstream/libapps/hterm/dist/js/hterm.js"
+    },
+    {
+      "dest": "hterm/dist/js/hterm_resources.js",
+      "bytes": 20295,
+      "source": "upstream/libapps/hterm/dist/js/hterm_resources.js"
+    },
+    {
+      "dest": "hterm/third_party/wcwidth/wc.js",
+      "bytes": 25188,
+      "source": "upstream/libapps/hterm/third_party/wcwidth/wc.js"
+    },
+    {
+      "dest": "nassh/js/chrome_mock_for_test.js",
+      "bytes": 1482,
+      "source": "upstream/libapps/nassh/js/chrome_mock_for_test.js"
+    },
+    {
+      "dest": "nassh/js/crosh_main.js",
+      "bytes": 11565,
+      "source": "upstream/libapps/nassh/js/crosh_main.js"
+    },
+    {
+      "dest": "nassh/js/deps_indexeddb-fs.rollup.js",
+      "bytes": 55324,
+      "source": "upstream/libapps/nassh/js/deps_indexeddb-fs.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_indexeddb-fs.shim.js",
+      "bytes": 335,
+      "source": "upstream/libapps/nassh/js/deps_indexeddb-fs.shim.js"
+    },
+    {
+      "dest": "nassh/js/deps_lit.rollup.js",
+      "bytes": 72807,
+      "source": "upstream/libapps/nassh/js/deps_lit.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_lit.shim.js",
+      "bytes": 1004,
+      "source": "upstream/libapps/nassh/js/deps_lit.shim.js"
+    },
+    {
+      "dest": "nassh/js/deps_pkijs.rollup.js",
+      "bytes": 202392,
+      "source": "upstream/libapps/nassh/js/deps_pkijs.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_pkijs.shim.js",
+      "bytes": 807,
+      "source": "upstream/libapps/nassh/js/deps_pkijs.shim.js"
+    },
+    {
+      "dest": "nassh/js/deps_punycode.rollup.js",
+      "bytes": 1500,
+      "source": "upstream/libapps/nassh/js/deps_punycode.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_punycode.shim.js",
+      "bytes": 359,
+      "source": "upstream/libapps/nassh/js/deps_punycode.shim.js"
+    },
+    {
+      "dest": "nassh/js/deps_resources.rollup.js",
+      "bytes": 1564,
+      "source": "upstream/libapps/nassh/js/deps_resources.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_resources.shim.js",
+      "bytes": 643,
+      "source": "upstream/libapps/nassh/js/deps_resources.shim.js"
+    },
+    {
+      "dest": "nassh/js/deps_xterm.rollup.js",
+      "bytes": 552047,
+      "source": "upstream/libapps/nassh/js/deps_xterm.rollup.js"
+    },
+    {
+      "dest": "nassh/js/deps_xterm.shim.js",
+      "bytes": 639,
+      "source": "upstream/libapps/nassh/js/deps_xterm.shim.js"
+    },
+    {
+      "dest": "nassh/js/lib_array.js",
+      "bytes": 1292,
+      "source": "upstream/libapps/nassh/js/lib_array.js"
+    },
+    {
+      "dest": "nassh/js/lib_array_tests.js",
+      "bytes": 1776,
+      "source": "upstream/libapps/nassh/js/lib_array_tests.js"
+    },
+    {
+      "dest": "nassh/js/lib_credential_cache.js",
+      "bytes": 5127,
+      "source": "upstream/libapps/nassh/js/lib_credential_cache.js"
+    },
+    {
+      "dest": "nassh/js/lib_credential_cache_tests.js",
+      "bytes": 2178,
+      "source": "upstream/libapps/nassh/js/lib_credential_cache_tests.js"
+    },
+    {
+      "dest": "nassh/js/licenses_main.js",
+      "bytes": 864,
+      "source": "upstream/libapps/nassh/js/licenses_main.js"
+    },
+    {
+      "dest": "nassh/js/nasftp_cli.js",
+      "bytes": 111746,
+      "source": "upstream/libapps/nassh/js/nasftp_cli.js"
+    },
+    {
+      "dest": "nassh/js/nasftp_cli_tests.js",
+      "bytes": 32806,
+      "source": "upstream/libapps/nassh/js/nasftp_cli_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh.js",
+      "bytes": 10803,
+      "source": "upstream/libapps/nassh/js/nassh.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent.js",
+      "bytes": 11864,
+      "source": "upstream/libapps/nassh/js/nassh_agent.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_backend.js",
+      "bytes": 3438,
+      "source": "upstream/libapps/nassh/js/nassh_agent_backend.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_backend_gsc.js",
+      "bytes": 64215,
+      "source": "upstream/libapps/nassh/js/nassh_agent_backend_gsc.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_message.js",
+      "bytes": 4983,
+      "source": "upstream/libapps/nassh/js/nassh_agent_message.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_message_tests.js",
+      "bytes": 4574,
+      "source": "upstream/libapps/nassh/js/nassh_agent_message_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_message_types.js",
+      "bytes": 15639,
+      "source": "upstream/libapps/nassh/js/nassh_agent_message_types.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_message_types_tests.js",
+      "bytes": 3601,
+      "source": "upstream/libapps/nassh/js/nassh_agent_message_types_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_agent_tests.js",
+      "bytes": 1243,
+      "source": "upstream/libapps/nassh/js/nassh_agent_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_background.js",
+      "bytes": 2996,
+      "source": "upstream/libapps/nassh/js/nassh_background.js"
+    },
+    {
+      "dest": "nassh/js/nassh_background_main.js",
+      "bytes": 3322,
+      "source": "upstream/libapps/nassh/js/nassh_background_main.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer.js",
+      "bytes": 1179,
+      "source": "upstream/libapps/nassh/js/nassh_buffer.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_concat.js",
+      "bytes": 1339,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_concat.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_concat_tests.js",
+      "bytes": 615,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_concat_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_interface.js",
+      "bytes": 2042,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_interface.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_scatgat.js",
+      "bytes": 4546,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_scatgat.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_scatgat_tests.js",
+      "bytes": 957,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_scatgat_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_test_util.js",
+      "bytes": 5351,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_test_util.js"
+    },
+    {
+      "dest": "nassh/js/nassh_buffer_tests.js",
+      "bytes": 654,
+      "source": "upstream/libapps/nassh/js/nassh_buffer_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_column_list.js",
+      "bytes": 10186,
+      "source": "upstream/libapps/nassh/js/nassh_column_list.js"
+    },
+    {
+      "dest": "nassh/js/nassh_command_instance.js",
+      "bytes": 57444,
+      "source": "upstream/libapps/nassh/js/nassh_command_instance.js"
+    },
+    {
+      "dest": "nassh/js/nassh_command_instance_tests.js",
+      "bytes": 18481,
+      "source": "upstream/libapps/nassh/js/nassh_command_instance_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_connect_dialog.js",
+      "bytes": 31352,
+      "source": "upstream/libapps/nassh/js/nassh_connect_dialog.js"
+    },
+    {
+      "dest": "nassh/js/nassh_context_menus.js",
+      "bytes": 2171,
+      "source": "upstream/libapps/nassh/js/nassh_context_menus.js"
+    },
+    {
+      "dest": "nassh/js/nassh_extension_popup_main.js",
+      "bytes": 9891,
+      "source": "upstream/libapps/nassh/js/nassh_extension_popup_main.js"
+    },
+    {
+      "dest": "nassh/js/nassh_external_api.js",
+      "bytes": 20630,
+      "source": "upstream/libapps/nassh/js/nassh_external_api.js"
+    },
+    {
+      "dest": "nassh/js/nassh_fs.js",
+      "bytes": 2732,
+      "source": "upstream/libapps/nassh/js/nassh_fs.js"
+    },
+    {
+      "dest": "nassh/js/nassh_goog_metrics_reporter.js",
+      "bytes": 20137,
+      "source": "upstream/libapps/nassh/js/nassh_goog_metrics_reporter.js"
+    },
+    {
+      "dest": "nassh/js/nassh_goog_metrics_reporter_tests.js",
+      "bytes": 7500,
+      "source": "upstream/libapps/nassh/js/nassh_goog_metrics_reporter_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_google.js",
+      "bytes": 5322,
+      "source": "upstream/libapps/nassh/js/nassh_google.js"
+    },
+    {
+      "dest": "nassh/js/nassh_google_relay_main.js",
+      "bytes": 2653,
+      "source": "upstream/libapps/nassh/js/nassh_google_relay_main.js"
+    },
+    {
+      "dest": "nassh/js/nassh_google_tests.js",
+      "bytes": 3799,
+      "source": "upstream/libapps/nassh/js/nassh_google_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_main.js",
+      "bytes": 6914,
+      "source": "upstream/libapps/nassh/js/nassh_main.js"
+    },
+    {
+      "dest": "nassh/js/nassh_omnibox.js",
+      "bytes": 9119,
+      "source": "upstream/libapps/nassh/js/nassh_omnibox.js"
+    },
+    {
+      "dest": "nassh/js/nassh_omnibox_tests.js",
+      "bytes": 6210,
+      "source": "upstream/libapps/nassh/js/nassh_omnibox_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_preference_manager.js",
+      "bytes": 7099,
+      "source": "upstream/libapps/nassh/js/nassh_preference_manager.js"
+    },
+    {
+      "dest": "nassh/js/nassh_preference_manager_tests.js",
+      "bytes": 3158,
+      "source": "upstream/libapps/nassh/js/nassh_preference_manager_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_preferences_editor.js",
+      "bytes": 25265,
+      "source": "upstream/libapps/nassh/js/nassh_preferences_editor.js"
+    },
+    {
+      "dest": "nassh/js/nassh_preferences_protocol_register.js",
+      "bytes": 953,
+      "source": "upstream/libapps/nassh/js/nassh_preferences_protocol_register.js"
+    },
+    {
+      "dest": "nassh/js/nassh_preferences_ssh_files.js",
+      "bytes": 6467,
+      "source": "upstream/libapps/nassh/js/nassh_preferences_ssh_files.js"
+    },
+    {
+      "dest": "nassh/js/nassh_relay.js",
+      "bytes": 3680,
+      "source": "upstream/libapps/nassh/js/nassh_relay.js"
+    },
+    {
+      "dest": "nassh/js/nassh_relay_corp.js",
+      "bytes": 12839,
+      "source": "upstream/libapps/nassh/js/nassh_relay_corp.js"
+    },
+    {
+      "dest": "nassh/js/nassh_relay_corpv4.js",
+      "bytes": 661,
+      "source": "upstream/libapps/nassh/js/nassh_relay_corpv4.js"
+    },
+    {
+      "dest": "nassh/js/nassh_relay_sshfe.js",
+      "bytes": 2047,
+      "source": "upstream/libapps/nassh/js/nassh_relay_sshfe.js"
+    },
+    {
+      "dest": "nassh/js/nassh_relay_websockify.js",
+      "bytes": 2384,
+      "source": "upstream/libapps/nassh/js/nassh_relay_websockify.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_client.js",
+      "bytes": 33655,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_client.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_fsp.js",
+      "bytes": 23844,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_fsp.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_fsp_config_dialog.js",
+      "bytes": 3631,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_fsp_config_dialog.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_fsp_test_util.js",
+      "bytes": 1464,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_fsp_test_util.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_fsp_tests.js",
+      "bytes": 19673,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_fsp_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_packet.js",
+      "bytes": 6534,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_packet.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_packet_tests.js",
+      "bytes": 8362,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_packet_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_packet_types.js",
+      "bytes": 13582,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_packet_types.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_packet_types_tests.js",
+      "bytes": 14940,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_packet_types_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_sftp_status.js",
+      "bytes": 790,
+      "source": "upstream/libapps/nassh/js/nassh_sftp_status.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream.js",
+      "bytes": 2389,
+      "source": "upstream/libapps/nassh/js/nassh_stream.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_relay_corp.js",
+      "bytes": 15390,
+      "source": "upstream/libapps/nassh/js/nassh_stream_relay_corp.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_relay_corpv4.js",
+      "bytes": 16431,
+      "source": "upstream/libapps/nassh/js/nassh_stream_relay_corpv4.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_relay_corpv4_tests.js",
+      "bytes": 7463,
+      "source": "upstream/libapps/nassh/js/nassh_stream_relay_corpv4_tests.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_relay_sshfe.js",
+      "bytes": 11504,
+      "source": "upstream/libapps/nassh/js/nassh_stream_relay_sshfe.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_relay_websockify.js",
+      "bytes": 5006,
+      "source": "upstream/libapps/nassh/js/nassh_stream_relay_websockify.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_sshagent.js",
+      "bytes": 2441,
+      "source": "upstream/libapps/nassh/js/nassh_stream_sshagent.js"
+    },
+    {
+      "dest": "nassh/js/nassh_stream_sshagent_relay.js",
+      "bytes": 4374,
+      "source": "upstream/libapps/nassh/js/nassh_stream_sshagent_relay.js"
+    },
+    {
+      "dest": "nassh/js/nassh_subproc_ssh.js",
+      "bytes": 7250,
+      "source": "upstream/libapps/nassh/js/nassh_subproc_ssh.js"
+    },
+    {
+      "dest": "nassh/js/nassh_subproc_wasm.js",
+      "bytes": 11541,
+      "source": "upstream/libapps/nassh/js/nassh_subproc_wasm.js"
+    },
+    {
+      "dest": "nassh/js/nassh_test_main.js",
+      "bytes": 1076,
+      "source": "upstream/libapps/nassh/js/nassh_test_main.js"
+    },
+    {
+      "dest": "nassh/js/nassh_tests.js",
+      "bytes": 2590,
+      "source": "upstream/libapps/nassh/js/nassh_tests.js"
+    },
+    {
+      "dest": "nassh/js/ssh_policy.js",
+      "bytes": 1973,
+      "source": "upstream/libapps/nassh/js/ssh_policy.js"
+    },
+    {
+      "dest": "nassh/js/ssh_policy_tests.js",
+      "bytes": 3501,
+      "source": "upstream/libapps/nassh/js/ssh_policy_tests.js"
+    },
+    {
+      "dest": "nassh/wassh/js",
+      "bytes": 0,
+      "source": "symlink → ../../wassh/js"
+    }
+  ]
+}

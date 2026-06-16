@@ -12,3 +12,4 @@ coverage/
 .env.*
 tsconfig.tsbuildinfo
 .commandcode/
+.chrome-dev-profile/

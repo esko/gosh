@@ -1,6 +1,26 @@
 # IWA development setup
 
-Personal-use Isolated Web App for ChromeOS SSH. Requires **Chrome or ChromeOS 120+**.
+Personal-use **local-only** Isolated Web App for ChromeOS SSH. No web server hosting, no update CDN, no `example.com` URLs. Requires **Chrome or ChromeOS 120+**.
+
+## Local-only workflow (recommended)
+
+You have two ways to run this on your Chromebook — both stay on the machine:
+
+| Mode | When to use | How |
+|------|-------------|-----|
+| **Dev Mode Proxy** | Daily development | `npm run dev` → install `http://127.0.0.1:5173` via Web App Internals |
+| **Signed `.swbn`** | Stable install without Vite running | `npm run bundle:iwa` → pick `dist/iwa-ssh.swbn` from disk in Web App Internals |
+
+You do **not** need:
+
+- `update_manifest_url` in the manifest (omit it for local use)
+- Hosting `update-manifest.json` anywhere
+- A public HTTPS origin for the app bundle
+
+To refresh after code changes:
+
+- **Dev proxy:** save files; Vite hot-reloads (or re-open the app)
+- **Signed bundle:** `npm run bundle:iwa` again → reinstall the new `.swbn` from `dist/`
 
 ## Prerequisites
 
@@ -31,9 +51,9 @@ Two install paths:
 
 Best for iterating without rebuilding `.swbn` on every change.
 
-1. `npm run dev` (Vite on `http://localhost:5173`)
+1. `npm run dev` (Vite on `http://127.0.0.1:5173`)
 2. On **Web App Internals**, choose **Install IWA with Dev Mode Proxy**
-3. Enter your dev URL, e.g. `http://localhost:5173/`
+3. Enter `http://127.0.0.1:5173/` (use `127.0.0.1`, not `localhost`, if Chrome is picky)
 4. Chrome assigns a random `isolated-app://` identity for this dev install
 
 The proxy serves your live dev server inside the IWA security model so `TCPSocket` and other IWA APIs are available.
@@ -44,13 +64,15 @@ The proxy serves your live dev server inside the IWA security model so `TCPSocke
 - App must meet IWA requirements (COOP/COEP headers, CSP, no server-rendered pages)
 - Use **Force update check** on Web App Internals to refresh after server restarts
 
-### B. Signed Web Bundle (production-like)
+### B. Signed Web Bundle (local file install)
 
-1. `npm run bundle:iwa` (builds `dist/`, produces bundle — see `iwa/build-bundle.mjs`)
+Use this when you want a normal app-launcher icon without keeping `npm run dev` running.
+
+1. `npm run bundle:iwa` (builds `dist/`, signs if you have a key — see below)
 2. On **Web App Internals**, choose **Install IWA from Signed Web Bundle**
-3. Upload `dist/iwa-ssh.swbn` (or path printed by the build script)
+3. Select `dist/iwa-ssh.swbn` from this repo on disk (USB, Downloads, home directory — anywhere local)
 
-Identity is stable — tied to your signing key (Web Bundle ID).
+Identity is stable when signed — tied to your Ed25519 key (Web Bundle ID).
 
 ## Signing keys (first time)
 
@@ -107,9 +129,14 @@ npm run typecheck
 6. Launch from app launcher; open DevTools to debug
 ```
 
-## Updates
+## Updates (local only)
 
-For self-hosted updates, publish `iwa/update-manifest.json` and point the installed IWA at it (see Chrome IWA update manifest docs). Placeholder manifest is in `iwa/update-manifest.json` — replace `src` URLs before use.
+For personal local use, **skip remote updates entirely**. When you change the app:
+
+1. Rebuild: `npm run bundle:iwa`
+2. Reinstall the new `.swbn` from **Web App Internals** (same signing key → same app identity)
+
+`iwa/update-manifest.json` is an optional template for people who later self-host updates. This project does not use it by default.
 
 ## Troubleshooting
 

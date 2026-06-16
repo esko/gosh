@@ -12,6 +12,18 @@ iwa-ssh is a **high-trust IWA** — packaged, signed, isolated. Security choices
 
 Passphrase is never written to IndexedDB or export JSON.
 
+### Implemented (MVP)
+
+- **Key import UI** (`app/src/ssh/KeyImport.ts`): OpenSSH private key PEM via file or paste; public key extracted and stored; raw PEM bytes kept in `encryptedPrivateKey`.
+- **Identity picker** on connect and profile editor with import button.
+- **No password fields** anywhere in the UI or storage layer.
+
+### Deferred
+
+- **WebCrypto passphrase encryption** of private keys at rest (import stores raw PEM bytes today; see `TODO(security)` in `KeyImport.ts`).
+- **Passphrase prompt at connect** for encrypted PEM keys (import accepts bcrypt-protected keys but SSH auth cannot use them yet).
+- **SSH auth wiring** — identities are stored but not passed to wassh until phase 1.
+
 ## Host trust
 
 | Rule | Implementation |
@@ -19,6 +31,19 @@ Passphrase is never written to IndexedDB or export JSON.
 | **known_hosts store** | `KnownHost` records in IndexedDB (`host:port` → fingerprint) |
 | **Trust prompt** | Unknown/changed host keys require user confirmation before connect |
 | **No LAN scanning** | No discovery, broadcast, or background connection attempts |
+
+### Implemented (MVP)
+
+- **Trust modal** (`app/src/ssh/KnownHostPrompt.ts`): unknown or changed host key shows host, port, key type, fingerprint with **Trust always**, **Trust once**, and **Cancel**.
+- **Connect gate** (`app/src/routes/connect.ts`): `ensureHostTrusted()` runs before navigating to a session; **Trust always** persists via `saveKnownHost()`.
+- **Changed-key warning** when stored fingerprint differs from the server offer.
+- **Dev inspector** (`/dev`, development only): host-trust probe and session launcher exercise the same modal and stub fingerprint path.
+
+### Deferred
+
+- **Live host key fingerprint** from wassh over Direct Sockets (stub `SHA256:STUB-<host>:<port>` until SSH is wired).
+- **Session reconnect** does not re-prompt (trust is checked at connect-screen submit only).
+- **Removing or editing** known host entries in settings UI.
 
 ## Network
 

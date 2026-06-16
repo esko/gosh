@@ -1,4 +1,6 @@
 import { Router } from '../app-shell/router';
+import { ensureHostTrusted, stubHostFingerprint } from '../ssh/KnownHostPrompt';
+import { identitySelectMarkup, wireIdentityImportButton } from '../ssh/KeyImport';
 import { getProfile, listIdentities, saveProfile } from '../storage/indexedDb';
 import type { Profile } from '../settings/types';
 import { escapeHtml, shell } from './shared';
@@ -36,13 +38,7 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
   const profile = profileId ? await getProfile(profileId) : undefined;
   const identities = await listIdentities();
 
-  const identityOptions = [
-    '<option value="">Default (no key)</option>',
-    ...identities.map(
-      (id) =>
-        `<option value="${escapeHtml(id.id)}"${profile?.identityId === id.id ? ' selected' : ''}>${escapeHtml(id.label)}</option>`,
-    ),
-  ].join('');
+  const identityOptions = identitySelectMarkup(identities, profile?.identityId);
 
   root.innerHTML = shell(
     'Connect',
@@ -65,7 +61,10 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
         </div>
         <div class="form-row">
           <label for="identity">Identity</label>
-          <select id="identity" name="identity">${identityOptions}</select>
+          <div class="identity-row">
+            <select id="identity" name="identity">${identityOptions}</select>
+            <button type="button" id="import-identity" class="btn">Import key</button>
+          </div>
         </div>
         <div class="form-row">
           <label for="startup-command">Startup command</label>
@@ -105,6 +104,7 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
 
   root.querySelector('#cancel-connect')?.addEventListener('click', () => Router.go('/'));
   root.querySelector('#header-profiles')?.addEventListener('click', () => Router.go('/profiles'));
+  await wireIdentityImportButton(root, '#identity', 'import-identity');
 
   root.querySelector('#connect-form')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -120,6 +120,9 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
     const profileName = String(data.get('profileName') ?? '').trim();
 
     if (!host || !username || !Number.isFinite(port)) return;
+
+    const trusted = await ensureHostTrusted(host, port, stubHostFingerprint(host, port));
+    if (!trusted) return;
 
     let savedProfileId = profile?.id;
 
@@ -152,6 +155,6 @@ export async function renderConnect(root: HTMLElement, query: URLSearchParams): 
       startupCommand,
     });
 
-    Router.go(`/session/${encodeURIComponent(sessionId)}`);
+    Router.openTab(`/session/${encodeURIComponent(sessionId)}`, `${username}@${host}`);
   });
 }

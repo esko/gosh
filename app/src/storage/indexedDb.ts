@@ -103,15 +103,17 @@ export async function saveKnownHost(entry: KnownHost): Promise<void> {
   await db.put('knownHosts', entry, knownHostKey(entry.host, entry.port));
 }
 
+export async function listKnownHosts(): Promise<KnownHost[]> {
+  const db = await getDb();
+  return db.getAll('knownHosts');
+}
+
 export async function exportData(): Promise<string> {
   const [settings, profiles, identities, knownHosts] = await Promise.all([
     loadSettings(),
     listProfiles(),
     listIdentities(),
-    (async () => {
-      const db = await getDb();
-      return db.getAll('knownHosts');
-    })(),
+    listKnownHosts(),
   ]);
 
   return JSON.stringify(

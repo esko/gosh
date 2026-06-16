@@ -1,12 +1,12 @@
 /**
- * Thin wrapper around nassh/wassh OpenSSH WASM session.
- *
- * Phase 0: stub that echoes local PTY for UI development.
- * Phase 1+: wire to upstream/libapps wassh + Direct Sockets transport.
+ * SSH session facade: upstream nassh/wassh when assets are present, else local echo stub.
  */
 
 import type { TerminalAdapter } from '../terminal/TerminalAdapter';
 import type { ConnectionStatus } from '../settings/types';
+import { NasshCommandBridge } from './NasshCommandBridge';
+import type { AttachTerminalOptions } from './HtermIoBridge';
+import { areUpstreamAssetsReady } from './upstreamAssets';
 
 export type NasshSessionOptions = {
   host: string;
@@ -17,54 +17,55 @@ export type NasshSessionOptions = {
   onStatus?: (status: ConnectionStatus, error?: string) => void;
 };
 
+export type { AttachTerminalOptions } from './HtermIoBridge';
+
 export class NasshSession {
   private adapter: TerminalAdapter | null = null;
   private status: ConnectionStatus = 'idle';
+  private bridge: NasshCommandBridge | null = null;
+  private useBridge = false;
   private echoHandler: ((data: string) => void) | null = null;
+  private onOutput: ((data: string | Uint8Array) => void) | null = null;
   private disposed = false;
 
   constructor(private readonly options: NasshSessionOptions) {}
 
-  attachTerminal(adapter: TerminalAdapter): void {
+  attachTerminal(adapter: TerminalAdapter, options?: AttachTerminalOptions): void {
     this.adapter = adapter;
+    this.onOutput = options?.onOutput ?? null;
+    this.bridge?.attachTerminal(adapter, options);
     adapter.onInput((data) => this.handleInput(data));
     adapter.onResize((cols, rows) => this.handleResize(cols, rows));
   }
 
   async connect(): Promise<void> {
     if (this.disposed) return;
-    this.setStatus('connecting');
 
-    // TODO(phase-0): replace stub with wassh + DirectSocketTransport
-    await this.delay(400);
-
-    if (this.disposed) return;
-
-    const banner = [
-      `\r\n\x1b[1;36miwa-ssh\x1b[0m — nassh/wassh bridge not wired yet\r\n`,
-      `Target: ${this.options.username}@${this.options.host}:${this.options.port}\r\n`,
-      `Direct Sockets TCP will connect here once upstream libapps is built.\r\n\r\n`,
-      `$ `,
-    ].join('');
-
-    this.adapter?.write(banner);
-    this.setStatus('connected');
-
-    this.echoHandler = (data: string) => {
-      if (data === '\r') {
-        this.adapter?.write('\r\n$ ');
+    const upstreamReady = await areUpstreamAssetsReady();
+    if (upstreamReady) {
+      try {
+        await this.connectViaBridge();
         return;
+      } catch (error) {
+        console.warn('NasshCommandBridge unavailable, using echo stub:', error);
+        await this.bridge?.disconnect().catch(() => undefined);
+        this.bridge?.dispose();
+        this.bridge = null;
+        this.useBridge = false;
       }
-      if (data === '\u007f') {
-        this.adapter?.write('\b \b');
-        return;
-      }
-      this.adapter?.write(data);
-    };
+    }
+
+    await this.connectEchoStub();
   }
 
   async disconnect(): Promise<void> {
     if (this.disposed) return;
+
+    if (this.useBridge && this.bridge) {
+      await this.bridge.disconnect();
+      return;
+    }
+
     this.setStatus('disconnecting');
     this.echoHandler = null;
     await this.delay(100);
@@ -74,6 +75,8 @@ export class NasshSession {
   dispose(): void {
     this.disposed = true;
     this.echoHandler = null;
+    this.bridge?.dispose();
+    this.bridge = null;
     this.adapter = null;
   }
 
@@ -81,13 +84,65 @@ export class NasshSession {
     return this.status;
   }
 
+  private async connectViaBridge(): Promise<void> {
+    if (!this.adapter) {
+      throw new Error('Terminal adapter not attached');
+    }
+
+    this.bridge ??= new NasshCommandBridge({
+      host: this.options.host,
+      port: this.options.port,
+      username: this.options.username,
+      startupCommand: this.options.startupCommand,
+      onStatus: (status, error) => this.setStatus(status, error),
+    });
+    this.bridge.attachTerminal(this.adapter);
+    this.useBridge = true;
+    await this.bridge.connect();
+  }
+
+  private async connectEchoStub(): Promise<void> {
+    this.setStatus('connecting');
+    await this.delay(400);
+
+    if (this.disposed) return;
+
+    const banner = [
+      `\r\n\x1b[1;36miwa-ssh\x1b[0m — upstream wassh assets not loaded (echo stub)\r\n`,
+      `Target: ${this.options.username}@${this.options.host}:${this.options.port}\r\n`,
+      `Run \`npm run fetch-assets\` and reload to enable nassh/wassh.\r\n\r\n`,
+      `$ `,
+    ].join('');
+
+    this.adapter?.write(banner);
+    this.onOutput?.(banner);
+    this.setStatus('connected');
+
+    this.echoHandler = (data: string) => {
+      if (data === '\r') {
+        const out = '\r\n$ ';
+        this.adapter?.write(out);
+        this.onOutput?.(out);
+        return;
+      }
+      if (data === '\u007f') {
+        const out = '\b \b';
+        this.adapter?.write(out);
+        this.onOutput?.(out);
+        return;
+      }
+      this.adapter?.write(data);
+      this.onOutput?.(data);
+    };
+  }
+
   private handleInput(data: string): void {
-    // Future: forward to wassh stdin
+    if (this.useBridge) return;
     this.echoHandler?.(data);
   }
 
   private handleResize(cols: number, rows: number): void {
-    // Future: SSH window-change via wassh
+    if (this.useBridge) return;
     void cols;
     void rows;
   }

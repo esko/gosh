@@ -1,5 +1,6 @@
 import { Router } from '../app-shell/router';
-import { deleteProfile, listProfiles, saveProfile } from '../storage/indexedDb';
+import { identitySelectMarkup, wireIdentityImportButton } from '../ssh/KeyImport';
+import { deleteProfile, listIdentities, listProfiles, saveProfile } from '../storage/indexedDb';
 import type { Profile } from '../settings/types';
 import { escapeHtml, shell } from './shared';
 
@@ -19,7 +20,7 @@ function profileRow(profile: Profile): string {
   `;
 }
 
-function renderEditor(profile?: Profile): string {
+function renderEditor(profile: Profile | undefined, identityOptions: string): string {
   const isEdit = Boolean(profile);
   return `
     <form id="profile-editor" class="form panel">
@@ -44,6 +45,13 @@ function renderEditor(profile?: Profile): string {
           value="${escapeHtml(profile?.username ?? '')}" />
       </div>
       <div class="form-row">
+        <label for="profile-identity">Identity</label>
+        <div class="identity-row">
+          <select id="profile-identity" name="identity">${identityOptions}</select>
+          <button type="button" id="profile-import-identity" class="btn">Import key</button>
+        </div>
+      </div>
+      <div class="form-row">
         <label for="profile-startup">Startup command</label>
         <input id="profile-startup" name="startupCommand" type="text"
           value="${escapeHtml(profile?.startupCommand ?? '')}" />
@@ -57,10 +65,11 @@ function renderEditor(profile?: Profile): string {
 }
 
 export async function renderProfiles(root: HTMLElement): Promise<void> {
-  const profiles = await listProfiles();
+  const [profiles, identities] = await Promise.all([listProfiles(), listIdentities()]);
   const editingId = new URLSearchParams(window.location.search).get('edit') ?? undefined;
   const editing = editingId ? profiles.find((p) => p.id === editingId) : undefined;
   const showEditor = window.location.search.includes('new') || Boolean(editing);
+  const identityOptions = identitySelectMarkup(identities, editing?.identityId);
 
   const listMarkup =
     profiles.length === 0
@@ -70,7 +79,7 @@ export async function renderProfiles(root: HTMLElement): Promise<void> {
   root.innerHTML = shell(
     'Profiles',
     `
-      ${showEditor ? renderEditor(editing) : ''}
+      ${showEditor ? renderEditor(editing, identityOptions) : ''}
       <section class="panel">
         <div class="panel__header-row">
           <h2>Saved profiles</h2>
@@ -85,6 +94,7 @@ export async function renderProfiles(root: HTMLElement): Promise<void> {
   root.querySelector('#header-connect')?.addEventListener('click', () => Router.go('/connect'));
   root.querySelector('#new-profile')?.addEventListener('click', () => Router.go('/profiles?new'));
   root.querySelector('#profile-editor-cancel')?.addEventListener('click', () => Router.go('/profiles'));
+  await wireIdentityImportButton(root, '#profile-identity', 'profile-import-identity');
 
   root.querySelector('#profile-editor')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -92,12 +102,15 @@ export async function renderProfiles(root: HTMLElement): Promise<void> {
     const data = new FormData(form);
     const existingId = (root.querySelector<HTMLInputElement>('#profile-id')?.value || '').trim();
 
+    const identityId = String(data.get('identity') ?? '') || undefined;
+
     const profile: Profile = {
       id: existingId || crypto.randomUUID(),
       name: String(data.get('name') ?? '').trim(),
       host: String(data.get('host') ?? '').trim(),
       port: Number(data.get('port') ?? 22),
       username: String(data.get('username') ?? '').trim(),
+      identityId,
       startupCommand: String(data.get('startupCommand') ?? '').trim() || undefined,
       lastConnectedAt: editing?.lastConnectedAt,
     };

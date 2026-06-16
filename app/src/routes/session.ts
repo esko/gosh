@@ -1,4 +1,8 @@
 import { Router } from '../app-shell/router';
+import { getTabManager } from '../app-shell/TabManager';
+import { applyDebugFlags, getDebugFlags, parseDebugFlags } from '../debug/flags';
+import { log, registerActiveSession, setLastSessionError, unregisterActiveSession } from '../debug/logger';
+import { downloadTerminalCapture, recordTerminalOutput } from '../debug/terminalCapture';
 import { getProfile, loadSettings } from '../storage/indexedDb';
 import { mergeAppearance } from '../settings/defaults';
 import type { ConnectionStatus } from '../settings/types';
@@ -23,8 +27,11 @@ export function disposeActiveSession(): void {
   activeCleanup = null;
 }
 
-export async function renderSession(root: HTMLElement, sessionId: string): Promise<void> {
+export async function renderSession(root: HTMLElement, sessionId: string, query = new URLSearchParams(window.location.search)): Promise<void> {
   disposeActiveSession();
+
+  const debugFlags = { ...getDebugFlags(), ...parseDebugFlags(`?${query.toString()}`) };
+  applyDebugFlags(debugFlags);
 
   const params = loadSessionParams(sessionId);
   if (!params) {
@@ -46,8 +53,19 @@ export async function renderSession(root: HTMLElement, sessionId: string): Promi
   const appearance = mergeAppearance(settings.appearance, profile?.terminalOverrides);
 
   const title = `${params.username}@${params.host}`;
+  getTabManager()?.setActiveTitle(title);
+  log.session.info('open', { sessionId, host: params.host, port: params.port });
+
   root.innerHTML = `
-    <div class="session-page">
+    <div class="session-page${debugFlags.debug ? ' session-page--debug' : ''}">
+      ${debugFlags.debug ? `<aside class="session-debug panel" id="session-debug-panel">
+        <strong>Debug</strong>
+        <div class="session-debug__meta">session ${escapeHtml(sessionId.slice(0, 8))}… · termTrace=${debugFlags.termTrace}</div>
+        <div class="button-row">
+          <button type="button" id="session-debug-download" class="btn">Download capture</button>
+          <a class="btn" href="/debug">Inspector</a>
+        </div>
+      </aside>` : ''}
       <header class="session-toolbar">
         <div class="session-toolbar__info">
           <a class="brand session-toolbar__brand" href="/">iwa-ssh</a>
@@ -106,11 +124,18 @@ export async function renderSession(root: HTMLElement, sessionId: string): Promi
     username: params.username,
     identityId: params.identityId,
     startupCommand: params.startupCommand,
-    onStatus: (status, error) => updateStatus(status, error),
+    onStatus: (status, error) => {
+      if (error) setLastSessionError(error);
+      updateStatus(status, error);
+    },
   });
 
   adapter.open(terminalHost);
-  session.attachTerminal(adapter);
+  session.attachTerminal(adapter, {
+    onOutput: (data) => {
+      recordTerminalOutput(sessionId, data, 'out');
+    },
+  });
 
   const reconnect = async () => {
     if (overlay) overlay.hidden = true;
@@ -124,10 +149,13 @@ export async function renderSession(root: HTMLElement, sessionId: string): Promi
   root.querySelector('#session-duplicate')?.addEventListener('click', () => {
     const duplicateId = crypto.randomUUID();
     storeSessionParams({ ...params, id: duplicateId });
-    window.open(`/session/${encodeURIComponent(duplicateId)}`, '_blank');
+    Router.openTab(`/session/${encodeURIComponent(duplicateId)}`, title);
   });
   root.querySelector('#session-settings')?.addEventListener('click', () => {
-    window.open('/settings?popup=1', '_blank', 'noopener');
+    Router.openTab('/settings?popup=1', 'Settings');
+  });
+  root.querySelector('#session-debug-download')?.addEventListener('click', () => {
+    downloadTerminalCapture(sessionId);
   });
 
   const onWindowResize = () => adapter.fit();
@@ -138,9 +166,11 @@ export async function renderSession(root: HTMLElement, sessionId: string): Promi
     void session.disconnect().catch(() => undefined);
     session.dispose();
     adapter.dispose();
+    unregisterActiveSession(sessionId);
     if (activeCleanup === cleanup) activeCleanup = null;
   };
 
   activeCleanup = cleanup;
+  registerActiveSession(sessionId);
   await session.connect();
 }
