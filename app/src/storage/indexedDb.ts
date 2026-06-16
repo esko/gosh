@@ -45,7 +45,23 @@ function getDb(): Promise<IDBPDatabase<IwaSshDb>> {
 export async function loadSettings(): Promise<AppSettings> {
   const db = await getDb();
   const stored = await db.get('settings', 'app');
-  return stored ?? structuredClone(DEFAULT_SETTINGS);
+  if (!stored) return structuredClone(DEFAULT_SETTINGS);
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    appearance: {
+      ...DEFAULT_SETTINGS.appearance,
+      ...stored.appearance,
+    },
+    keyboard: {
+      ...DEFAULT_SETTINGS.keyboard,
+      ...stored.keyboard,
+    },
+    behavior: {
+      ...DEFAULT_SETTINGS.behavior,
+      ...stored.behavior,
+    },
+  };
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {

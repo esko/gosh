@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     altSendsEscape: true,
     backspaceSendsDelete: true,
     deleteSendsEscapeSequence: false,
+    kittyKeyboardProtocol: false,
   },
   behavior: {
     confirmCloseTab: true,

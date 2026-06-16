@@ -43,6 +43,9 @@ export class Xterm6TerminalAdapter implements TerminalAdapter {
       fontWeightBold,
       scrollback: appearance.scrollbackLines,
       theme: appearance.theme,
+      vtExtensions: {
+        kittyKeyboard: this.keyboard?.kittyKeyboardProtocol ?? false,
+      },
       allowProposedApi: true,
     });
 

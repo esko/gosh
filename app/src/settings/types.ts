@@ -62,6 +62,7 @@ export type KeyboardSettings = {
   altSendsEscape: boolean;
   backspaceSendsDelete: boolean;
   deleteSendsEscapeSequence: boolean;
+  kittyKeyboardProtocol: boolean;
 };
 
 export type TerminalBehavior = {

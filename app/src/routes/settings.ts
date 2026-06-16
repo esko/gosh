@@ -101,6 +101,7 @@ function renderSettingsForm(settings: AppSettings, popup: boolean): string {
         ${checkbox('altSendsEscape', 'Alt sends escape', keyboard.altSendsEscape)}
         ${checkbox('backspaceSendsDelete', 'Backspace sends delete', keyboard.backspaceSendsDelete)}
         ${checkbox('deleteSendsEscapeSequence', 'Delete sends escape sequence', keyboard.deleteSendsEscapeSequence)}
+        ${checkbox('kittyKeyboardProtocol', 'Kitty keyboard protocol', keyboard.kittyKeyboardProtocol, 'Allows terminal programs to request enhanced keyboard reporting.')}
       </section>
 
       <div class="button-row settings-actions">
@@ -169,6 +170,7 @@ export async function renderSettings(root: HTMLElement, query: URLSearchParams):
         altSendsEscape: data.get('altSendsEscape') === 'on',
         backspaceSendsDelete: data.get('backspaceSendsDelete') === 'on',
         deleteSendsEscapeSequence: data.get('deleteSendsEscapeSequence') === 'on',
+        kittyKeyboardProtocol: data.get('kittyKeyboardProtocol') === 'on',
       },
     };
 
