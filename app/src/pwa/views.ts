@@ -3,9 +3,15 @@ import { deleteProfile, listProfiles, saveProfile } from '../storage/indexedDb';
 import { escapeHTML, formatTime, requiredElement } from './dom';
 import { readDiagnostics } from './diagnostics';
 import { GhosttyTerminalAdapter, ensureGhosttyReady } from './ghosttyAdapter';
-import { loadCustomFont, loadPwaSettings, normalizePwaSettings, savePwaSettings, applyPwaAppearance } from './settings';
+import { loadCustomFont, normalizePwaSettings, applyPwaAppearance } from './settings';
 import { getThemePalette, THEME_PRESETS } from './themes';
-import { loadSettingsProfiles, createSettingsProfile } from './settingsProfiles';
+import {
+  loadSettingsProfiles,
+  createSettingsProfile,
+  getSettingsProfile,
+  upsertSettingsProfile,
+  resolveSettings,
+} from './settingsProfiles';
 import { profileToSpec, recordConnection, specFromQuery, specToQuery } from './profileModel';
 import { shouldPassThroughSystemShortcut } from './shortcuts';
 import { showContextMenu, type ContextMenuItem } from './contextMenu';
@@ -139,6 +145,13 @@ function showProfileMenu(event: MouseEvent, profile: Profile, root: HTMLElement)
 
 function openConnectionForm(): void {
   openOverlay((close) => {
+    const settingsProfiles = loadSettingsProfiles();
+    const spField =
+      settingsProfiles.length > 1
+        ? `<label class="field"><span>settings profile</span><select name="sp">${settingsProfiles
+            .map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`)
+            .join('')}</select></label>`
+        : '';
     const modal = elFromHTML(`
       <div class="modal">
         <h2>New connection</h2>
@@ -149,6 +162,7 @@ function openConnectionForm(): void {
             <label class="field"><span>port</span><input name="port" type="number" min="1" max="65535" value="22"></label>
           </div>
           <label class="field"><span>ssh key — optional</span><textarea name="key" placeholder="paste a private key, or choose a file" spellcheck="false"></textarea></label>
+          ${spField}
           <div class="actions">
             <button type="button" class="btn-ghost" data-cancel>Cancel</button>
             <button type="submit" class="btn">Connect</button>
@@ -164,8 +178,9 @@ function openConnectionForm(): void {
       const user = String(data.get('user') ?? '').trim();
       const port = Number(data.get('port') ?? 22) || 22;
       if (!host || !user) return;
-      // Persist as a connection profile (key handling wired later).
-      const profile: Profile = { id: crypto.randomUUID(), name: `${user}@${host}`, protocol: 'ssh', host, port, username: user };
+      const settingsProfileId = String(data.get('sp') ?? '').trim() || undefined;
+      // Persist as a connection profile (key handling wired in a follow-up).
+      const profile: Profile = { id: crypto.randomUUID(), name: `${user}@${host}`, protocol: 'ssh', host, port, username: user, settingsProfileId };
       await saveProfile(profile);
       navigate(`/terminal.html?${specToQuery(profileToSpec(profile))}`);
     });
@@ -211,14 +226,23 @@ export function openSettings(initial: SettingsTab = 'appearance'): void {
     `);
 
     const body = modal.querySelector<HTMLElement>('[data-body]')!;
-    const select = (tab: SettingsTab): void => {
-      modal.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
-      renderSettingsTab(body, tab);
+    let activeTab: SettingsTab = initial;
+    let activeProfileId = profiles[0].id;
+    const render = (): void => {
+      modal.querySelectorAll<HTMLElement>('[data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === activeTab)));
+      renderSettingsTab(body, activeTab, activeProfileId);
     };
-    modal.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) => b.addEventListener('click', () => select(b.dataset.tab as SettingsTab)));
+    modal.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
+      b.addEventListener('click', () => {
+        activeTab = b.dataset.tab as SettingsTab;
+        render();
+      }),
+    );
     modal.querySelectorAll<HTMLButtonElement>('[data-pill]').forEach((b) =>
       b.addEventListener('click', () => {
+        activeProfileId = b.dataset.pill ?? activeProfileId;
         modal.querySelectorAll<HTMLElement>('[data-pill]').forEach((p) => p.setAttribute('aria-selected', String(p === b)));
+        render();
       }),
     );
     modal.querySelector<HTMLButtonElement>('[data-close]')?.addEventListener('click', close);
@@ -230,13 +254,13 @@ export function openSettings(initial: SettingsTab = 'appearance'): void {
         openSettings(initial);
       }
     });
-    select(initial);
+    render();
     return modal;
   });
 }
 
-function renderSettingsTab(body: HTMLElement, tab: SettingsTab): void {
-  if (tab === 'appearance') return renderAppearanceTab(body);
+function renderSettingsTab(body: HTMLElement, tab: SettingsTab, profileId: string): void {
+  if (tab === 'appearance') return renderAppearanceTab(body, profileId);
   if (tab === 'about') return void renderAboutTab(body);
   const note =
     tab === 'keyboard'
@@ -252,8 +276,12 @@ function setRow(label: string, control: string, hint?: string): string {
   </div>`;
 }
 
-function renderAppearanceTab(body: HTMLElement): void {
-  const s = loadPwaSettings();
+function renderAppearanceTab(body: HTMLElement, profileId: string): void {
+  const s = getSettingsProfile(profileId).settings;
+  const save = (patch: Record<string, unknown>): void => {
+    const current = getSettingsProfile(profileId);
+    upsertSettingsProfile({ ...current, settings: normalizePwaSettings({ ...current.settings, ...patch }) });
+  };
   const opts = (values: (string | number)[], current: string | number): string =>
     values.map((v) => `<option value="${v}"${String(v) === String(current) ? ' selected' : ''}>${v}</option>`).join('');
 
@@ -286,24 +314,21 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
   body.querySelectorAll<HTMLButtonElement>('[data-theme]').forEach((btn) =>
     btn.addEventListener('click', () => {
       const preset = btn.dataset.theme!;
-      savePwaSettings(normalizePwaSettings({ ...loadPwaSettings(), theme: { preset } }));
+      save({ theme: { preset } });
       body.querySelectorAll<HTMLElement>('[data-theme]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.theme === preset)));
     }),
   );
   body.querySelectorAll<HTMLElement>('input, select').forEach((field) =>
     field.addEventListener('change', () => {
       const get = (n: string): string => body.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${n}"]`)?.value ?? '';
-      savePwaSettings(
-        normalizePwaSettings({
-          ...loadPwaSettings(),
-          fontFamily: get('fontFamily'),
-          fontSize: Number(get('fontSize')),
-          cursorStyle: get('cursorStyle'),
-          cursorBlink: get('cursorBlink') === 'on',
-          terminalPadding: Number(get('terminalPadding')),
-          scrollback: Number(get('scrollback')),
-        }),
-      );
+      save({
+        fontFamily: get('fontFamily'),
+        fontSize: Number(get('fontSize')),
+        cursorStyle: get('cursorStyle'),
+        cursorBlink: get('cursorBlink') === 'on',
+        terminalPadding: Number(get('terminalPadding')),
+        scrollback: Number(get('scrollback')),
+      });
     }),
   );
 }
@@ -339,7 +364,7 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   }
   activeSpec = spec;
 
-  const settings = loadPwaSettings();
+  const settings = resolveSettings(spec.settingsProfileId);
   applyPwaAppearance(settings);
   await loadCustomFont(settings);
   await ensureGhosttyReady();
