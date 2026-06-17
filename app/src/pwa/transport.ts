@@ -1,5 +1,6 @@
 import type { TerminalAdapter, TerminalSubscription } from '../terminal/TerminalAdapter';
 import { NasshRuntime } from '../ssh/NasshRuntime';
+import { checkMoshPrerequisites } from '../ssh/moshGate';
 import type { PwaConnectionSpec, TerminalTransportStatus } from './types';
 
 export type TransportStatusHandler = (status: TerminalTransportStatus, error?: string) => void;
@@ -56,7 +57,16 @@ export class SshDirectSocketsTransport implements TerminalTransport {
 
   async connect(adapter: TerminalAdapter): Promise<void> {
     if (this.spec.protocol === 'mosh') {
-      this.onStatus('error', 'Mosh transport is deferred until SSH over Direct Sockets is stable.');
+      // Surface the specific platform gap (UDP / mosh-client.wasm) through the
+      // transport status path. The nassh mosh command-path runtime is not wired
+      // yet — tracked in #44 (device-gated acceptance).
+      const gate = await checkMoshPrerequisites();
+      this.onStatus(
+        'error',
+        gate.ok
+          ? 'Mosh runtime is not implemented yet; SSH is the supported transport (see #44).'
+          : gate.message,
+      );
       return;
     }
 
