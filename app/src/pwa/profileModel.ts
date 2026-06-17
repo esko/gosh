@@ -14,6 +14,7 @@ export function profileToSpec(profile: Profile): PwaConnectionSpec {
     argstr: profile.connectionArgs,
     profileId: profile.id,
     identityId: profile.identityId,
+    settingsProfileId: profile.settingsProfileId,
     startupCommand: profile.startupCommand,
   };
 }
@@ -33,6 +34,7 @@ export function specToQuery(spec: PwaConnectionSpec): string {
   if (spec.argstr) params.set('args', spec.argstr);
   if (spec.profileId) params.set('profile', spec.profileId);
   if (spec.identityId) params.set('identity', spec.identityId);
+  if (spec.settingsProfileId) params.set('sp', spec.settingsProfileId);
   if (spec.startupCommand) params.set('startup', spec.startupCommand);
   return params.toString();
 }
@@ -51,6 +53,7 @@ export function specFromQuery(query: URLSearchParams): PwaConnectionSpec | null 
     argstr: query.get('args')?.trim() || undefined,
     profileId: query.get('profile')?.trim() || undefined,
     identityId: query.get('identity')?.trim() || undefined,
+    settingsProfileId: query.get('sp')?.trim() || undefined,
     startupCommand: query.get('startup')?.trim() || undefined,
   };
 }
