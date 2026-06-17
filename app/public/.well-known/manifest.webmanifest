@@ -16,7 +16,7 @@
       "scope_patterns": [{ "pathname": "/" }]
     },
     "new_tab_button": {
-      "url": "/connect"
+      "url": "/terminal"
     }
   },
   "launch_handler": {

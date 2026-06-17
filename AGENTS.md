@@ -1,23 +1,24 @@
 # Agent Guide
 
-This repo is being reset toward a near-upstream Google Terminal + nassh shape. Upstream behavior wins unless an IWA/Direct Sockets adaptation or an approved local delta requires otherwise.
+This repo has pivoted from a near-upstream Google Terminal UI reset to a Moshtty `legacy-pwa` frontend replacement. The frontend base is the legacy PWA/Ghostty shape; `iwa-ssh` keeps IWA packaging, manifests, signing/bundling scripts, Direct Sockets permissions, install docs, upstream nassh/wassh runtime assets, and thin platform adapters.
 
 ## Current Product Direction
 
-Keep only these local deltas without a new ADR:
+- Base frontend work on Moshtty `legacy-pwa`, pruned for IWA.
+- Use Ghostty-web for the terminal renderer and terminal canvas/layout behavior.
+- Use ChromeOS/IWA native app tabs: `/` is the pinned home/menu tab, `/terminal` is the native new-tab target.
+- Use `iwa-ssh` profiles as the launcher/session model, replacing legacy PWA workspaces, spaces, internal tabs, panes, splits, and durable Go-agent sessions.
+- Plug IWA Direct Sockets SSH transport into the frontend through a small transport boundary.
 
-- xterm.js `6.1.0-beta` with kitty keyboard protocol support.
-- Arbitrary font support, including Nerd Font family strings.
-- Stronger theme, scrollback, and performance controls.
-- Mosh support through upstream nassh/wassh.
+Do not reuse old `iwa-ssh` app-shell routes, xterm terminal UI, upstream Terminal-shaped settings screens, session route UI, simulated tabs, dashboard, or debug-first frontend surfaces. Keep code under `app/src/ssh`, `app/upstream`, IWA manifests, and scripts only when it is low-level IWA/runtime infrastructure.
 
-Do not preserve old custom route, session, dashboard, fixture, identity, or tab behavior simply because it exists. Preserve it only when it matches upstream Terminal/nassh behavior or an approved delta.
+Mosh remains a follow-up transport after SSH over Direct Sockets is stable. Do not keep old nassh UI scaffolding just to preserve Mosh.
 
 ## Implementation Rules
 
-- Read `docs/RESET_PRD.md`, `docs/ARCHITECTURE.md`, `docs/UPSTREAM_SYNC.md`, and the relevant ADR before changing reset work.
+- Read `docs/LEGACY_PWA_PIVOT_PRD.md`, `docs/LEGACY_PWA_PIVOT_PLAN.md`, `docs/RESET_PRD.md`, `docs/ARCHITECTURE.md`, `docs/UPSTREAM_SYNC.md`, and the relevant ADR before changing reset work.
 - Keep upstream-copied runtime files mechanically refreshed by `scripts/fetch-upstream-assets.mjs`; document local patches there or in `docs/UPSTREAM_SYNC.md`.
-- Put IWA/Direct Sockets adaptations in thin adapter or polyfill modules. Do not push app-specific concerns into upstream-shaped UI or emulator modules.
+- Put IWA/Direct Sockets adaptations in thin adapter, transport, or polyfill modules. Do not push app-specific concerns into Ghostty renderer modules.
 - Check `git status --short` before edits and do not overwrite unrelated local changes.
 - Use separate git worktrees for parallel implementation slices or subagent-owned coding work. Name worktrees after the issue or slice, keep each worktree scoped to one reset issue when possible, and merge results back only after review and verification.
 - Verify with the smallest relevant command first, then run broader checks before handing off.
@@ -27,3 +28,17 @@ Do not preserve old custom route, session, dashboard, fixture, identity, or tab 
 Use cheap subagents when they can reduce cost or safely parallelize work, even if the main agent could do the task directly. Good subagent tasks include independent doc review, upstream/source comparison, test inventory, UI route inventory, and narrow code audits. Keep implementation decisions, final edits, and verification orchestration in the main agent unless the task is explicitly delegated.
 
 Do not spawn subagents for tiny single-file edits or when their context loading would cost more than the work. When using subagents, give bounded instructions, ask for file/line evidence, and merge only reviewed output.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in GitHub Issues for `esko/iwa-ssh`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the repo's GitHub labels, including `ready-for-agent` for AFK-ready work. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repo with root docs and ADRs under `docs/adr/`. See `docs/agents/domain.md`.

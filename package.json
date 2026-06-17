@@ -9,9 +9,11 @@
     "install:iwa": "node scripts/install-iwa-dev.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "node scripts/test-ssh-command-parser.mjs",
+    "test": "vitest run && node scripts/test-ssh-command-parser.mjs",
     "typecheck": "tsc -b --noEmit",
     "fetch-assets": "node scripts/fetch-upstream-assets.mjs",
+    "patch-ghostty-web": "node scripts/patch-ghostty-web.mjs",
+    "postinstall": "node scripts/patch-ghostty-web.mjs",
     "bump-version": "node scripts/bump-version.mjs",
     "bundle:iwa": "node --experimental-strip-types iwa/build-bundle.mjs",
     "bundle:iwa:unsigned": "node --experimental-strip-types iwa/build-bundle.mjs --unsigned-only",
@@ -29,11 +31,13 @@
     "@xterm/addon-search": "^0.17.0-beta.287",
     "@xterm/addon-web-links": "^0.13.0-beta.287",
     "@xterm/xterm": "^6.1.0-beta.287",
+    "ghostty-web": "github:rcarmo/ghostty-web#b6b243d7f380f8307e375719968f6046f1102c48",
     "idb": "^8.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.21",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^2.1.9"
   }
 }
