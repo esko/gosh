@@ -1,66 +1,53 @@
-import type { TerminalSink, TerminalSubscription } from '../terminal/TerminalAdapter';
+import type { TerminalSink } from '../terminal/TerminalAdapter';
 import type { TerminalTransport, TransportStatusHandler } from '../pwa/transport';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
-import { createTsshdSession } from './bootstrap';
+
+const TCP_UNAVAILABLE =
+  'Direct Sockets (TCPSocket) is unavailable. Install as an IWA with direct-sockets permission.';
+const UDP_UNAVAILABLE =
+  'Direct Sockets (UDPSocket) is unavailable. Install as an IWA with direct-sockets permission.';
+const RELAY_UNAVAILABLE =
+  'tsshd is not available in this browser build: the native QUIC/KCP relay cannot run inside an IWA.';
+
+function tsshdUnavailableReason(): string {
+  const directSockets = globalThis as typeof globalThis & {
+    TCPSocket?: unknown;
+    UDPSocket?: unknown;
+  };
+  if (typeof directSockets.TCPSocket !== 'function') return TCP_UNAVAILABLE;
+  if (typeof directSockets.UDPSocket !== 'function') return UDP_UNAVAILABLE;
+  return RELAY_UNAVAILABLE;
+}
 
 export class TsshdRelayTransport implements TerminalTransport {
-  private input: TerminalSubscription | null = null;
-  private onStatus: TransportStatusHandler;
+  private ended = false;
 
   constructor(
     private readonly spec: ConnectionIntent,
-    onStatus: TransportStatusHandler,
-  ) {
-    this.onStatus = onStatus;
-  }
+    private readonly onStatus: TransportStatusHandler,
+  ) {}
 
   async connect(adapter: TerminalSink): Promise<void> {
     this.onStatus('connecting');
-
-    const result = await createTsshdSession(this.spec);
-
-    // Build server info JSON for the relay
-    const serverInfo = JSON.stringify(result.params.serverInfo);
-
-    // Spawn relay process (this is a native binary — works on desktop,
-    // not in browser. For browser, we'd compile to WASM.)
-    const relay = new Worker(
-      new URL('./tsshdRelayWorker.ts', import.meta.url),
-      { type: 'module' }
-    );
-
-    relay.postMessage({ type: 'connect', serverInfo });
-
-    relay.onmessage = (event: MessageEvent) => {
-      const msg = event.data;
-      if (msg.type === 'output') {
-        adapter.write(new Uint8Array(msg.data));
-      } else if (msg.type === 'status') {
-        this.onStatus(msg.status, msg.error);
-      } else if (msg.type === 'error') {
-        adapter.write(`\r\n\x1b[33m${msg.msg}\x1b[0m\r\n`);
-        this.onStatus('error', msg.msg);
-      }
-    };
-
-    this.input = adapter.onInput((data) => {
-      relay.postMessage({ type: 'input', data });
-    });
-
-    relay.onerror = (err) => {
-      this.onStatus('error', err.message);
-    };
+    // The committed relay is a native macOS executable. An IWA cannot spawn
+    // native processes, and there is no bundled WASM/worker relay. Stop before
+    // SSH bootstrap so we neither launch an unusable remote tsshd process nor
+    // leave the pane pretending to connect.
+    const mode = this.spec.tsshd?.udpMode ?? 'KCP';
+    const message = tsshdUnavailableReason().replace('QUIC/KCP', mode);
+    adapter.write(`\r\n\x1b[33m${message}\x1b[0m\r\n`);
+    this.onStatus('error', message);
+    throw new Error(message);
   }
 
   async disconnect(): Promise<void> {
+    if (this.ended) return;
+    this.ended = true;
     this.onStatus('disconnecting');
-    this.input?.dispose();
-    this.input = null;
     this.onStatus('disconnected');
   }
 
   dispose(): void {
-    this.input?.dispose();
-    this.input = null;
+    this.ended = true;
   }
 }

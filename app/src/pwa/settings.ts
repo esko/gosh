@@ -159,6 +159,7 @@ export function applyPwaAppearance(settings: PwaTerminalSettings): void {
 
 /** Resolve and apply the chrome color scheme (dark / light / system). */
 export function applyColorScheme(scheme: 'dark' | 'light' | 'system'): void {
+  activeColorScheme = scheme;
   const resolved = resolveColorScheme(scheme);
   document.documentElement.dataset.colorScheme = resolved;
 }
@@ -170,14 +171,25 @@ export function resolveColorScheme(scheme: 'dark' | 'light' | 'system'): 'dark' 
   return scheme;
 }
 
+/** The last chrome scheme applied, kept live as settings objects are replaced. */
+let activeColorScheme: 'dark' | 'light' | 'system' = 'dark';
+let colorSchemeMediaQuery: MediaQueryList | null = null;
+
+function handleColorSchemeChange(event: MediaQueryListEvent): void {
+  if (activeColorScheme === 'system') {
+    document.documentElement.dataset.colorScheme = event.matches ? 'light' : 'dark';
+  }
+}
+
 /** Listen for system preference changes and re-apply when scheme is 'system'. */
 export function startColorSchemeListener(settings: PwaTerminalSettings): void {
   if (typeof window === 'undefined') return;
-  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
-    if (settings.colorScheme === 'system') {
-      applyColorScheme('system');
-    }
-  });
+  activeColorScheme = settings.colorScheme;
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+  if (colorSchemeMediaQuery === mediaQuery) return;
+  colorSchemeMediaQuery?.removeEventListener('change', handleColorSchemeChange);
+  colorSchemeMediaQuery = mediaQuery;
+  colorSchemeMediaQuery.addEventListener('change', handleColorSchemeChange);
 }
 
 /** CSS family name used for a user-provided font in app UI. */

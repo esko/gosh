@@ -300,6 +300,28 @@ html.app-chrome .term-launcher .launch {
   font-size: 13.5px;
 }
 
+/* Keep every launcher choice and its primary action visible at 800×600,
+   including the installed-app caption. Taller windows retain the relaxed
+   vertical rhythm; shorter ones can still scroll the left panel. */
+@media (max-height: 680px) {
+  .launch-form {
+    padding: 12px 22px 14px;
+  }
+
+  .ns-form {
+    gap: 6px;
+  }
+
+  .launch-form .field {
+    gap: 5px;
+    margin-bottom: 10px;
+  }
+
+  .launch-form .key-section {
+    margin-bottom: 10px;
+  }
+}
+
 /* Right column: header bar (brand + search), then a scrolling card area, then a
    pinned footer. */
 .launch-main {
@@ -2250,6 +2272,86 @@ p.set-hint {
 
 .theme-swatch[aria-selected='true'] .theme-name {
   color: var(--fg);
+}
+
+/* Phone-sized app windows need two independently scrollable settings regions:
+   a bounded profile/tab chooser and a useful content viewport. Stack controls
+   so their fixed desktop width cannot spill beyond the narrow modal. */
+@media (max-width: 480px) {
+  .overlay {
+    padding: 8px;
+  }
+
+  .modal-wide {
+    width: 100%;
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .settings {
+    grid-template-rows: minmax(120px, 30vh) minmax(0, 1fr);
+  }
+
+  .settings-aside {
+    min-height: 0;
+    padding: 14px 12px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-y: auto;
+  }
+
+  .aside-title {
+    order: 0;
+    margin-bottom: 12px;
+  }
+
+  .aside-nav {
+    order: 1;
+    flex: none;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .nav-item {
+    flex: none;
+    padding: 7px 10px;
+    white-space: nowrap;
+  }
+
+  .aside-sep {
+    order: 2;
+    margin: 8px 6px;
+  }
+
+  .aside-label,
+  .sp-pill,
+  .sp-new {
+    order: 3;
+  }
+
+  .aside-version {
+    order: 4;
+  }
+
+  .settings-body {
+    padding: 20px 16px 24px;
+  }
+
+  .set-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .set-row .control,
+  .set-row .control-narrow {
+    width: 100%;
+  }
+
+  .theme-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
 }
 
 .diag-row {

@@ -1,4 +1,5 @@
 import type { Identity, Profile } from '../settings/types';
+import { normalizeProfileName, PROFILE_NAME_MAX_LENGTH } from '../settings/profileName';
 import { deleteHostScreenshot, deleteIdentity, deleteProfile, getEtSession, getProfile, listHostScreenshots, listIdentities, listKnownHosts, listProfiles, purgeStaleEtSessions, saveHostScreenshot, saveIdentity, saveProfile } from '../storage/indexedDb';
 import { encryptPrivateKey } from '../security/KeyCrypto';
 import { credentialVault } from '../security/credentialVault';
@@ -402,27 +403,85 @@ function setThemeColor(color: string): void {
 // Topmost-only Escape, so a modal opened on top of another (e.g. the profile
 // editor over Settings) closes just itself, not the whole stack.
 const overlayStack: HTMLElement[] = [];
+let overlayTitleSeq = 0;
+
+const OVERLAY_FOCUSABLE = [
+  'a[href]',
+  'button:not(:disabled)',
+  'input:not(:disabled):not([type="hidden"])',
+  'select:not(:disabled)',
+  'textarea:not(:disabled)',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function overlayFocusableElements(content: HTMLElement): HTMLElement[] {
+  return [...content.querySelectorAll<HTMLElement>(OVERLAY_FOCUSABLE)].filter(
+    (element) => !element.hidden && element.getAttribute('aria-hidden') !== 'true' && element.getClientRects().length > 0,
+  );
+}
 
 function openOverlay(build: (close: () => void) => HTMLElement): void {
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
+  let content: HTMLElement;
+  let closed = false;
   const onKey = (event: KeyboardEvent): void => {
-    if (event.key === 'Escape' && overlayStack[overlayStack.length - 1] === overlay) {
-      event.stopPropagation();
+    if (overlayStack[overlayStack.length - 1] !== overlay) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
       close();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+
+    const focusable = overlayFocusableElements(content);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      content.tabIndex = -1;
+      content.focus();
+      return;
+    }
+    const active = document.activeElement;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (!content.contains(active)) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && (active === first || active === content)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && active === last) {
+      event.preventDefault();
+      first.focus();
     }
   };
   function close(): void {
+    if (closed) return;
+    closed = true;
     overlay.remove();
     const index = overlayStack.indexOf(overlay);
     if (index >= 0) overlayStack.splice(index, 1);
     window.removeEventListener('keydown', onKey, true);
+    if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
   }
   window.addEventListener('keydown', onKey, true);
   // Each stacked overlay paints above the previous one.
   overlay.style.zIndex = String(50 + overlayStack.length);
   overlayStack.push(overlay);
-  const content = build(close);
+  content = build(close);
+  if (!content.hasAttribute('role')) content.setAttribute('role', 'dialog');
+  content.setAttribute('aria-modal', 'true');
+  if (!content.hasAttribute('aria-label') && !content.hasAttribute('aria-labelledby')) {
+    const heading = content.querySelector<HTMLElement>('h1, h2, h3, h4, h5, h6');
+    if (heading) {
+      if (!heading.id) heading.id = `overlay-title-${++overlayTitleSeq}`;
+      content.setAttribute('aria-labelledby', heading.id);
+    } else {
+      content.setAttribute('aria-label', 'Dialog');
+    }
+  }
   // Close on any press that lands outside the modal content. Checking
   // `!content.contains(target)` is more robust than `target === overlay`, which
   // misses presses on an intermediate wrapper (some builders nest the dialog).
@@ -431,6 +490,14 @@ function openOverlay(build: (close: () => void) => HTMLElement): void {
   });
   overlay.append(content);
   document.body.append(overlay);
+  setTimeout(() => {
+    if (!closed && !content.contains(document.activeElement)) {
+      const autofocus = content.querySelector<HTMLElement>('[autofocus]');
+      const target = autofocus ?? overlayFocusableElements(content)[0] ?? content;
+      if (target === content) content.tabIndex = -1;
+      target.focus({ preventScroll: true });
+    }
+  }, 0);
 }
 
 // -------------------------------------------------------------------- home --
@@ -603,7 +670,7 @@ async function renderLauncherInto(root: HTMLElement, ctx: LauncherCtx): Promise<
           <div class="launch-top-main">
             <span class="home-brand">
               <span class="home-mark">${BRAND_MARK}</span>
-              <span class="home-wordmark">iwa<span class="home-wordmark-dim">-ssh</span></span>
+              <span class="home-wordmark">Gosh</span>
             </span>
             <div class="home-filter">
               <span class="filter-icon">${SEARCH_SVG}</span>
@@ -877,7 +944,7 @@ function installLivenessRefresh(root: HTMLElement): void {
 }
 
 function deleteProfileConfirmed(profile: Profile, reload: () => void | Promise<void>): void {
-  const label = profile.name?.trim() || formatConnectionTarget(profileToSpec(profile));
+  const label = normalizeProfileName(profile.name) || formatConnectionTarget(profileToSpec(profile));
   openConfirmModal({
     title: 'Delete host',
     body: `Delete the host “${label}”?`,
@@ -894,7 +961,7 @@ function deleteProfileConfirmed(profile: Profile, reload: () => void | Promise<v
 /** The display name shown for a profile (custom name, else the connection target). */
 function profileDisplayName(profile: Profile): string {
   const target = formatConnectionTarget(profileToSpec(profile));
-  const name = profile.name?.trim();
+  const name = normalizeProfileName(profile.name);
   return name && name !== target ? name : target;
 }
 
@@ -1060,7 +1127,7 @@ async function buildConnectionResult(
     const profile: Profile = {
       ...existing,
       id: existing?.id ?? crypto.randomUUID(),
-      name: values.name,
+      name: normalizeProfileName(values.name),
       protocol: values.protocol,
       host: values.host,
       port: values.port,
@@ -1098,7 +1165,7 @@ function connectionFieldsHTML(existing?: Profile): string {
   const sel = (value: string): string => (proto === value ? 'selected' : '');
   const nameValue = existing && existing.name !== formatConnectionTarget(profileToSpec(existing)) ? existing.name : '';
   return `
-    <label class="field"><span>name — optional</span><input name="name" value="${escapeHTML(nameValue)}" placeholder="defaults to user@host" autocomplete="off" spellcheck="false"></label>
+    <label class="field"><span>name — optional</span><input name="name" maxlength="${PROFILE_NAME_MAX_LENGTH}" value="${escapeHTML(normalizeProfileName(nameValue))}" placeholder="defaults to user@host" autocomplete="off" spellcheck="false"></label>
     <label class="field"><span>host</span><input name="host" value="${escapeHTML(existing?.host ?? '')}" placeholder="192.0.2.10" autocomplete="off" spellcheck="false" required></label>
     <div class="field-row">
       <label class="field"><span>user</span><input name="user" value="${escapeHTML(existing?.username ?? '')}" placeholder="user" autocomplete="off" spellcheck="false" required></label>
@@ -1173,7 +1240,7 @@ function wireConnectionFields(form: HTMLFormElement): { readValues: () => ConnFo
       protocol,
       etPort: protocol === 'et' ? Number(data.get('etPort') ?? 2022) || 2022 : undefined,
       settingsProfileId: String(data.get('sp') ?? '').trim() || undefined,
-      name: String(data.get('name') ?? '').trim() || `${user}@${host}`,
+      name: normalizeProfileName(data.get('name')) || `${user}@${host}`,
       keyText: String(data.get('key') ?? '').trim(),
       keyFile: keyFile.files?.[0],
       passphrase: String(data.get('passphrase') ?? ''),
@@ -1522,7 +1589,7 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
       `;
 
   const etSummary = etLocal.sessions === 0 && !etLocal.hasDeviceKey
-    ? 'No Eternal Terminal sessions or local ET keys stored.'
+    ? 'No Eternal Terminal sessions or local ET keys stored'
     : `${etLocal.sessions} ET ${etLocal.sessions === 1 ? 'session' : 'sessions'}`
       + (etLocal.outboundFrames || etLocal.journalChunks
         ? `, ${etLocal.outboundFrames} recovery ${etLocal.outboundFrames === 1 ? 'frame' : 'frames'}, ${etLocal.journalChunks} journal ${etLocal.journalChunks === 1 ? 'chunk' : 'chunks'}`
@@ -1806,9 +1873,13 @@ function renderBehaviorTab(body: HTMLElement, profileId: string, forceCustomTerm
 }
 
 function setRow(label: string, control: string, hint?: string): string {
+  const accessibleControl = control.replace(
+    /<select(?=[\s>])(?![^>]*\baria-label=)/g,
+    `<select aria-label="${escapeHTML(label)}"`,
+  );
   return `<div class="set-row">
     <div><div class="set-label">${label}</div>${hint ? `<span class="set-hint">${hint}</span>` : ''}</div>
-    <div class="control">${control}</div>
+    <div class="control">${accessibleControl}</div>
   </div>`;
 }
 

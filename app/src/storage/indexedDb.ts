@@ -1,5 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { Identity, KnownHost, Profile } from '../settings/types';
+import { normalizeProfileName } from '../settings/profileName';
 import { normalizeIdentity } from './identityNormalize';
 
 interface GoshDb extends DBSchema {
@@ -507,17 +508,24 @@ export async function clearEtSessionRecovery(sessionId: string): Promise<EtSessi
 export async function listProfiles(): Promise<Profile[]> {
   const db = await getDb();
   const profiles = await db.getAll('profiles');
-  return profiles.sort((a, b) => (b.lastConnectedAt ?? 0) - (a.lastConnectedAt ?? 0));
+  return profiles
+    .map(normalizeProfile)
+    .sort((a, b) => (b.lastConnectedAt ?? 0) - (a.lastConnectedAt ?? 0));
 }
 
 export async function getProfile(id: string): Promise<Profile | undefined> {
   const db = await getDb();
-  return db.get('profiles', id);
+  const profile = await db.get('profiles', id);
+  return profile ? normalizeProfile(profile) : undefined;
 }
 
 export async function saveProfile(profile: Profile): Promise<void> {
   const db = await getDb();
-  await db.put('profiles', profile);
+  await db.put('profiles', normalizeProfile(profile));
+}
+
+function normalizeProfile(profile: Profile): Profile {
+  return { ...profile, name: normalizeProfileName(profile.name) };
 }
 
 export async function deleteProfile(id: string): Promise<void> {

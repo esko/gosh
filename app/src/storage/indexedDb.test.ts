@@ -4,15 +4,19 @@ import {
   checkpointEtInbound,
   getEtDeviceKey,
   getEtSession,
+  getProfile,
   listProfiles,
   purgeAllEtLocalData,
   putSavedPassword,
   resetIndexedDbConnection,
+  saveProfile,
   saveEtOutboundFrame,
   saveEtSession,
   summarizeEtLocalData,
   type EtSessionRecord,
 } from './indexedDb';
+import type { Profile } from '../settings/types';
+import { PROFILE_NAME_MAX_LENGTH } from '../settings/profileName';
 import { checkpointEtOutput, flushEtSessionCheckpoint, prepareEtSessionForConnect, resetSessionCheckpointFlushes } from '../et/sessionStore';
 
 async function deleteDatabase(): Promise<void> {
@@ -35,6 +39,20 @@ function record(): EtSessionRecord {
   };
 }
 
+async function putRawProfile(profile: Profile): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('gosh');
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('profiles', 'readwrite');
+      tx.objectStore('profiles').put(profile);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
 beforeEach(deleteDatabase);
 afterEach(async () => {
   resetSessionCheckpointFlushes();
@@ -42,6 +60,16 @@ afterEach(async () => {
 });
 
 describe('IndexedDB v2 Eternal Terminal state', () => {
+  it('bounds profile names on writes and when reading corrupt existing records', async () => {
+    const base: Profile = { id: 'bounded', name: '', host: 'h', port: 22, username: 'u' };
+    await saveProfile({ ...base, name: `  ${'w'.repeat(20_000)}  ` });
+    expect((await getProfile(base.id))?.name).toBe('w'.repeat(PROFILE_NAME_MAX_LENGTH));
+
+    await putRawProfile({ ...base, id: 'corrupt', name: `  ${'r'.repeat(20_000)}  ` });
+    expect((await getProfile('corrupt'))?.name).toBe('r'.repeat(PROFILE_NAME_MAX_LENGTH));
+    expect((await listProfiles()).find((profile) => profile.id === 'corrupt')?.name).toBe('r'.repeat(PROFILE_NAME_MAX_LENGTH));
+  });
+
   it('migrates a v1 profile without recreating existing stores', async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('gosh', 1);

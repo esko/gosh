@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { normalizePwaSettings } from './settings';
+import { applyPwaAppearance, normalizePwaSettings, startColorSchemeListener } from './settings';
 
 describe('PWA settings normalization', () => {
   it('clamps numeric settings and rejects unsupported theme values', () => {
@@ -97,5 +97,31 @@ describe('PWA settings normalization', () => {
     expect(normalizePwaSettings({ bell: 'klaxon' }).bell).toBe('none');
     expect(normalizePwaSettings({ termType: "xterm'; rm -rf /" }).termType).toBe('xterm-256color');
     expect(normalizePwaSettings({ termType: 'a'.repeat(41) }).termType).toBe('xterm-256color');
+  });
+
+  it('keeps following OS appearance changes after System is selected', () => {
+    let matches = false;
+    let onChange: ((event: { matches: boolean }) => void) | undefined;
+    const mediaQuery = {
+      get matches() { return matches; },
+      addEventListener: vi.fn((_type: string, listener: (event: { matches: boolean }) => void) => {
+        onChange = listener;
+      }),
+    };
+    const documentElement = {
+      dataset: {} as Record<string, string>,
+      style: { setProperty: vi.fn() },
+    };
+    vi.stubGlobal('window', { matchMedia: vi.fn(() => mediaQuery) });
+    vi.stubGlobal('document', { documentElement });
+
+    const initialSettings = normalizePwaSettings({ colorScheme: 'dark' });
+    startColorSchemeListener(initialSettings);
+    applyPwaAppearance(normalizePwaSettings({ colorScheme: 'system' }));
+    expect(documentElement.dataset.colorScheme).toBe('dark');
+
+    matches = true;
+    onChange?.({ matches: true });
+    expect(documentElement.dataset.colorScheme).toBe('light');
   });
 });
