@@ -34,6 +34,38 @@
   text-rendering: optimizeLegibility;
 }
 
+/* Light-mode chrome. When `html[data-color-scheme="light"]`, flip the entire
+   app surface from soft-dark to crisp-light. The terminal canvas palette is
+   separate (chosen in the theme grid) — these vars only tint the UI chrome. */
+:root[data-color-scheme="light"] {
+  color-scheme: light;
+  --bg: #f4f4f7;
+  --bg-grad: radial-gradient(125% 90% at 50% -15%, #fafbff 0%, #eef0f5 58%);
+  --surface: #fcfcfe;
+  --surface-grad: linear-gradient(180deg, #fcfcfe 0%, #f4f4f8 100%);
+  --surface-2: #edeef3;
+  --fg: #1a1d27;
+  --muted: #60667a;
+  --faint: #7a8094;
+  --line: rgba(0, 0, 0, 0.07);
+  --line-2: rgba(0, 0, 0, 0.11);
+  --focus: rgba(60, 110, 190, 0.6);
+  --status-ok: #2d8c4a;
+  --shadow: 0 20px 60px -18px rgba(0, 0, 0, 0.15), 0 2px 8px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* Only flip UI text when the active terminal theme is dark and the chrome is
+   light — preserve legibility without repainting the terminal canvas. */
+:root[data-color-scheme="light"][data-term-kind="dark"] .term-tab {
+  background: color-mix(in srgb, var(--term-bg, #000), #fff 6%);
+}
+:root[data-color-scheme="light"][data-term-kind="dark"] .term-tab:hover:not([aria-selected="true"]) {
+  background: color-mix(in srgb, var(--term-bg, #000), #fff 13%);
+}
+:root[data-color-scheme="light"][data-term-kind="dark"] .term-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--term-bg, #000), #fff 20%);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -139,9 +171,10 @@ a {
 
 /* Group headings: quiet sentence-case, not the uppercase-tracked AI kicker. */
 .section-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--faint);
 }
 
@@ -407,14 +440,14 @@ html.app-chrome .term-launcher .launch {
   color: var(--fg);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
+  box-shadow: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 .host-card:hover,
 .host-card:focus-visible {
   border-color: var(--line-2);
   box-shadow: var(--shadow);
-  transform: translateY(-1px);
   outline: none;
 }
 
@@ -522,6 +555,17 @@ html.app-chrome .term-launcher .launch {
   padding: 18px 2px;
 }
 
+.launch-empty .btn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.launch-empty .empty-hint {
+  font-size: 12px;
+  color: var(--faint);
+  margin: 4px 0 0;
+}
+
 @media (max-width: 760px) {
   .launch {
     grid-template-columns: 1fr;
@@ -581,7 +625,7 @@ html.app-chrome .term-launcher .launch {
 }
 
 .home-wordmark {
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 650;
   letter-spacing: -0.02em;
   color: var(--fg);
@@ -658,7 +702,7 @@ html.app-chrome .term-launcher .launch {
   border-radius: 6px;
   background: var(--surface);
   color: var(--faint);
-  font: 600 11px var(--mono);
+  font: 600 11px var(--ui);
   transition: opacity 0.12s ease;
 }
 
@@ -707,7 +751,7 @@ html.app-chrome .term-launcher .launch {
 
 .empty-title {
   margin: 0;
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fg);
@@ -1867,9 +1911,10 @@ textarea {
 .aside-label {
   display: block;
   margin: 0 6px 8px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--faint);
 }
 
@@ -1978,9 +2023,10 @@ textarea {
 
 .group-title {
   margin: 26px 0 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--faint);
 }
 
@@ -2024,7 +2070,9 @@ textarea {
   background: var(--line-2);
 }
 .secure-input-reveal[aria-pressed='true'] {
-  color: var(--accent, #6ea8fe);
+  color: var(--fg);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .secure-caps-hint {
   display: flex;
@@ -2482,43 +2530,59 @@ html.app-chrome .term-shell {
   opacity: 1;
 }
 
-/* Single "+" that opens the new-tab menu. Hidden until the top bar is hovered
-   (or the button is focused) so the caption stays quiet at rest. */
-.term-tab-new {
+/* Segmented "+" that opens the new-tab or directly launches. Hidden until the top bar is hovered
+   (or a button is focused) so the caption stays quiet at rest. */
+.term-tab-new-seg {
   flex: 0 0 auto;
   align-self: center;
-  display: grid;
-  place-items: center;
-  width: 26px;
+  display: flex;
+  align-items: center;
   height: 26px;
   margin-left: 6px;
-  border: 0;
-  padding: 0;
   border-radius: 6px;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.09);
   color: var(--term-fg, var(--fg));
-  cursor: pointer;
   opacity: 0;
-  transition: opacity 0.12s ease, background 0.12s ease;
+  transition: opacity 0.12s ease;
 }
 
-.term-tab-new svg {
+.term-tab-new-btn {
+  appearance: none;
+  border: 0;
+  padding: 0 6px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.term-tab-new-btn:hover,
+.term-tab-new-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.term-tab-new-btn:focus-visible {
+  outline: none;
+}
+
+.term-tab-new-btn svg {
   display: block;
 }
 
-.term-tab-new:hover {
-  background: rgba(255, 255, 255, 0.16);
+.term-tab-new-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.15);
+  flex: none;
 }
 
-.titlebar:hover .term-tab-new,
-.term-shell .term-tabs:hover .term-tab-new,
-.term-tab-new:focus-visible {
+.titlebar:hover .term-tab-new-seg,
+.term-shell .term-tabs:hover .term-tab-new-seg,
+.term-tab-new-seg:focus-within {
   opacity: 1;
-}
-
-.term-tab-new:focus-visible {
-  outline: none;
-  background: rgba(255, 255, 255, 0.16);
 }
 
 .term-status {
@@ -2746,7 +2810,7 @@ html.app-chrome .term-shell {
   border-radius: var(--radius-sm);
 }
 
-.titlebar-tabs .term-tab-new {
+.titlebar-tabs .term-tab-new-seg {
   align-self: center;
 }
 
@@ -2829,16 +2893,18 @@ html.app-chrome .term-debug-panel {
 
 /* Keyboard tab: rebind chip + listening state + conflict message. */
 .kb-chip {
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
   font-size: 12px;
   padding: 6px 12px;
   min-width: 84px;
 }
 
 .kb-chip-listening {
-  font-family: ui-monospace, monospace;
+  font-family: inherit;
   font-size: 12px;
-  color: var(--accent, #7bd88f);
+  color: var(--fg);
+  border: 1px dashed var(--line-2);
+  background: rgba(255, 255, 255, 0.02);
   padding: 6px 12px;
 }
 

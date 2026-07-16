@@ -70,6 +70,8 @@ export type PwaTerminalSettings = {
   rightClickPaste: boolean;
   /** Paste the primary selection on middle-click. */
   middleClickPaste: boolean;
+  /** Chrome color scheme: dark, light, or follow the OS system preference. */
+  colorScheme: 'dark' | 'light' | 'system';
 };
 
 export type RecentConnection = ConnectionIntent & {

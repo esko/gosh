@@ -33,7 +33,7 @@ export type ThemePresetId =
 export type Profile = {
   id: string;
   name: string;
-  protocol?: 'ssh' | 'mosh' | 'et';
+  protocol?: 'ssh' | 'mosh' | 'et' | 'tsshd';
   host: string;
   port: number;
   /** Eternal Terminal daemon port; `port` remains the SSH bootstrap port. */

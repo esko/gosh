@@ -55,4 +55,21 @@ describe('ConnectionIntent', () => {
     const b = normalizeConnectionIntent({ protocol: 'ssh', hostname: 'h', port: 22, args: [] });
     expect(connectionLayoutKey(a)).toBe(connectionLayoutKey(b));
   });
+
+  it('handles tsshd protocol normalization', () => {
+    const intent: any = normalizeConnectionIntent({ protocol: 'tsshd', hostname: 'host', args: [], tsshd: {} } as any);
+    expect(intent.protocol).toBe('tsshd');
+    expect(intent.port).toBe(22);
+  });
+
+  it('serializes tsshd options to query params', () => {
+    const intent = normalizeConnectionIntent({
+      protocol: 'tsshd', hostname: 'example.com', username: 'user',
+      args: [], tsshd: { udpMode: 'KCP', tsshdPortRange: '61001-61999' },
+    });
+    const q = new URLSearchParams(connectionIntentToQuery(intent));
+    expect(q.get('protocol')).toBe('tsshd');
+    expect(q.get('udpMode')).toBe('KCP');
+    expect(q.get('tsshdPort')).toBe('61001-61999');
+  });
 });

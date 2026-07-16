@@ -37,6 +37,7 @@ export const DEFAULT_PWA_SETTINGS: PwaTerminalSettings = {
   ctrlShiftCopyPaste: true,
   rightClickPaste: false,
   middleClickPaste: false,
+  colorScheme: 'dark',
 };
 
 /** Common TERM values offered in the Behavior tab; a custom value is also accepted. */
@@ -145,6 +146,7 @@ export function normalizePwaSettings(value: Partial<PwaTerminalSettings> | Recor
     ctrlShiftCopyPaste: typeof value.ctrlShiftCopyPaste === 'boolean' ? value.ctrlShiftCopyPaste : DEFAULT_PWA_SETTINGS.ctrlShiftCopyPaste,
     rightClickPaste: typeof value.rightClickPaste === 'boolean' ? value.rightClickPaste : DEFAULT_PWA_SETTINGS.rightClickPaste,
     middleClickPaste: typeof value.middleClickPaste === 'boolean' ? value.middleClickPaste : DEFAULT_PWA_SETTINGS.middleClickPaste,
+    colorScheme: value.colorScheme === 'light' || value.colorScheme === 'system' ? value.colorScheme : 'dark',
   };
 }
 
@@ -152,6 +154,30 @@ export function applyPwaAppearance(settings: PwaTerminalSettings): void {
   document.documentElement.dataset.accent = settings.accent;
   document.documentElement.dataset.density = settings.density;
   document.documentElement.style.setProperty('--terminal-padding', `${settings.terminalPadding}px`);
+  applyColorScheme(settings.colorScheme);
+}
+
+/** Resolve and apply the chrome color scheme (dark / light / system). */
+export function applyColorScheme(scheme: 'dark' | 'light' | 'system'): void {
+  const resolved = resolveColorScheme(scheme);
+  document.documentElement.dataset.colorScheme = resolved;
+}
+
+export function resolveColorScheme(scheme: 'dark' | 'light' | 'system'): 'dark' | 'light' {
+  if (scheme === 'system') {
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  }
+  return scheme;
+}
+
+/** Listen for system preference changes and re-apply when scheme is 'system'. */
+export function startColorSchemeListener(settings: PwaTerminalSettings): void {
+  if (typeof window === 'undefined') return;
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (settings.colorScheme === 'system') {
+      applyColorScheme('system');
+    }
+  });
 }
 
 /** CSS family name used for a user-provided font in app UI. */

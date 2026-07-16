@@ -149,6 +149,28 @@ try {
     rawCommand: 'et user@example.com',
   });
 
+  // tsshd command parsing.
+  const tsshdBasic = parseTerminalConnectionCommand('tssh --udp user@example.com');
+  assert.equal(tsshdBasic?.protocol, 'tsshd');
+  assert.equal(tsshdBasic?.username, 'user');
+  assert.equal(tsshdBasic?.hostname, 'example.com');
+  assert.equal(tsshdBasic?.port, 22);
+  assert.equal(tsshdBasic?.tsshd?.udpMode, 'QUIC');
+  assert.equal(tsshdBasic?.args?.join(','), '--udp');
+
+  const tsshdKcp = parseTerminalConnectionCommand('tssh --udp --kcp user@example.com');
+  assert.equal(tsshdKcp?.protocol, 'tsshd');
+  assert.equal(tsshdKcp?.tsshd?.udpMode, 'KCP');
+
+  const tsshdQuic = parseTerminalConnectionCommand('tssh --udp --quic user@example.com');
+  assert.equal(tsshdQuic?.tsshd?.udpMode, 'QUIC');
+
+  const tsshdWithPort = parseTerminalConnectionCommand('tssh --udp --tsshd-port=61001-61999 user@example.com');
+  assert.equal(tsshdWithPort?.tsshd?.tsshdPortRange, '61001-61999');
+
+  const tsshdWithPath = parseTerminalConnectionCommand('tssh --udp --tsshd-path=/usr/local/bin/tsshd user@example.com');
+  assert.equal(tsshdWithPath?.tsshd?.tsshdPath, '/usr/local/bin/tsshd');
+
   // Profile -> connection spec round trip preserves connection intent.
   const profile = {
     id: 'p1',

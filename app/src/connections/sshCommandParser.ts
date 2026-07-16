@@ -2,6 +2,7 @@ import {
   normalizeConnectionIntent,
   type ConnectionIntent,
   type ConnectionProtocol,
+  type TsshdUdpMode,
 } from './ConnectionIntent';
 
 const SSH_FLAG_OPTIONS = '46AaCfGgKkMNnqsTtVvXxYy@';
@@ -108,8 +109,12 @@ function extractPort(args: string): number | undefined {
 export function parseTerminalConnectionCommand(input: string): ConnectionIntent | null {
   const tokens = shellTokens(input.trim());
   const first = tokens[0]?.value.toLowerCase();
-  const protocol: ConnectionProtocol = first === 'mosh' ? 'mosh' : first === 'et' ? 'et' : 'ssh';
-  const command = first === 'ssh' || first === 'mosh' || first === 'et'
+  let protocol: ConnectionProtocol = 'ssh';
+  if (first === 'mosh') protocol = 'mosh';
+  else if (first === 'et') protocol = 'et';
+  else if (first === 'tssh') protocol = 'tsshd';
+  const skipFirst = first === 'ssh' || first === 'mosh' || first === 'et' || first === 'tssh';
+  const command = skipFirst
     ? input.slice((tokens[0]?.index ?? 0) + (tokens[0]?.raw.length ?? 0)).trim()
     : input.trim();
 
@@ -119,7 +124,7 @@ export function parseTerminalConnectionCommand(input: string): ConnectionIntent 
     return null;
   }
 
-  return normalizeConnectionIntent({
+  const intent: ConnectionIntent = {
     protocol,
     username: destination.username,
     hostname: destination.hostname,
@@ -127,5 +132,34 @@ export function parseTerminalConnectionCommand(input: string): ConnectionIntent 
     args: shellTokens(parsedCommand.argstr).map((token) => token.value),
     argstr: parsedCommand.argstr || undefined,
     rawCommand: input,
-  });
+  };
+
+  if (protocol === 'tsshd') {
+    intent.tsshd = parseTsshdFlags(intent.args);
+  }
+
+  return normalizeConnectionIntent(intent);
+}
+
+function parseTsshdFlags(args: string[]): { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string } {
+  const result: { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string } = {};
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--udp' && !result.udpMode) {
+      result.udpMode = 'QUIC';
+    } else if (arg === '--kcp') {
+      result.udpMode = 'KCP';
+    } else if (arg === '--quic') {
+      result.udpMode = 'QUIC';
+    } else if (arg === '--tsshd-port' && i + 1 < args.length) {
+      result.tsshdPortRange = args[++i];
+    } else if (arg.startsWith('--tsshd-port=')) {
+      result.tsshdPortRange = arg.slice('--tsshd-port='.length);
+    } else if (arg === '--tsshd-path' && i + 1 < args.length) {
+      result.tsshdPath = args[++i];
+    } else if (arg.startsWith('--tsshd-path=')) {
+      result.tsshdPath = arg.slice('--tsshd-path='.length);
+    }
+  }
+  return result;
 }

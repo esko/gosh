@@ -1,6 +1,14 @@
 import type { Profile } from '../settings/types';
 
-export type ConnectionProtocol = 'ssh' | 'mosh' | 'et';
+export type ConnectionProtocol = 'ssh' | 'mosh' | 'et' | 'tsshd';
+
+export type TsshdUdpMode = 'QUIC' | 'KCP';
+
+export type TsshdOptions = {
+  udpMode?: TsshdUdpMode;
+  tsshdPortRange?: string;
+  tsshdPath?: string;
+};
 
 export type ConnectionIntent = {
   protocol: ConnectionProtocol;
@@ -17,6 +25,8 @@ export type ConnectionIntent = {
   settingsProfileId?: string;
   startupCommand?: string;
   rawCommand?: string;
+  /** tsshd-specific options; only meaningful when protocol is 'tsshd'. */
+  tsshd?: TsshdOptions;
 };
 
 export type TestConnectionIntent = Omit<ConnectionIntent, 'protocol'> & {
@@ -48,11 +58,11 @@ function validPort(value: number | undefined): boolean {
 
 export function normalizeConnectionIntent<T extends LaunchConnectionIntent>(intent: T): T {
   const protocol = intent.protocol;
-  return {
+  const result = {
     ...intent,
     username: clean(intent.username),
     hostname: intent.hostname.trim(),
-    port: intent.port ?? (protocol === 'ssh' || protocol === 'et' ? 22 : undefined),
+    port: intent.port ?? (protocol === 'ssh' || protocol === 'et' || protocol === 'tsshd' ? 22 : undefined),
     etPort: protocol === 'et' ? intent.etPort ?? 2022 : undefined,
     etSessionId: clean(intent.etSessionId),
     args: [...intent.args],
@@ -62,7 +72,14 @@ export function normalizeConnectionIntent<T extends LaunchConnectionIntent>(inte
     settingsProfileId: clean(intent.settingsProfileId),
     startupCommand: clean(intent.startupCommand),
     rawCommand: clean(intent.rawCommand),
-  } as T;
+  };
+  if (protocol === 'tsshd') {
+    return {
+      ...result,
+      tsshd: { udpMode: intent.tsshd?.udpMode ?? 'KCP', tsshdPortRange: intent.tsshd?.tsshdPortRange, tsshdPath: intent.tsshd?.tsshdPath },
+    } as T;
+  }
+  return result as T;
 }
 
 export function connectionIntentFromProfile(profile: Profile): ConnectionIntent {
@@ -100,6 +117,8 @@ export function connectionLayoutKey(intent: LaunchConnectionIntent | null | unde
     port: value.port ?? null, etPort: value.etPort ?? null, argstr: value.argstr ?? '',
     identityId: value.identityId ?? '', settingsProfileId: value.settingsProfileId ?? '',
     startupCommand: value.startupCommand ?? '', etSessionId: value.etSessionId ?? '',
+    tsshdUdpMode: value.tsshd?.udpMode ?? '', tsshdPortRange: value.tsshd?.tsshdPortRange ?? '',
+    tsshdPath: value.tsshd?.tsshdPath ?? '',
   });
 }
 
@@ -115,6 +134,11 @@ export function connectionIntentToQuery(intent: LaunchConnectionIntent): string 
   if (value.identityId) query.set('identity', value.identityId);
   if (value.settingsProfileId) query.set('sp', value.settingsProfileId);
   if (value.startupCommand) query.set('startup', value.startupCommand);
+  if (value.tsshd) {
+    if (value.tsshd.udpMode) query.set('udpMode', value.tsshd.udpMode);
+    if (value.tsshd.tsshdPortRange) query.set('tsshdPort', value.tsshd.tsshdPortRange);
+    if (value.tsshd.tsshdPath) query.set('tsshdPath', value.tsshd.tsshdPath);
+  }
   return query.toString();
 }
 
@@ -139,7 +163,7 @@ export function connectionIntentFromQuery(
     if (!(options.allowTestIntent ?? import.meta.env.DEV)) return null;
     return normalizeConnectionIntent({ protocol: 'echo', testOnly: true, hostname, port, args: [] });
   }
-  if (rawProtocol !== 'ssh' && rawProtocol !== 'mosh' && rawProtocol !== 'et') return null;
+  if (rawProtocol !== 'ssh' && rawProtocol !== 'mosh' && rawProtocol !== 'et' && rawProtocol !== 'tsshd') return null;
   return normalizeConnectionIntent({
     protocol: rawProtocol,
     username: query.get('username') ?? undefined,
@@ -153,6 +177,11 @@ export function connectionIntentFromQuery(
     identityId: query.get('identity') ?? undefined,
     settingsProfileId: query.get('sp') ?? undefined,
     startupCommand: query.get('startup') ?? undefined,
+    tsshd: rawProtocol === 'tsshd' ? {
+      udpMode: (query.get('udpMode') as TsshdUdpMode | null) ?? undefined,
+      tsshdPortRange: query.get('tsshdPort') ?? undefined,
+      tsshdPath: query.get('tsshdPath') ?? undefined,
+    } : undefined,
   });
 }
 

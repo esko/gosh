@@ -8,7 +8,7 @@ import { escapeHTML, formatTime, requiredElement } from './dom';
 import { readDiagnostics } from './diagnostics';
 import { ResttyTerminalAdapter, type PaneDirection, type ResttyPaneSink } from './resttyAdapter';
 import type { TerminalSubscription } from '../terminal/TerminalAdapter';
-import { ensureTerminalFontLoaded, normalizePwaSettings, applyPwaAppearance, TERM_TYPE_PRESETS } from './settings';
+import { ensureTerminalFontLoaded, normalizePwaSettings, applyPwaAppearance, startColorSchemeListener, TERM_TYPE_PRESETS } from './settings';
 import {
   BUNDLED_FONTS,
   DEFAULT_FONT_ID,
@@ -262,7 +262,7 @@ const IMAGE_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" s
 /** Small uppercase transport badge (SSH / ET / MOSH). */
 /** True for transports that hold a resumable/roaming session worth a live dot. */
 function isPersistentProtocol(protocol: Profile['protocol']): boolean {
-  return protocol === 'et' || protocol === 'mosh';
+  return protocol === 'et' || protocol === 'mosh' || protocol === 'tsshd';
 }
 
 /**
@@ -272,7 +272,7 @@ function isPersistentProtocol(protocol: Profile['protocol']): boolean {
  */
 function protocolPill(protocol: Profile['protocol'], opts?: { live: boolean }): string {
   const p = protocol ?? 'ssh';
-  const label = p === 'et' ? 'ET' : p.toUpperCase();
+  const label = p === 'et' ? 'ET' : p === 'tsshd' ? 'TS' : p.toUpperCase();
   const dot = opts && isPersistentProtocol(p)
     ? `<span class="pill-dot" data-live="${opts.live ? 'true' : 'false'}" aria-hidden="true"></span>`
     : '';
@@ -480,6 +480,10 @@ function saveLauncherShots(on: boolean): void {
 
 /** The home route: full-window launcher plus document-level `/` and ⌘K shortcuts. */
 export async function renderHome(root: HTMLElement): Promise<void> {
+  // Apply the default settings profile's color scheme to the launcher chrome.
+  const homeSettings = resolveSettings();
+  applyPwaAppearance(homeSettings);
+  startColorSchemeListener(homeSettings);
   setThemeColor('#000000');
   clearTerminalChromeColors();
   document.title = 'Gosh';
@@ -578,7 +582,9 @@ async function renderLauncherInto(root: HTMLElement, ctx: LauncherCtx): Promise<
   const emptyHint = isFirstRun
     ? `<section class="launch-empty">
         <h1 class="empty-title">Connect to your first server</h1>
-        <p class="empty-sub">Fill in the host on the left and hit Connect — Gosh speaks SSH, Eternal Terminal, and Mosh over Direct Sockets. Saved hosts appear here as cards.</p>
+        <p class="empty-sub">Fill in the host on the left and hit Connect — Gosh speaks SSH, Eternal Terminal, Mosh, and tsshd over Direct Sockets. Saved hosts appear here as cards.</p>
+        <button type="button" class="btn" data-open-connection>Connect</button>
+        <p class="empty-hint">Right-click to manage profiles</p>
       </section>`
     : '';
 
@@ -638,9 +644,19 @@ async function renderLauncherInto(root: HTMLElement, ctx: LauncherCtx): Promise<
     </div>
   `;
 
-  // The always-open inline new-session form (left column). Saving is the default;
-  // submitting connects with no confirmation — a saved host lands as a card here.
   renderNewSessionForm(requiredElement<HTMLElement>('[data-form-host]', root), { onLaunch: ctx.onLaunch });
+
+  const openConnBtn = root.querySelector<HTMLButtonElement>('[data-open-connection]');
+  if (openConnBtn) {
+    openConnBtn.addEventListener('click', () => {
+      const hostInput = root.querySelector<HTMLInputElement>('aside.launch-form [name="host"]');
+      if (hostInput) {
+        hostInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        hostInput.focus();
+        hostInput.select();
+      }
+    });
+  }
 
   const activate = (rowEl: HTMLElement, run: () => void): void => {
     rowEl.addEventListener('click', run);
@@ -1000,7 +1016,7 @@ type ConnFormValues = {
   host: string;
   user: string;
   port: number;
-  protocol: 'ssh' | 'et' | 'mosh';
+  protocol: 'ssh' | 'et' | 'mosh' | 'tsshd';
   etPort?: number;
   settingsProfileId?: string;
   name: string;
@@ -1088,7 +1104,7 @@ function connectionFieldsHTML(existing?: Profile): string {
       <label class="field"><span>user</span><input name="user" value="${escapeHTML(existing?.username ?? '')}" placeholder="user" autocomplete="off" spellcheck="false" required></label>
       <label class="field"><span>port</span><input name="port" type="number" min="1" max="65535" value="${existing?.port ?? 22}"></label>
     </div>
-    <label class="field"><span>protocol</span><select name="protocol"><option value="ssh" ${sel('ssh')}>SSH</option><option value="et" ${sel('et')}>Eternal Terminal</option><option value="mosh" ${sel('mosh')}>Mosh</option></select></label>
+    <label class="field"><span>protocol</span><select name="protocol"><option value="ssh" ${sel('ssh')}>SSH</option><option value="et" ${sel('et')}>Eternal Terminal</option><option value="mosh" ${sel('mosh')}>Mosh</option><option value="tsshd" ${sel('tsshd')}>tsshd</option></select></label>
     <label class="field" data-et-port hidden><span>ET port</span><input name="etPort" type="number" min="1" max="65535" value="${existing?.etPort ?? 2022}"></label>
     ${spField}
     <div class="key-section">
@@ -1149,7 +1165,7 @@ function wireConnectionFields(form: HTMLFormElement): { readValues: () => ConnFo
     const data = new FormData(form);
     const host = String(data.get('host') ?? '').trim();
     const user = String(data.get('user') ?? '').trim();
-    const protocol = data.get('protocol') === 'mosh' ? 'mosh' : data.get('protocol') === 'et' ? 'et' : 'ssh';
+    const protocol = data.get('protocol') === 'mosh' ? 'mosh' : data.get('protocol') === 'et' ? 'et' : data.get('protocol') === 'tsshd' ? 'tsshd' : 'ssh';
     return {
       host,
       user,
@@ -1467,6 +1483,7 @@ export function openSettings(initial: SettingsTab = 'appearance'): void {
 }
 
 function renderSettingsTab(body: HTMLElement, tab: SettingsTab, profileId: string): void {
+  rebindCapture = null;
   if (tab === 'appearance') return void renderAppearanceTab(body, profileId);
   if (tab === 'diagnostics') return void renderDiagnosticsTab(body);
   if (tab === 'keyboard') return renderKeyboardTab(body, profileId);
@@ -1803,6 +1820,9 @@ async function renderAppearanceTab(body: HTMLElement, profileId: string): Promis
     // Same-window reapply (settings opened from the terminal context menu).
     // Cross-window changes arrive via the `storage` listener in renderTerminal.
     void syncActiveTerminalSettings();
+    // When there is no active terminal (launcher view), apply chrome changes
+    // directly so the color-scheme toggle takes immediate effect.
+    if (!activeTerminal) applyPwaAppearance(resolveSettings(profileId));
   };
   const rerender = (): void => void renderAppearanceTab(body, profileId);
   const opts = (values: (string | number)[], current: string | number): string =>
@@ -1910,6 +1930,7 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
     ${setRow('Scroll speed', `<select class="control-narrow" name="scrollSensitivity">${opts([0.5, 0.75, 1, 1.5, 2], s.scrollSensitivity)}</select>`, 'Trackpad / wheel scrollback multiplier')}
     ${setRow('Scrollback', `<select name="scrollback">${opts([1000, 5000, 10000, 20000], s.scrollback)}</select>`, 'Line history for new tabs and panes')}
     ${setRow('Accent', labeled('accent', s.accent, [['green', 'Green'], ['blue', 'Blue'], ['amber', 'Amber']]), 'Status/affordance accent color in the app chrome.')}
+    ${setRow('Color scheme', labeled('colorScheme', s.colorScheme ?? 'dark', [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']]), 'Tint the app chrome. System follows your OS appearance setting.')}
     ${setRow('Density', labeled('density', s.density, [['comfortable', 'Comfortable'], ['compact', 'Compact']]), 'Spacing of tabs and app chrome.')}
   `;
 
@@ -1973,6 +1994,7 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
         scrollSensitivity: Number(get('scrollSensitivity')),
         scrollback: Number(get('scrollback')),
         accent: get('accent'),
+        colorScheme: get('colorScheme'),
         density: get('density'),
       });
       // Changing the font flips Medium availability and the Remove-font row.
@@ -2461,9 +2483,12 @@ function renderTabs(): void {
       </div>`;
     })
     .join('');
-  // A single "+" that opens the new-tab menu (new tab, duplicate, open a host);
-  // revealed only on top-bar hover via CSS.
-  tabStrip.innerHTML = `${tabs}<button class="term-tab-new" type="button" data-newtab-menu aria-label="New tab" title="New tab">${PLUS_SVG}</button>`;
+  // Segmented new-tab control: "+" to directly create launcher tab, "⌄" to open dropdown.
+  tabStrip.innerHTML = `${tabs}<div class="term-tab-new-seg">
+    <button class="term-tab-new-btn term-tab-new-direct" type="button" data-newtab-direct aria-label="New tab" title="New tab">${PLUS_SVG}</button>
+    <span class="term-tab-new-divider"></span>
+    <button class="term-tab-new-btn term-tab-new-menu" type="button" data-newtab-menu aria-label="New tab options" title="New tab options">${CHEVRON_DOWN_SVG}</button>
+  </div>`;
 }
 
 let dragTabId: string | null = null;
@@ -2498,6 +2523,7 @@ function installTabDragReorder(strip: HTMLElement): void {
 
 /** Move tab `fromId` to where `toId` sits (after it when dropped on its right half). */
 function reorderTab(fromId: string, toId: string | null, clientX: number): void {
+  if (fromId === toId) return;
   const from = sessions.findIndex((s) => s.id === fromId);
   if (from < 0) return;
   const [moved] = sessions.splice(from, 1);
@@ -2514,6 +2540,11 @@ function reorderTab(fromId: string, toId: string | null, clientX: number): void 
 
 function onTabStripClick(event: MouseEvent): void {
   const target = event.target as HTMLElement;
+  const directBtn = target.closest<HTMLElement>('[data-newtab-direct]');
+  if (directBtn) {
+    setActiveSession(createLauncherTab().id);
+    return;
+  }
   const menuBtn = target.closest<HTMLElement>('[data-newtab-menu]');
   if (menuBtn) {
     void openNewTabMenu(menuBtn);
@@ -2560,7 +2591,7 @@ function cycleTab(direction: number): void {
 
 function tabOverviewBadgeHTML(entry: TabOverviewEntry): string {
   const protocol = entry.protocol
-    ? `<span class="tab-overview-badge">${escapeHTML(entry.protocol === 'et' ? 'ET' : entry.protocol.toUpperCase())}</span>`
+    ? `<span class="tab-overview-badge">${escapeHTML(entry.protocol === 'et' ? 'ET' : entry.protocol === 'tsshd' ? 'TS' : entry.protocol.toUpperCase())}</span>`
     : '';
   const panes = entry.paneCount > 1 ? `<span class="tab-overview-badge">⊞ ${entry.paneCount}</span>` : '';
   const statusLabel = entry.kind === 'launcher' ? 'New Tab' : entry.status;

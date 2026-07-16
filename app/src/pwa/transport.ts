@@ -6,6 +6,7 @@ import type { TerminalTransportStatus } from './types';
 import type { ConnectionIntent, LaunchConnectionIntent } from '../connections/ConnectionIntent';
 import { createEtSession } from '../et/bootstrap';
 import { createEtWorkerController, type EtWorkerController } from '../et/EtWorkerController';
+import { TsshdRelayTransport } from '../tsshd/TsshdRelayTransport';
 import type { SessionStatusMeta } from '../settings/types';
 import { RemoteImageUploader } from '../ssh/RemoteImageUploader';
 import { connectNasshSftpSidecar, isSftpSubsystemUnavailable } from '../ssh/NasshSftpSidecar';
@@ -282,6 +283,9 @@ function withLivenessHeartbeat(
 export function createTransport(spec: LaunchConnectionIntent, onStatus: TransportStatusHandler): TerminalTransport {
   if (spec.protocol === 'et') {
     return withLivenessHeartbeat(spec, onStatus, (status) => new EtDirectSocketsTransport(spec, status));
+  }
+  if (spec.protocol === 'tsshd') {
+    return withLivenessHeartbeat(spec, onStatus, (status) => new TsshdRelayTransport(spec, status));
   }
   if (spec.protocol === 'echo') {
     return new EchoTransport(spec, onStatus, {
