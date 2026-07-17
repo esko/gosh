@@ -84,6 +84,7 @@ async function sealWithMaster(dek: Uint8Array, password: string): Promise<VaultK
  */
 class CredentialVault {
   private dek: Uint8Array | null = null;
+  private dekPromise: Promise<Uint8Array | null> | null = null;
 
   /** True once a master password has been set (a `dek-master` record exists). */
   async hasMasterPassword(): Promise<boolean> {
@@ -100,20 +101,36 @@ class CredentialVault {
   /** Resolve the raw DEK, optionally minting one. Throws {@link VaultLockedError} when locked. */
   private async resolveDek(create: boolean): Promise<Uint8Array | null> {
     if (this.dek) return this.dek;
-    const deviceCopy = await getVaultKeyRecord(DEVICE_ID);
-    if (deviceCopy) {
-      const bytes = new Uint8Array(
-        await subtle().decrypt({ name: 'AES-GCM', iv: owned(deviceCopy.iv) }, await getEtDeviceKey(), deviceCopy.ciphertext),
-      );
+    if (this.dekPromise) {
+      const result = await this.dekPromise;
+      if (result !== null || !create) {
+        return result;
+      }
+    }
+
+    const run = async (): Promise<Uint8Array | null> => {
+      const deviceCopy = await getVaultKeyRecord(DEVICE_ID);
+      if (deviceCopy) {
+        const bytes = new Uint8Array(
+          await subtle().decrypt({ name: 'AES-GCM', iv: owned(deviceCopy.iv) }, await getEtDeviceKey(), deviceCopy.ciphertext),
+        );
+        this.dek = bytes;
+        return bytes;
+      }
+      if (await getVaultKeyRecord(MASTER_ID)) throw new VaultLockedError();
+      if (!create) return null;
+      const bytes = crypto.getRandomValues(new Uint8Array(DEK_BYTES));
+      await putVaultKeyRecord(await sealWithDevice(bytes));
       this.dek = bytes;
       return bytes;
+    };
+
+    this.dekPromise = run();
+    try {
+      return await this.dekPromise;
+    } finally {
+      this.dekPromise = null;
     }
-    if (await getVaultKeyRecord(MASTER_ID)) throw new VaultLockedError();
-    if (!create) return null;
-    const bytes = crypto.getRandomValues(new Uint8Array(DEK_BYTES));
-    await putVaultKeyRecord(await sealWithDevice(bytes));
-    this.dek = bytes;
-    return bytes;
   }
 
   private async importDataKey(dek: Uint8Array): Promise<CryptoKey> {

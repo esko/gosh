@@ -74,9 +74,10 @@ export function normalizeConnectionIntent<T extends LaunchConnectionIntent>(inte
     rawCommand: clean(intent.rawCommand),
   };
   if (protocol === 'tsshd') {
+    const udpMode = intent.tsshd?.udpMode;
     return {
       ...result,
-      tsshd: { udpMode: intent.tsshd?.udpMode ?? 'KCP', tsshdPortRange: intent.tsshd?.tsshdPortRange, tsshdPath: intent.tsshd?.tsshdPath },
+      tsshd: { udpMode: udpMode === 'QUIC' || udpMode === 'KCP' ? udpMode : 'KCP', tsshdPortRange: intent.tsshd?.tsshdPortRange, tsshdPath: intent.tsshd?.tsshdPath },
     } as T;
   }
   return result as T;
@@ -164,6 +165,8 @@ export function connectionIntentFromQuery(
     return normalizeConnectionIntent({ protocol: 'echo', testOnly: true, hostname, port, args: [] });
   }
   if (rawProtocol !== 'ssh' && rawProtocol !== 'mosh' && rawProtocol !== 'et' && rawProtocol !== 'tsshd') return null;
+  const rawUdpMode = query.get('udpMode');
+  if (rawProtocol === 'tsshd' && rawUdpMode !== null && rawUdpMode !== 'KCP' && rawUdpMode !== 'QUIC') return null;
   return normalizeConnectionIntent({
     protocol: rawProtocol,
     username: query.get('username') ?? undefined,
@@ -178,7 +181,7 @@ export function connectionIntentFromQuery(
     settingsProfileId: query.get('sp') ?? undefined,
     startupCommand: query.get('startup') ?? undefined,
     tsshd: rawProtocol === 'tsshd' ? {
-      udpMode: (query.get('udpMode') as TsshdUdpMode | null) ?? undefined,
+      udpMode: (rawUdpMode as TsshdUdpMode | null) ?? undefined,
       tsshdPortRange: query.get('tsshdPort') ?? undefined,
       tsshdPath: query.get('tsshdPath') ?? undefined,
     } : undefined,

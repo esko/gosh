@@ -10,7 +10,7 @@ import { NasshIoShim } from './NasshIoShim';
 import { HostKeyGuard } from './HostKeyGuard';
 import type { HostKeyChange } from './HostKeyGuard';
 import { installNasshChromePolyfill } from './nasshChromePolyfill';
-import { stageIdentityForNassh } from './nasshIdentity';
+import { stageIdentityForNassh, removeIdentityFromNassh } from './nasshIdentity';
 import { loadNasshMessages } from './nasshLocale';
 import {
   removeKnownHostLinesFromNassh,
@@ -325,28 +325,34 @@ export class NasshCommandBridge {
     };
 
     try {
-      log.socket.info('calling CommandInstance.connectTo', {
-        host: connectParams.hostname,
-        port: connectParams.port,
-        identity: connectParams.identity,
-      });
-      await instance.connectTo(connectParams);
-      if (this.disposed || this.hasExited) return;
-      await syncKnownHostsFromNassh(this.options.host, this.options.port).catch((error) => {
-        log.knownHosts.warn('post-connect known_hosts sync failed', { error });
-      });
-      log.session.info('nassh ssh started', { host: this.options.host, port: this.options.port });
-      this.options.onStatus?.('connected');
-    } catch (error) {
-      if (this.hostKeyRecovering) {
-        log.ssh.debug('connectTo rejected during host key recovery', {});
-        return;
+      try {
+        log.socket.info('calling CommandInstance.connectTo', {
+          host: connectParams.hostname,
+          port: connectParams.port,
+          identity: connectParams.identity,
+        });
+        await instance.connectTo(connectParams);
+        if (this.disposed || this.hasExited) return;
+        await syncKnownHostsFromNassh(this.options.host, this.options.port).catch((error) => {
+          log.knownHosts.warn('post-connect known_hosts sync failed', { error });
+        });
+        log.session.info('nassh ssh started', { host: this.options.host, port: this.options.port });
+        this.options.onStatus?.('connected');
+      } catch (error) {
+        if (this.hostKeyRecovering) {
+          log.ssh.debug('connectTo rejected during host key recovery', {});
+          return;
+        }
+        if (this.hasExited) return;
+        const message = error instanceof Error ? error.message : String(error);
+        log.ssh.error('connectTo failed', { message, error });
+        this.options.onStatus?.('error', message);
+        throw error;
       }
-      if (this.hasExited) return;
-      const message = error instanceof Error ? error.message : String(error);
-      log.ssh.error('connectTo failed', { message, error });
-      this.options.onStatus?.('error', message);
-      throw error;
+    } finally {
+      if (this.options.identityId) {
+        await removeIdentityFromNassh(this.options.identityId);
+      }
     }
   }
 

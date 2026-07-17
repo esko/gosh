@@ -14,10 +14,10 @@ The app should follow Google Terminal/nassh architecture unless IWA packaging or
 
 Allowed local deltas:
 
-- xterm.js `6.1.0-beta` with kitty keyboard protocol support.
+- Restty terminal engine with native pane layout, splits, and custom caption tabs.
 - Arbitrary terminal font family strings, including Nerd Fonts.
 - Stronger theme, scrollback, and renderer/performance controls.
-- Mosh support through upstream nassh/wassh.
+- ET and SSH transport support over IWA Direct Sockets.
 
 Everything else should be upstream-shaped by default. Custom SSH-manager flows, simulated tabs, debug-first screens, fixture-specific UX, and bespoke dashboards are not reset goals.
 
@@ -35,19 +35,19 @@ See:
 
 ```text
 IWA terminal shell
-  home, SSH/Mosh launch, profiles, settings, sessions
+  home, custom caption tabs, profiles, settings, pane sessions
         │
-        ├── TerminalEmulator
-        │     xterm.js 6.1 beta, kitty keyboard, fonts, themes, scrollback
+        ├── Restty Terminal Engine (sole product renderer)
+        │     canvas rendering, native pane layout/splits, fonts, themes
         │
-        ├── NasshRuntime adapter
-        │     upstream CommandInstance.connectTo(), ssh and mosh paths
+        ├── NasshRuntime & ET adapters
+        │     upstream CommandInstance.connectTo() (SSH) and ET client
         │
         └── IWA adapter layer
-              Chrome polyfills, Direct Sockets, asset URLs, web bundle constraints
+              Chrome polyfills, Direct Sockets (SSH/ET), asset URLs, web bundle constraints
 
 Copied upstream assets
-  nassh, wassh, wasi-js-bindings, OpenSSH/Mosh WASM plugin files
+  nassh, wassh, wasi-js-bindings, OpenSSH WASM plugin files
 ```
 
 ## Development
@@ -86,4 +86,4 @@ Device results should be recorded in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## License
 
-Upstream libapps is Chromium-licensed. xterm.js is MIT. Preserve upstream notices for copied runtime and plugin assets.
+Upstream libapps is Chromium-licensed. Restty is MIT. Preserve upstream notices for copied runtime and plugin assets.

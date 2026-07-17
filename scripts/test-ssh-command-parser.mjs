@@ -156,9 +156,9 @@ try {
   assert.equal(tsshdBasic?.hostname, 'example.com');
   assert.equal(tsshdBasic?.port, 22);
   assert.equal(tsshdBasic?.tsshd?.udpMode, 'QUIC');
-  assert.equal(tsshdBasic?.args?.join(','), '--udp');
+  assert.equal(tsshdBasic?.args?.join(','), '');
 
-  const tsshdKcp = parseTerminalConnectionCommand('tssh --udp --kcp user@example.com');
+  const tsshdKcp = parseTerminalConnectionCommand('tssh --kcp user@example.com');
   assert.equal(tsshdKcp?.protocol, 'tsshd');
   assert.equal(tsshdKcp?.tsshd?.udpMode, 'KCP');
 
@@ -170,6 +170,23 @@ try {
 
   const tsshdWithPath = parseTerminalConnectionCommand('tssh --udp --tsshd-path=/usr/local/bin/tsshd user@example.com');
   assert.equal(tsshdWithPath?.tsshd?.tsshdPath, '/usr/local/bin/tsshd');
+
+  const tsshdWithSeparatePort = parseTerminalConnectionCommand('tssh --tsshd-port 61001-61999 user@example.com');
+  assert.equal(tsshdWithSeparatePort?.hostname, 'example.com');
+  assert.equal(tsshdWithSeparatePort?.tsshd?.tsshdPortRange, '61001-61999');
+  assert.equal(tsshdWithSeparatePort?.argstr, undefined);
+
+  const tsshdWithSeparatePath = parseTerminalConnectionCommand('tssh --tsshd-path /usr/local/bin/tsshd user@example.com');
+  assert.equal(tsshdWithSeparatePath?.hostname, 'example.com');
+  assert.equal(tsshdWithSeparatePath?.tsshd?.tsshdPath, '/usr/local/bin/tsshd');
+  assert.equal(tsshdWithSeparatePath?.argstr, undefined);
+
+  assert.equal(parseTerminalConnectionCommand('tssh --udp --kcp user@example.com'), null);
+  assert.equal(parseTerminalConnectionCommand('tssh --kcp --udp user@example.com'), null);
+
+  const tsshdDuplicateQuicAliases = parseTerminalConnectionCommand('tssh --quic --udp user@example.com');
+  assert.equal(tsshdDuplicateQuicAliases?.tsshd?.udpMode, 'QUIC');
+  assert.equal(tsshdDuplicateQuicAliases?.argstr, undefined);
 
   // Profile -> connection spec round trip preserves connection intent.
   const profile = {

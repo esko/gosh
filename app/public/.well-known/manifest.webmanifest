@@ -3,7 +3,7 @@
   "name": "Gosh",
   "short_name": "Gosh",
   "description": "ChromeOS IWA SSH client",
-  "version": "0.1.123",
+  "version": "0.1.129",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

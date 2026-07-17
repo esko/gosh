@@ -155,6 +155,9 @@ export class EtWorkerController {
       this.connectResolve?.();
       this.connectResolve = null;
       this.connectReject = null;
+      this.worker?.terminate();
+      this.worker = null;
+      this.release();
     } else if (event.type === 'error') {
       this.fail(new Error(event.error || 'ET worker failed'));
     }

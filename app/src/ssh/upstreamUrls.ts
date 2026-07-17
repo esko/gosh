@@ -17,14 +17,16 @@ export function upstreamUrl(relativePath: string): string {
 type UpstreamModuleId =
   | 'nassh/js/nassh_command_instance.js'
   | 'nassh/js/nassh.js'
-  | 'nassh/js/nassh_fs.js';
+  | 'nassh/js/nassh_fs.js'
+  | 'hterm/js/hterm.js';
 
-function normalizeModuleId(relativePath: string): UpstreamModuleId {
+export function normalizeModuleId(relativePath: string): UpstreamModuleId {
   const path = relativePath.replace(/^\//, '') as UpstreamModuleId;
   switch (path) {
     case 'nassh/js/nassh_command_instance.js':
     case 'nassh/js/nassh.js':
     case 'nassh/js/nassh_fs.js':
+    case 'hterm/js/hterm.js':
       return path;
     default:
       throw new Error(`Unknown upstream module: ${relativePath}`);
@@ -42,6 +44,8 @@ export async function upstreamImport<T = unknown>(relativePath: string): Promise
         return (await import(/* @vite-ignore */ '/upstream/nassh/js/nassh.js')) as T;
       case 'nassh/js/nassh_fs.js':
         return (await import(/* @vite-ignore */ '/upstream/nassh/js/nassh_fs.js')) as T;
+      case 'hterm/js/hterm.js':
+        return (await import(/* @vite-ignore */ '/upstream/hterm/js/hterm.js')) as T;
     }
   } catch (error) {
     const url = new URL(upstreamUrl(path), window.location.href).href;

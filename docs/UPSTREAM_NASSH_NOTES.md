@@ -32,7 +32,7 @@ upstream/libapps/
 
 **Do not port:**
 
-- `hterm/` — replaced by `app/src/terminal/Xterm6TerminalAdapter.ts`
+- `hterm/` — replaced by `app/src/pwa/resttyAdapter.ts`
 - `nassh` HTML UI, extension popup, crosh integration
 - Chrome extension APIs (`chrome.sockets`, `terminalPrivate`, etc.) — use Direct Sockets instead
 
@@ -40,7 +40,7 @@ upstream/libapps/
 
 | Upstream | This repo |
 |----------|-----------|
-| hterm terminal | `TerminalAdapter` + `Xterm6TerminalAdapter` |
+| hterm terminal | `TerminalAdapter` + `resttyAdapter` |
 | `chrome.sockets` / relay | wassh `WebTcpSocket` via nassh `--field-trial-direct-sockets` |
 | Extension manifest | IWA signed web bundle + `manifest.webmanifest` |
 | `nassh` preferences UI | `/settings` route + IndexedDB |
@@ -125,7 +125,10 @@ npm run fetch-assets
 
 1. Executes `upstream/libapps/nassh/bin/plugin` when possible (downloads `0.77.tar.xz` from ChromeOS localmirror per `nassh/fetch.json`)
 2. Copies JS/WASM into `app/upstream/` preserving libapps-relative import paths
-3. Writes `app/upstream/manifest.json` and prints a file manifest
+3. Generates tracked `libdot/js/libdot_resources.js` and `hterm/js/hterm_resources.js` from the upstream packages and source assets (the upstream Rollup equivalents live under ignored `dist/` directories)
+4. Writes `app/upstream/manifest.json` and prints a file manifest
+
+`npm run check:upstream-resources` verifies that both modules exist, contain JavaScript rather than an HTML fallback, and are imported by the copied entry points. The same check runs before every `npm run build`.
 
 **Example manifest output** (truncated; full list is 200+ files):
 

@@ -97,3 +97,19 @@ export async function stageIdentityForNassh(identityId: string): Promise<string 
   log.ssh.info('staged identity for nassh', { identityId, filename, label: identity.label });
   return filename;
 }
+
+/**
+ * Remove a staged identity's private and public key files from nassh's IndexedDB filesystem.
+ */
+export async function removeIdentityFromNassh(identityId: string): Promise<void> {
+  try {
+    const filename = nasshIdentityFilename(identityId);
+    const fsModule = await loadNasshFs() as any;
+    const fileSystem = await fsModule.getIndexeddbFileSystem();
+    await fsModule.deleteIdentityFiles(fileSystem, filename);
+    log.ssh.info('removed identity files from nassh', { identityId, filename });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    log.ssh.error('failed to remove identity files from nassh', { identityId, message });
+  }
+}

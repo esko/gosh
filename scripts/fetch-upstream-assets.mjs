@@ -11,6 +11,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { patchWasshTerminalPixelSize } from './wassh-terminal-size-patch.mjs';
+import { generateUpstreamResourceModules } from './upstream-resource-modules.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -211,6 +212,14 @@ async function copyNasshBridgeModules() {
 
   const jsFilter = (p) => p.endsWith('.js');
 
+  for (const packageName of ['libdot', 'hterm']) {
+    await copyFile(
+      path.join(LIBAPPS, packageName, 'LICENSE'),
+      path.join(OUT_DIR, packageName, 'LICENSE'),
+    );
+    count += 1;
+  }
+
   count += await copyTree(
     path.join(LIBAPPS, 'libdot/js'),
     path.join(OUT_DIR, 'libdot/js'),
@@ -403,6 +412,7 @@ async function main() {
   const wasiCount = await copyWasiBindings();
   const pluginCount = await copyPluginAssets();
   const nasshCount = await copyNasshBridgeModules();
+  manifest.push(...await generateUpstreamResourceModules({ libappsRoot: LIBAPPS, outDir: OUT_DIR }));
   await copyNasshLocales();
   await patchWasshDirectSockets();
   await patchWasshTtyPixelSize();

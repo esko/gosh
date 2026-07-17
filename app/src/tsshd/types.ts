@@ -1,36 +1,24 @@
 export type TsshdUdpMode = 'QUIC' | 'KCP';
 
-export type TsshdConnectParams = {
-  host: string;
-  port: number;
-  sessionKey: Uint8Array;
-  clientId: number;
-  serverId: number;
-  proxyKey: Uint8Array;
-  udpMode: TsshdUdpMode;
-  serverInfo: TsshdServerInfo;
-};
-
 export type TsshdServerInfo = {
-  ServerVer?: string;
-  ProtoVer?: number;
+  ServerVer: string;
   Port: number;
-  Mode: string;
+  Mode: TsshdUdpMode;
   Pass?: string;
   Salt?: string;
   ServerCert?: string;
   ClientCert?: string;
   ClientKey?: string;
   ProxyKey: string;
-  ClientID: number;
-  ServerID: number;
+  ClientID: string;
+  ServerID: string;
   ProxyMode?: string;
   MTU?: number;
 };
 
 export type TsshdBootstrapResult = {
   host: string;
-  params: TsshdConnectParams;
+  serverInfo: TsshdServerInfo;
 };
 
 export type TsshdClientEvent =
@@ -39,8 +27,8 @@ export type TsshdClientEvent =
   | { type: 'stale' };
 
 export type TsshdAuthPacket = {
-  clientId: number;
-  seq: number;
+  clientId: string;
+  seq: string;
 };
 
 export const TSSHD_DEFAULT_PORT_RANGE = '61001-61999';

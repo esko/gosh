@@ -6,6 +6,7 @@ import {
 } from './ConnectionIntent';
 
 const SSH_FLAG_OPTIONS = '46AaCfGgKkMNnqsTtVvXxYy@';
+const TSSHD_OPTIONS_WITH_VALUES = new Set(['--tsshd-path', '--tsshd-port']);
 
 export type ParsedSshCommand = {
   destination: string | null;
@@ -26,7 +27,10 @@ function shellTokens(command: string): Array<{ value: string; raw: string; index
   }));
 }
 
-export function parseCommand(command: string): ParsedSshCommand {
+export function parseCommand(
+  command: string,
+  optionsWithValues: ReadonlySet<string> = new Set(),
+): ParsedSshCommand {
   const tokens = shellTokens(command);
   let skipNext = false;
 
@@ -37,6 +41,10 @@ export function parseCommand(command: string): ParsedSshCommand {
     }
 
     const arg = token.value;
+    if (optionsWithValues.has(arg)) {
+      skipNext = true;
+      continue;
+    }
     if (!arg.startsWith('-')) {
       return {
         destination: arg,
@@ -118,7 +126,10 @@ export function parseTerminalConnectionCommand(input: string): ConnectionIntent 
     ? input.slice((tokens[0]?.index ?? 0) + (tokens[0]?.raw.length ?? 0)).trim()
     : input.trim();
 
-  const parsedCommand = parseCommand(command);
+  const parsedCommand = parseCommand(
+    command,
+    protocol === 'tsshd' ? TSSHD_OPTIONS_WITH_VALUES : undefined,
+  );
   const destination = parseSSHDestination(parsedCommand.destination);
   if (!destination) {
     return null;
@@ -135,31 +146,55 @@ export function parseTerminalConnectionCommand(input: string): ConnectionIntent 
   };
 
   if (protocol === 'tsshd') {
-    intent.tsshd = parseTsshdFlags(intent.args);
+    const parsed = parseTsshdFlags(intent.args);
+    if (!parsed) return null;
+    intent.tsshd = parsed.options;
+    intent.args = parsed.sshArgs;
+    intent.argstr = parsed.sshArgs.length > 0 ? parsed.sshArgs.map(shellQuoteArgument).join(' ') : undefined;
   }
 
   return normalizeConnectionIntent(intent);
 }
 
-function parseTsshdFlags(args: string[]): { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string } {
-  const result: { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string } = {};
+function shellQuoteArgument(value: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(value)) return value;
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function parseTsshdFlags(args: string[]): {
+  options: { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string };
+  sshArgs: string[];
+} | null {
+  const options: { udpMode?: TsshdUdpMode; tsshdPortRange?: string; tsshdPath?: string } = {};
+  const sshArgs: string[] = [];
+  const setMode = (mode: TsshdUdpMode): boolean => {
+    if (options.udpMode && options.udpMode !== mode) return false;
+    options.udpMode = mode;
+    return true;
+  };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === '--udp' && !result.udpMode) {
-      result.udpMode = 'QUIC';
+    if (arg === '--udp') {
+      if (!setMode('QUIC')) return null;
     } else if (arg === '--kcp') {
-      result.udpMode = 'KCP';
+      if (!setMode('KCP')) return null;
     } else if (arg === '--quic') {
-      result.udpMode = 'QUIC';
+      if (!setMode('QUIC')) return null;
     } else if (arg === '--tsshd-port' && i + 1 < args.length) {
-      result.tsshdPortRange = args[++i];
+      options.tsshdPortRange = args[++i];
+    } else if (arg === '--tsshd-port') {
+      return null;
     } else if (arg.startsWith('--tsshd-port=')) {
-      result.tsshdPortRange = arg.slice('--tsshd-port='.length);
+      options.tsshdPortRange = arg.slice('--tsshd-port='.length);
     } else if (arg === '--tsshd-path' && i + 1 < args.length) {
-      result.tsshdPath = args[++i];
+      options.tsshdPath = args[++i];
+    } else if (arg === '--tsshd-path') {
+      return null;
     } else if (arg.startsWith('--tsshd-path=')) {
-      result.tsshdPath = arg.slice('--tsshd-path='.length);
+      options.tsshdPath = arg.slice('--tsshd-path='.length);
+    } else {
+      sshArgs.push(arg);
     }
   }
-  return result;
+  return { options, sshArgs };
 }

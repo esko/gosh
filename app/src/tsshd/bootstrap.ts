@@ -65,20 +65,15 @@ async function runTsshdBootstrapPreflight(spec: ConnectionIntent): Promise<void>
   }
 }
 
-export function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  }
-  return bytes;
-}
-
 export async function createTsshdSession(spec: ConnectionIntent): Promise<TsshdBootstrapResult> {
   await runTsshdBootstrapPreflight(spec);
 
   const udpMode: TsshdUdpMode = spec.tsshd?.udpMode ?? 'KCP';
   const terminal = new CaptureTerminal();
-  const command = buildTsshdBootstrapCommand(udpMode);
+  const command = buildTsshdBootstrapCommand(udpMode, {
+    tsshdPath: spec.tsshd?.tsshdPath,
+    tsshdPortRange: spec.tsshd?.tsshdPortRange,
+  });
   let resolveServerInfo!: (info: TsshdServerInfo) => void;
   let rejectServerInfo!: (error: Error) => void;
   const serverInfoReady = new Promise<TsshdServerInfo>((resolve, reject) => {
@@ -95,7 +90,7 @@ export async function createTsshdSession(spec: ConnectionIntent): Promise<TsshdB
       rejectServerInfo(new Error('tsshd not found on the remote host. Install tsshd on the server first (brew install tsshd).'));
       return;
     }
-    const parsed = parseTsshdOutput(output);
+    const parsed = parseTsshdOutput(output, udpMode);
     if (parsed) {
       resolveServerInfo(parsed);
     }
@@ -116,19 +111,9 @@ export async function createTsshdSession(spec: ConnectionIntent): Promise<TsshdB
   try {
     await bridge.connect();
     const serverInfo = await serverInfoReady;
-    const proxyKey = hexToBytes(serverInfo.ProxyKey);
     return {
       host: spec.hostname,
-      params: {
-        host: spec.hostname,
-        port: serverInfo.Port,
-        sessionKey: new Uint8Array(32),
-        clientId: serverInfo.ClientID,
-        serverId: serverInfo.ServerID,
-        proxyKey,
-        udpMode,
-        serverInfo,
-      },
+      serverInfo,
     };
   } finally {
     window.clearTimeout(timeout);

@@ -917,6 +917,8 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private handlePaneClosed(id: number): void {
     if (this.zoomedPaneId === id) this.unzoomPane();
     this.releasePreviewCanvas(id);
+    const state = this.panes.get(id);
+    if (state) state.bridge.dispose();
     this.panes.delete(id);
     this.openedPanes.delete(id);
     this.paneCloseListeners.forEach((cb) => cb(id));
@@ -1395,6 +1397,9 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     for (const id of [...this.previewCanvases.keys()]) this.releasePreviewCanvas(id);
     this.term?.dispose();
     this.term = null;
+    for (const pane of this.panes.values()) {
+      pane.bridge.dispose();
+    }
     this.panes.clear();
     this.openedPanes.clear();
     this.pendingOpen = [];
@@ -1469,6 +1474,9 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     }
 
     const canvasUnder = (x: number, y: number): HTMLCanvasElement | null => {
+      if (this.zoomedPaneId !== null) {
+        return this.paneContainer(this.zoomedPaneId)?.querySelector<HTMLCanvasElement>('canvas') ?? null;
+      }
       for (const canvas of canvases) {
         const rect = canvas.getBoundingClientRect();
         if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return canvas;

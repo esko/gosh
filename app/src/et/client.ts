@@ -132,6 +132,7 @@ export class EtClient {
       this.startKeepalive();
       void this.readLoop();
     } catch (error) {
+      await this.closeSocket().catch(() => undefined);
       const message = error instanceof Error ? error.message : String(error);
       if (this.session.phase === 'stale') {
         this.rejectUserTrafficWaiters(error instanceof Error ? error : new Error(message));
@@ -552,6 +553,7 @@ export class EtClient {
         if ((this.session.phase as string) === 'stale') {
           // INVALID_KEY during reconnect → the session ended (onStale fired).
           this.reconnecting = false;
+          await this.closeSocket();
           const reconnectMessage = reconnectError instanceof Error ? reconnectError.message : String(reconnectError);
           this.rejectUserTrafficWaiters(new Error(reconnectMessage));
           return;

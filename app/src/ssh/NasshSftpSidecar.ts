@@ -4,7 +4,7 @@ import { HostKeyGuard } from './HostKeyGuard';
 import { NasshIoShim } from './NasshIoShim';
 import { NASSH_ENVIRONMENT, loadNasshModules } from './NasshCommandBridge';
 import { showSecureInputPrompt } from './SecureInputPrompt';
-import { stageIdentityForNassh } from './nasshIdentity';
+import { stageIdentityForNassh, removeIdentityFromNassh } from './nasshIdentity';
 import { stageKnownHostsForNassh, syncKnownHostsFromNassh } from './nasshKnownHosts';
 import type { NasshCommandInstance, NasshConnectParams, NasshSftpClient } from './upstreamTypes';
 import type { RemoteFileChannel } from './RemoteImageUploader';
@@ -117,7 +117,13 @@ export async function connectNasshSftpSidecar(spec: ConnectionIntent, signal?: A
   const abort = () => instance.terminateProgram_();
   signal?.addEventListener('abort', abort, { once: true });
   try {
-    await instance.connectTo(params);
+    try {
+      await instance.connectTo(params);
+    } finally {
+      if (spec.identityId) {
+        await removeIdentityFromNassh(spec.identityId);
+      }
+    }
     signal?.throwIfAborted();
     const client = instance.sftpClient;
     if (!client?.isInitialised) {

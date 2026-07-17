@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { DA1_REPLY } from './deviceAttributes';
 import { PaneBridge, type ResttyTerminalAdapter } from './resttyAdapter';
 
 describe('PaneBridge terminal reply ordering', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', {});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
   const makeBridge = () => {
     const owner = {
       notifyPaneOpen() {},
@@ -86,5 +93,42 @@ describe('PaneBridge terminal reply ordering', () => {
     bridge.write('no bell here');
 
     expect(bellPaneIds).toEqual([]);
+  });
+
+  it('cleans up oninput and connects listeners when disposed', () => {
+    const owner = {
+      notifyPaneOpen() {},
+      captureOsc() {},
+      focusPane() {},
+    } as unknown as ResttyTerminalAdapter;
+    const bridge = new PaneBridge(1, owner);
+    let inputTriggered = false;
+    let resizeTriggered = false;
+    bridge.onInput(() => { inputTriggered = true; });
+    bridge.onResize(() => { resizeTriggered = true; });
+
+    bridge.connect({
+      cols: 90,
+      rows: 30,
+      callbacks: {
+        onData: () => {},
+        onDisconnect: () => {},
+      }
+    });
+
+    expect(bridge.isConnected()).toBe(true);
+    bridge.sendInput('test');
+    expect(inputTriggered).toBe(true);
+    expect(resizeTriggered).toBe(true);
+
+    bridge.dispose();
+    expect(bridge.isConnected()).toBe(false);
+
+    inputTriggered = false;
+    resizeTriggered = false;
+    bridge.sendInput('test');
+    expect(inputTriggered).toBe(false);
+    bridge.updateViewport({ cols: 100 });
+    expect(resizeTriggered).toBe(false);
   });
 });

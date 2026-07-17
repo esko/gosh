@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, type Plugin, type Connect } from 'vite';
 import { cpSync, createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { resolve } from 'node:path';
@@ -155,6 +155,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
   assetsInclude: ['**/*.wasm'],
+  worker: {
+    format: 'es',
+  },
   plugins: [
     resttyRendererPatches(),
     upstreamStaticDev(),
@@ -178,6 +181,13 @@ export default defineConfig({
         terminal: resolve(__dirname, 'app/terminal.html'),
       },
       external: (id) => id.startsWith('/upstream/'),
+      output: {
+        manualChunks(id) {
+          if (id.includes('vendor/restty') || id.includes('node_modules')) {
+            return 'vendor';
+          }
+        }
+      }
     },
   },
   server: {
