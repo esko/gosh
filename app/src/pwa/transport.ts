@@ -122,12 +122,13 @@ export class SshDirectSocketsTransport implements TerminalTransport {
   }
 
   uploadFile(blob: Blob, options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void }): Promise<string> {
+    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
     this.uploader ??= new RemoteImageUploader({
       connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
-      fallback: (file, signal, progress) => uploadViaNasshExec(this.spec, file, signal, progress),
+      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
       isSubsystemUnavailable: isSftpSubsystemUnavailable,
     });
-    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress);
+    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
   }
 
   dispose(): void {
@@ -158,12 +159,13 @@ export class EtDirectSocketsTransport implements TerminalTransport {
   }
 
   uploadFile(blob: Blob, options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void }): Promise<string> {
+    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
     this.uploader ??= new RemoteImageUploader({
       connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
-      fallback: (file, signal, progress) => uploadViaNasshExec(this.spec, file, signal, progress),
+      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
       isSubsystemUnavailable: isSftpSubsystemUnavailable,
     });
-    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress);
+    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
   }
 
   async connect(adapter: TerminalSink): Promise<void> {

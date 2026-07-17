@@ -379,13 +379,8 @@ export function getSyncStorage() {
  * @return {!TrustedScriptURL|string}
  */
  export function sanitizeScriptUrl(url) {
-  if (globalThis.trustedTypes?.createPolicy) {
-    if (!sanitizeScriptUrl.policy) {
-      sanitizeScriptUrl.policy = trustedTypes.createPolicy('nassh', {
-        createScriptURL: (url) => url,
-      });
-    }
-    return sanitizeScriptUrl.policy.createScriptURL(url);
-  }
+  // Gosh IWA: CSP allowlists only trusted-types default. Upstream creates a
+  // passthrough nassh policy here, which is blocked and breaks SSH connect.
+  // Return a string so Worker() sinks use app/src/security/trustedTypes.ts.
   return url;
 }

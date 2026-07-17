@@ -47,21 +47,37 @@ describe('PWA settings normalization', () => {
       ligatures: true,
       nerdFontFallback: true,
       nerdFontScale: 0.75,
+      unicodeSymbolsFallback: true,
     });
-    expect(normalizePwaSettings({ fontSmoothing: 'grayscale', fontHinting: 'normal', ligatures: false, nerdFontFallback: false, nerdFontScale: 1.25 })).toMatchObject({
+    expect(normalizePwaSettings({
       fontSmoothing: 'grayscale',
       fontHinting: 'normal',
       ligatures: false,
       nerdFontFallback: false,
       nerdFontScale: 1.25,
+      unicodeSymbolsFallback: false,
+    })).toMatchObject({
+      fontSmoothing: 'grayscale',
+      fontHinting: 'normal',
+      ligatures: false,
+      nerdFontFallback: false,
+      nerdFontScale: 1.25,
+      unicodeSymbolsFallback: false,
     });
     // Unsupported enum / non-boolean inputs fall back to defaults.
-    expect(normalizePwaSettings({ fontSmoothing: 'lcd', fontHinting: 'full', ligatures: 'on', nerdFontFallback: 'on' })).toMatchObject({
+    expect(normalizePwaSettings({
+      fontSmoothing: 'lcd',
+      fontHinting: 'full',
+      ligatures: 'on',
+      nerdFontFallback: 'on',
+      unicodeSymbolsFallback: 'on',
+    })).toMatchObject({
       fontSmoothing: 'smooth',
       fontHinting: 'light',
       ligatures: true,
       nerdFontFallback: true,
       nerdFontScale: 0.75,
+      unicodeSymbolsFallback: true,
     });
     // Out-of-range and non-numeric scales clamp / fall back to the default.
     expect(normalizePwaSettings({ nerdFontScale: 9 }).nerdFontScale).toBe(1.5);
@@ -84,6 +100,7 @@ describe('PWA settings normalization', () => {
       ctrlShiftCopyPaste: true,
       rightClickPaste: false,
       middleClickPaste: false,
+      imagePasteDirectory: '/tmp',
     });
 
     expect(normalizePwaSettings({ termType: 'tmux-256color', bell: 'sound', copyOnSelect: true }).termType).toBe('tmux-256color');
@@ -92,11 +109,15 @@ describe('PWA settings normalization', () => {
     expect(normalizePwaSettings({ ctrlShiftCopyPaste: false }).ctrlShiftCopyPaste).toBe(false);
     expect(normalizePwaSettings({ rightClickPaste: true }).rightClickPaste).toBe(true);
     expect(normalizePwaSettings({ middleClickPaste: true }).middleClickPaste).toBe(true);
+    expect(normalizePwaSettings({ imagePasteDirectory: '/var/tmp/gosh' }).imagePasteDirectory).toBe('/var/tmp/gosh');
+    expect(normalizePwaSettings({ imagePasteDirectory: '.cache/gosh/pastes' }).imagePasteDirectory).toBe('.cache/gosh/pastes');
 
     // Unsupported bell value and unsafe/oversized TERM strings fall back to defaults.
     expect(normalizePwaSettings({ bell: 'klaxon' }).bell).toBe('none');
     expect(normalizePwaSettings({ termType: "xterm'; rm -rf /" }).termType).toBe('xterm-256color');
     expect(normalizePwaSettings({ termType: 'a'.repeat(41) }).termType).toBe('xterm-256color');
+    expect(normalizePwaSettings({ imagePasteDirectory: '/tmp;rm -rf /' }).imagePasteDirectory).toBe('/tmp');
+    expect(normalizePwaSettings({ imagePasteDirectory: '../etc' }).imagePasteDirectory).toBe('/tmp');
   });
 
   it('keeps following OS appearance changes after System is selected', () => {

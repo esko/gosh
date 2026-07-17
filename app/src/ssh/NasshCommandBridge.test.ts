@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SessionStatusMeta } from '../settings/types';
-import { composeSshArgstr, isLoginPasswordPrompt, NASSH_ENVIRONMENT, NasshCommandBridge } from './NasshCommandBridge';
+import {
+  composeSshArgstr,
+  isLoginPasswordPrompt,
+  NASSH_ENVIRONMENT,
+  NasshCommandBridge,
+  TRUECOLOR_EXPORT,
+  TRUECOLOR_LOGIN_SHELL,
+  withTruecolorRemoteCommand,
+} from './NasshCommandBridge';
 
 describe('composeSshArgstr', () => {
   it('returns trimmed extra args when there is no remote command', () => {
@@ -12,6 +20,29 @@ describe('composeSshArgstr', () => {
     expect(composeSshArgstr(undefined, 'etterminal')).toBe('-- etterminal');
     expect(composeSshArgstr('-o Foo=bar', "env PATH=/bin sh -c 'exec etterminal'")).toBe(
       "-o Foo=bar -- env PATH=/bin sh -c 'exec etterminal'",
+    );
+  });
+});
+
+describe('withTruecolorRemoteCommand', () => {
+  it('opens a login shell that exports COLORTERM when no command is given', () => {
+    expect(withTruecolorRemoteCommand(undefined)).toBe(TRUECOLOR_LOGIN_SHELL);
+    expect(withTruecolorRemoteCommand('')).toBe(TRUECOLOR_LOGIN_SHELL);
+    expect(TRUECOLOR_LOGIN_SHELL).toContain(TRUECOLOR_EXPORT);
+  });
+
+  it('prefixes COLORTERM onto an existing remote command', () => {
+    expect(withTruecolorRemoteCommand('etterminal --foo')).toBe(
+      `${TRUECOLOR_EXPORT}; etterminal --foo`,
+    );
+  });
+
+  it('does not double-export when COLORTERM is already set in the command', () => {
+    expect(withTruecolorRemoteCommand('COLORTERM=truecolor etterminal')).toBe(
+      'COLORTERM=truecolor etterminal',
+    );
+    expect(withTruecolorRemoteCommand('export COLORTERM=24bit; exec bash -l')).toBe(
+      'export COLORTERM=24bit; exec bash -l',
     );
   });
 });
@@ -45,10 +76,12 @@ type ExitHarness = {
 };
 
 describe('NasshCommandBridge environment', () => {
-  it('sends a UTF-8 locale for non-interactive Mosh bootstrap commands', () => {
+  it('advertises UTF-8 locale and truecolor to the remote session', () => {
     expect(NASSH_ENVIRONMENT).toMatchObject({
       LANG: 'en_US.UTF-8',
       LC_CTYPE: 'en_US.UTF-8',
+      COLORTERM: 'truecolor',
+      TERM: 'xterm-256color',
     });
   });
 });

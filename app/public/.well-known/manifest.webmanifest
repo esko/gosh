@@ -2,27 +2,46 @@
   "id": "/",
   "name": "Gosh",
   "short_name": "Gosh",
-  "description": "ChromeOS IWA SSH client",
-  "version": "0.1.129",
+  "description": "Gosh — ChromeOS SSH client",
+  "version": "0.1.159",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["unframed", "borderless"],
-  "background_color": "#202124",
+  "display_override": [
+    "unframed",
+    "borderless"
+  ],
+  "background_color": "transparent",
   "theme_color": "#202124",
   "isolated_storage": true,
   "launch_handler": {
     "client_mode": "navigate-new"
   },
   "permissions_policy": {
-    "cross-origin-isolated": ["self"],
-    "direct-sockets": ["self"],
-    "direct-sockets-private": ["self"],
-    "local-network": ["self"],
-    "loopback-network": ["self"],
-    "window-management": ["self"],
-    "clipboard-read": ["self"],
-    "clipboard-write": ["self"]
+    "cross-origin-isolated": [
+      "self"
+    ],
+    "direct-sockets": [
+      "self"
+    ],
+    "direct-sockets-private": [
+      "self"
+    ],
+    "local-network": [
+      "self"
+    ],
+    "loopback-network": [
+      "self"
+    ],
+    "window-management": [
+      "self"
+    ],
+    "clipboard-read": [
+      "self"
+    ],
+    "clipboard-write": [
+      "self"
+    ]
   },
   "icons": [
     {

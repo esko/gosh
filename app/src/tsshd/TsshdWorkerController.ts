@@ -42,7 +42,6 @@ export class TsshdWorkerController {
   private initializeTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private initialized: Promise<void> | null = null;
   private stopping: Promise<void> | null = null;
-  private connected = false;
   private disposed = false;
 
   constructor(private readonly dependencies: {
@@ -100,7 +99,9 @@ export class TsshdWorkerController {
   }
 
   sendInput(data: string): void {
-    if (!this.disposed && this.connected) this.worker?.postMessage({ type: 'input', data });
+    // Forward even before 'connected': the WASM client queues stdin until the
+    // session is ready. Gating on connected silently drops early keypresses.
+    if (!this.disposed && this.worker) this.worker.postMessage({ type: 'input', data });
   }
 
   resize(viewport: TerminalViewport): void {
@@ -134,7 +135,6 @@ export class TsshdWorkerController {
       return;
     }
     if (event.type === 'status' && event.status === 'disconnected') {
-      this.connected = false;
       this.disconnectResolve?.();
       if (!this.disposed) this.dependencies.onEvent(event);
       return;
@@ -146,7 +146,6 @@ export class TsshdWorkerController {
     }
     this.dependencies.onEvent(event);
     if (event.type === 'status' && event.status === 'connected') {
-      this.connected = true;
       this.connectResolve?.();
       this.connectResolve = null;
       this.connectReject = null;

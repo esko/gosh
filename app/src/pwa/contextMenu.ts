@@ -63,11 +63,13 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   menu.style.visibility = 'visible';
   openMenu = menu;
 
-  // Dismiss on an outside press / Escape / blur. Capture-phase mousedown with a
-  // contains() guard keeps the menu alive long enough for an item's own click
-  // (mousedown inside → kept; mouseup → click → onSelect) while still closing
-  // when the press lands elsewhere.
-  const onMouseDown = (event: MouseEvent): void => {
+  // Dismiss on an outside press / Escape / blur. Use capture-phase pointerdown
+  // (not mousedown): Restty and other canvas handlers often preventDefault on
+  // pointerdown, which suppresses the compatibility mouse events entirely, so a
+  // mousedown-only dismiss never fires for terminal outside-clicks. The
+  // contains() guard keeps the menu alive for an item's own activation
+  // (pointerdown inside → kept; click → onSelect).
+  const onPointerDown = (event: PointerEvent): void => {
     if (!menu.contains(event.target as Node)) closeContextMenu();
   };
   const onKeyDown = (event: KeyboardEvent): void => {
@@ -80,14 +82,16 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
     if (!menu.contains(event.target as Node)) closeContextMenu();
   };
   cleanup = () => {
-    document.removeEventListener('mousedown', onMouseDown, true);
+    document.removeEventListener('pointerdown', onPointerDown, true);
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('blur', closeContextMenu);
     window.removeEventListener('resize', closeContextMenu);
   };
+  // Defer so the opening gesture (contextmenu / the pointerdown that preceded
+  // it) cannot immediately dismiss the menu we just opened.
   setTimeout(() => {
-    document.addEventListener('mousedown', onMouseDown, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('scroll', onScroll, true);
     window.addEventListener('blur', closeContextMenu);

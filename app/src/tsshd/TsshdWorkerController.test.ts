@@ -31,6 +31,8 @@ describe('TsshdWorkerController', () => {
     expect(worker.requests[0]).toMatchObject({ type: 'connect', serverInfo: {
       ClientID: '13200128884507580995', ServerID: '14014290635229521621',
     } });
+    controller.sendInput('pre');
+    expect(worker.requests.at(-1)).toEqual({ type: 'input', data: 'pre' });
     worker.emit({ type: 'status', status: 'connected' });
     await connected;
     controller.sendInput('λ');

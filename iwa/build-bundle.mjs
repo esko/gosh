@@ -138,10 +138,16 @@ Install: chrome://web-app-internals → Install IWA from Signed Web Bundle
 }
 
 console.log(`→ Signing bundle → ${bundleConfig.signedBundle}`);
-const signArgs = ['sign', bundleConfig.unsignedBundle, bundleConfig.signingKeyPath, '-o', bundleConfig.signedBundle];
-if (process.env.WEB_BUNDLE_SIGNING_PASSPHRASE) {
-  signArgs.push('--password-env', 'WEB_BUNDLE_SIGNING_PASSPHRASE');
-}
+// wbn-sign reads WEB_BUNDLE_SIGNING_PASSPHRASE from the environment for encrypted PEMs.
+const signArgs = [
+  'sign',
+  bundleConfig.unsignedBundle,
+  bundleConfig.signingKeyPath,
+  '-o',
+  bundleConfig.signedBundle,
+  '--web-bundle-id',
+  bundleConfig.webBundleId,
+];
 npx('wbn-sign', signArgs);
 
 console.log(`

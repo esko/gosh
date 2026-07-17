@@ -64,6 +64,28 @@ export function composeSshArgstr(connectionArgs: string | undefined, remoteComma
   return base ? `${base} -- ${command}` : `-- ${command}`;
 }
 
+/** Export used so remote apps see truecolor without relying on sshd AcceptEnv. */
+export const TRUECOLOR_EXPORT = 'export COLORTERM=truecolor';
+
+/**
+ * Interactive login shell that advertises truecolor. Used when SSH would
+ * otherwise open the default shell — SendEnv COLORTERM is ignored by most
+ * sshd configs that only AcceptEnv LANG LC_*.
+ */
+export const TRUECOLOR_LOGIN_SHELL =
+  `${TRUECOLOR_EXPORT}; exec "\${SHELL:-/bin/sh}" -l`;
+
+/**
+ * Ensure the remote command (or interactive shell) exports COLORTERM=truecolor.
+ * Leaves an existing COLORTERM assignment alone.
+ */
+export function withTruecolorRemoteCommand(remoteCommand: string | undefined): string {
+  const command = (remoteCommand ?? '').trim();
+  if (!command) return TRUECOLOR_LOGIN_SHELL;
+  if (/(?:^|[;\s])(?:export\s+)?COLORTERM=/.test(command)) return command;
+  return `${TRUECOLOR_EXPORT}; ${command}`;
+}
+
 /**
  * True when a masked secureInput prompt is the SSH login password (the only
  * prompt eligible for saving/auto-fill). Echoed responses are excluded, as are
@@ -133,7 +155,7 @@ export class NasshCommandBridge {
 
     if (!isDirectSocketsAvailable()) {
       const message =
-        'Direct Sockets (TCPSocket) is unavailable. Install as an IWA with direct-sockets permission.';
+        'Direct Sockets (TCPSocket) is unavailable. Install Gosh with Direct Sockets permission.';
       log.socket.error('direct sockets unavailable');
       this.options.onStatus?.('error', message);
       throw new Error(message);
@@ -265,7 +287,23 @@ export class NasshCommandBridge {
       const offerSave = eligible && vaultReady;
       const { value, save } = await showSecureInputPrompt(message, bufLen, echo, { offerSave });
       if (value === null) {
+        // Empty string makes OpenSSH re-prompt → modal reopens. Tear down the
+        // bridge first so a follow-up readpassphrase cannot schedule another UI.
         log.ssh.warn('secureInput cancelled');
+        if (!this.disposed && !this.hasExited) {
+          this.hasExited = true;
+          try {
+            instance.terminateProgram_();
+          } catch {
+            /* already dead */
+          }
+          this.commandInstance = null;
+          this.ioShim?.dispose();
+          this.ioShim = null;
+          this.hostKeyGuard?.reset();
+          this.hostKeyGuard = null;
+          this.options.onStatus?.('disconnected', undefined, { disconnectReason: 'user' });
+        }
         return '';
       }
       if (offerSave) {
@@ -316,9 +354,15 @@ export class NasshCommandBridge {
       port: this.options.port,
       username: this.options.username,
       command: this.options.protocol === 'mosh' ? 'mosh' : '',
+      // SSH: force COLORTERM into the remote shell. SendEnv alone is not enough —
+      // typical sshd AcceptEnv is only LANG LC_*, so truecolor apps fall back to
+      // 256-color. Mosh builds its own remote command inside nassh; keep argstr
+      // free of a competing `--` command and rely on NASSH_ENVIRONMENT + SendEnv.
       argstr: composeSshArgstr(
         this.options.connectionArgs,
-        this.options.protocol === 'mosh' ? undefined : this.options.startupCommand,
+        this.options.protocol === 'mosh'
+          ? undefined
+          : withTruecolorRemoteCommand(this.options.startupCommand),
       ),
       nasshOptions: '--field-trial-direct-sockets',
       identity,

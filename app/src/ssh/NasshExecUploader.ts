@@ -1,7 +1,11 @@
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
 import type { TerminalSink, TerminalSubscription, TerminalViewport } from '../terminal/TerminalAdapter';
 import { NasshCommandBridge } from './NasshCommandBridge';
-import type { RemoteUploadProgress } from './RemoteImageUploader';
+import {
+  DEFAULT_REMOTE_PASTE_DIRECTORY,
+  shellQuotePath,
+  type RemoteUploadProgress,
+} from './RemoteImageUploader';
 
 const FRAME_BYTES = 3072;
 
@@ -30,17 +34,36 @@ class ExecSink implements TerminalSink {
   onOutput(cb: (data: string) => void): () => void { this.outputListeners.add(cb); return () => this.outputListeners.delete(cb); }
 }
 
-export function buildPortableExecUploadCommand(filename: string, marker: string): string {
-  return `umask 077; d="$HOME/.cache/gosh/pastes"; mkdir -p "$d" || exit 73; find "$d" -type f -name 'iwa-paste-*' -mtime +7 -exec rm -f {} + 2>/dev/null || :; f="$d/${filename}"; p="$f.part"; trap 'rm -f "$p"' EXIT HUP INT TERM; if printf '' | base64 --decode >/dev/null 2>&1; then flag=--decode; elif printf '' | base64 -D >/dev/null 2>&1; then flag=-D; else exit 69; fi; { while IFS= read -r line; do [ "$line" = '${marker}' ] && break; printf %s "$line"; done; } | base64 "$flag" >"$p" && chmod 600 "$p" && mv -f "$p" "$f" || exit 74; trap - EXIT HUP INT TERM; printf '\\nIWA_UPLOAD_OK:%s\\n' "$(printf %s "$f" | base64 | tr -d '\\n')"`;
+/** Shell expression for the paste directory (absolute → quoted; relative → under $HOME). */
+export function pasteDirectoryShellExpr(directory: string): string {
+  const cleaned = (directory.trim() || DEFAULT_REMOTE_PASTE_DIRECTORY).replace(/\/+$/, '');
+  if (cleaned.startsWith('/')) return shellQuotePath(cleaned || '/');
+  const relative = cleaned.replace(/^\/+/, '').replaceAll('"', '');
+  return `"$HOME/${relative}"`;
+}
+
+export function buildPortableExecUploadCommand(
+  filename: string,
+  marker: string,
+  directory = DEFAULT_REMOTE_PASTE_DIRECTORY,
+): string {
+  const dirExpr = pasteDirectoryShellExpr(directory);
+  return `umask 077; d=${dirExpr}; mkdir -p "$d" || exit 73; find "$d" -type f \\( -name 'gosh-paste-*' -o -name 'iwa-paste-*' \\) -mtime +7 -exec rm -f {} + 2>/dev/null || :; f="$d/${filename}"; p="$f.part"; trap 'rm -f "$p"' EXIT HUP INT TERM; if printf '' | base64 --decode >/dev/null 2>&1; then flag=--decode; elif printf '' | base64 -D >/dev/null 2>&1; then flag=-D; else exit 69; fi; { while IFS= read -r line; do [ "$line" = '${marker}' ] && break; printf %s "$line"; done; } | base64 "$flag" >"$p" && chmod 600 "$p" && mv -f "$p" "$f" || exit 74; trap - EXIT HUP INT TERM; printf '\\nIWA_UPLOAD_OK:%s\\n' "$(printf %s "$f" | base64 | tr -d '\\n')"`;
 }
 
 /** Portable Linux/macOS SSH-exec upload used only when SFTP is unavailable. */
-export async function uploadViaNasshExec(spec: ConnectionIntent, blob: Blob, signal?: AbortSignal, onProgress?: (progress: RemoteUploadProgress) => void): Promise<string> {
+export async function uploadViaNasshExec(
+  spec: ConnectionIntent,
+  blob: Blob,
+  signal?: AbortSignal,
+  onProgress?: (progress: RemoteUploadProgress) => void,
+  directory = DEFAULT_REMOTE_PASTE_DIRECTORY,
+): Promise<string> {
   signal?.throwIfAborted();
   const token = crypto.randomUUID().replaceAll('-', '');
   const marker = `__IWA_UPLOAD_EOF_${token}__`;
-  const filename = `iwa-paste-${token}.${extension(blob.type)}`;
-  const command = buildPortableExecUploadCommand(filename, marker);
+  const filename = `gosh-paste-${token}.${extension(blob.type)}`;
+  const command = buildPortableExecUploadCommand(filename, marker, directory);
   const sink = new ExecSink();
   let rejectResult: (reason?: unknown) => void = () => undefined;
   let cleanupResult = (): void => undefined;

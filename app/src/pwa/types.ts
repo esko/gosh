@@ -54,6 +54,11 @@ export type PwaTerminalSettings = {
   nerdFontFallback: boolean;
   /** Size of Nerd Font icon glyphs relative to text (1 = match the text em square). */
   nerdFontScale: number;
+  /**
+   * Append bundled Noto Sans Symbols / Symbols 2 so misc Unicode symbols
+   * (e.g. Claude Code ✻ ⎿ ◼ ◻) render when the text font lacks them.
+   */
+  unicodeSymbolsFallback: boolean;
   /** Ask for confirmation before closing a tab whose session is connected. */
   confirmClose: boolean;
   /** Auto-close a tab/pane when its session ends (off keeps it for reading). */
@@ -70,6 +75,11 @@ export type PwaTerminalSettings = {
   rightClickPaste: boolean;
   /** Paste the primary selection on middle-click. */
   middleClickPaste: boolean;
+  /**
+   * Remote directory for Ctrl+Alt+Shift+V image uploads.
+   * Absolute (`/tmp`) or home-relative (`.cache/gosh/pastes`).
+   */
+  imagePasteDirectory: string;
   /** Chrome color scheme: dark, light, or follow the OS system preference. */
   colorScheme: 'dark' | 'light' | 'system';
 };

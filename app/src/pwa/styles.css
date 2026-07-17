@@ -25,6 +25,27 @@
   /* Connected/active status (ET & Mosh live dots). */
   --status-ok: #4ec77e;
   --shadow: 0 20px 60px -18px rgba(0, 0, 0, 0.75), 0 2px 8px -2px rgba(0, 0, 0, 0.5);
+  /* Form / chrome washes — flipped for light mode below. */
+  --control-bg: rgba(0, 0, 0, 0.22);
+  --control-bg-focus: rgba(0, 0, 0, 0.32);
+  --control-border-focus: rgba(255, 255, 255, 0.32);
+  --wash: rgba(255, 255, 255, 0.04);
+  --wash-hover: rgba(255, 255, 255, 0.07);
+  --wash-strong: rgba(255, 255, 255, 0.1);
+  --panel-tint: rgba(0, 0, 0, 0.16);
+  --note-tint: rgba(0, 0, 0, 0.2);
+  --overlay-scrim: rgba(8, 9, 11, 0.66);
+  --btn-fg: var(--fg);
+  --btn-border: rgba(255, 255, 255, 0.26);
+  --btn-border-hover: rgba(255, 255, 255, 0.42);
+  --btn-bg: linear-gradient(180deg, #363a43 0%, #2b2e36 100%);
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 6px -3px rgba(0, 0, 0, 0.6);
+  --btn-danger-bg: linear-gradient(180deg, #3a2422 0%, #2f1d1c 100%);
+  --btn-danger-fg: #f0c5c5;
+  --btn-danger-border: rgba(224, 87, 75, 0.5);
+  --error-fg: #f0c5c5;
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+  --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
   --radius: 12px;
   --radius-sm: 8px;
   --ui: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -39,19 +60,41 @@
    separate (chosen in the theme grid) — these vars only tint the UI chrome. */
 :root[data-color-scheme="light"] {
   color-scheme: light;
-  --bg: #f4f4f7;
-  --bg-grad: radial-gradient(125% 90% at 50% -15%, #fafbff 0%, #eef0f5 58%);
-  --surface: #fcfcfe;
-  --surface-grad: linear-gradient(180deg, #fcfcfe 0%, #f4f4f8 100%);
-  --surface-2: #edeef3;
-  --fg: #1a1d27;
-  --muted: #60667a;
-  --faint: #7a8094;
-  --line: rgba(0, 0, 0, 0.07);
-  --line-2: rgba(0, 0, 0, 0.11);
-  --focus: rgba(60, 110, 190, 0.6);
-  --status-ok: #2d8c4a;
-  --shadow: 0 20px 60px -18px rgba(0, 0, 0, 0.15), 0 2px 8px -2px rgba(0, 0, 0, 0.1);
+  /* One continuous light surface — panels are separated by hairlines, not gray fills. */
+  --bg: #f7f8fa;
+  --bg-grad: radial-gradient(125% 90% at 50% -15%, #fcfcfd 0%, #f4f5f7 58%);
+  --surface: #ffffff;
+  --surface-grad: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+  --surface-2: #eef0f3;
+  --fg: #15181f;
+  --muted: #3f4654;
+  --faint: #526072;
+  --line: rgba(0, 0, 0, 0.1);
+  --line-2: rgba(0, 0, 0, 0.16);
+  --focus: rgba(50, 100, 180, 0.55);
+  --status-ok: #1f7a40;
+  --shadow: 0 18px 48px -16px rgba(0, 0, 0, 0.18), 0 2px 8px -2px rgba(0, 0, 0, 0.08);
+  --control-bg: #ffffff;
+  --control-bg-focus: #ffffff;
+  --control-border-focus: rgba(0, 0, 0, 0.28);
+  --wash: rgba(0, 0, 0, 0.03);
+  --wash-hover: rgba(0, 0, 0, 0.055);
+  --wash-strong: rgba(0, 0, 0, 0.08);
+  --panel-tint: transparent;
+  --note-tint: rgba(0, 0, 0, 0.035);
+  --overlay-scrim: rgba(22, 24, 30, 0.42);
+  /* Raised light primary — white slab, dark ink (mirror of dark's raised surface). */
+  --btn-fg: #15181f;
+  --btn-border: rgba(0, 0, 0, 0.16);
+  --btn-border-hover: rgba(0, 0, 0, 0.28);
+  --btn-bg: linear-gradient(180deg, #ffffff 0%, #f2f3f5 100%);
+  --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --btn-danger-bg: linear-gradient(180deg, #fff5f4 0%, #fde8e6 100%);
+  --btn-danger-fg: #9a3832;
+  --btn-danger-border: rgba(154, 56, 50, 0.35);
+  --error-fg: #b33a32;
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.28);
+  --seg-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
 /* Only flip UI text when the active terminal theme is dark and the chrome is
@@ -99,7 +142,7 @@
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb-hover);
   background-clip: padding-box;
   border: 3px solid transparent;
 }
@@ -220,7 +263,7 @@ html.app-chrome .term-launcher .launch {
   overflow-y: auto;
   padding: 22px 22px 28px;
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 120px);
+  background: var(--panel-tint);
 }
 
 .ns-form {
@@ -260,7 +303,7 @@ html.app-chrome .term-launcher .launch {
   padding: 3px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.22);
+  background: var(--control-bg);
 }
 
 .seg-btn {
@@ -284,7 +327,33 @@ html.app-chrome .term-launcher .launch {
 .seg-btn[aria-checked='true'] {
   background: var(--surface-2);
   color: var(--fg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--seg-shadow);
+}
+
+/* Light: no recessed track — spaced white chips, same hairline language as dark. */
+:root[data-color-scheme="light"] .seg {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  gap: 8px;
+}
+
+:root[data-color-scheme="light"] .seg-btn {
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+:root[data-color-scheme="light"] .seg-btn:hover {
+  color: var(--fg);
+  border-color: var(--control-border-focus);
+}
+
+:root[data-color-scheme="light"] .seg-btn[aria-checked='true'] {
+  background: var(--surface);
+  color: var(--fg);
+  border-color: var(--control-border-focus);
+  box-shadow: var(--seg-shadow);
 }
 
 .seg-btn:focus-visible {
@@ -685,7 +754,7 @@ html.app-chrome .term-launcher .launch {
   padding: 10px 38px 10px 35px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background-color: rgba(0, 0, 0, 0.22);
+  background-color: var(--control-bg);
   color: var(--fg);
   font-size: 13px;
 }
@@ -696,8 +765,8 @@ html.app-chrome .term-launcher .launch {
 
 .filter-input:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.32);
-  background-color: rgba(0, 0, 0, 0.32);
+  border-color: var(--control-border-focus);
+  background-color: var(--control-bg-focus);
 }
 
 .filter-input:focus-visible {
@@ -743,7 +812,7 @@ html.app-chrome .term-launcher .launch {
   padding: 9px 12px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash);
   color: var(--fg);
   font-size: 13px;
   text-align: left;
@@ -753,7 +822,7 @@ html.app-chrome .term-launcher .launch {
 
 .filter-connect:hover {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-hover);
 }
 
 .conn-none {
@@ -1127,37 +1196,38 @@ html.app-chrome .term-launcher .launch {
    action" without becoming the brightest thing on a dark screen. */
 .btn {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  border: 1px solid var(--btn-border);
   border-radius: var(--radius-sm);
-  background: linear-gradient(180deg, #363a43 0%, #2b2e36 100%);
-  color: var(--fg);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
   padding: 9px 18px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.005em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 6px -3px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--btn-shadow);
   transition: border-color 0.12s ease, filter 0.12s ease, transform 0.04s ease;
 }
 
 .btn:hover {
-  border-color: rgba(255, 255, 255, 0.42);
-  filter: brightness(1.1);
+  border-color: var(--btn-border-hover);
+  filter: brightness(1.08);
 }
 
 .btn:active {
   transform: translateY(1px);
 }
 
-/* Destructive primary — error-red tinted, still a raised dark surface. */
+/* Destructive primary — error-red tinted, still a raised surface. */
 .btn-danger {
-  border-color: rgba(224, 87, 75, 0.5);
-  background: linear-gradient(180deg, #3a2422 0%, #2f1d1c 100%);
-  color: #f0c5c5;
+  border-color: var(--btn-danger-border);
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-fg);
 }
 
 .btn-danger:hover {
-  border-color: rgba(224, 87, 75, 0.85);
+  border-color: var(--btn-danger-border);
+  filter: brightness(1.06);
 }
 
 /* Secondary action. Genuinely quiet: a faint wash, dim hairline, muted text
@@ -1166,7 +1236,7 @@ html.app-chrome .term-launcher .launch {
   appearance: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--wash);
   color: var(--muted);
   padding: 9px 18px;
   cursor: pointer;
@@ -1176,9 +1246,10 @@ html.app-chrome .term-launcher .launch {
 
 .btn-ghost:hover {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--wash-hover);
   color: var(--fg);
 }
+
 
 /* Split primary action: "Connect & Save" is the main submit; the caret half
    reveals the quieter "Connect without saving" (throwaway). Mirrors the
@@ -1202,8 +1273,7 @@ html.app-chrome .term-launcher .launch {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
   /* Keep the primary's top highlight + soft cast, add a hairline divider. */
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 6px -3px rgba(0, 0, 0, 0.6),
-    inset 1px 0 0 rgba(255, 255, 255, 0.16);
+  box-shadow: var(--btn-shadow), inset 1px 0 0 rgba(255, 255, 255, 0.16);
 }
 
 .btn-split-caret svg {
@@ -1247,7 +1317,7 @@ textarea {
   border-radius: var(--radius-sm);
   /* background-color (not the shorthand) so the select caret background-image
      below survives the focus rule. */
-  background-color: rgba(0, 0, 0, 0.22);
+  background-color: var(--control-bg);
   padding: 9px 11px;
   font-size: 13px;
   color: var(--fg);
@@ -1262,8 +1332,8 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.32);
-  background-color: rgba(0, 0, 0, 0.32);
+  border-color: var(--control-border-focus);
+  background-color: var(--control-bg-focus);
 }
 
 /* Custom caret: the native select arrow's placement is OS-dependent and drifts.
@@ -1277,6 +1347,10 @@ select {
   background-repeat: no-repeat;
   background-position: right 11px center;
   background-size: 12px 12px;
+}
+
+:root[data-color-scheme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235c6474' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* The control is translucent, but the native options popup needs a *solid*
@@ -1323,7 +1397,7 @@ textarea {
   padding: 10px 12px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--wash);
   color: var(--fg);
   cursor: pointer;
   font-size: 13px;
@@ -1332,8 +1406,8 @@ textarea {
 }
 
 .key-toggle:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: var(--wash-hover);
+  border-color: var(--line-2);
 }
 
 .key-chevron {
@@ -1383,7 +1457,7 @@ textarea {
 }
 
 .field-error {
-  color: #f0c5c5;
+  color: var(--error-fg);
 }
 
 /* ----------------------------------------------------------------- modal -- */
@@ -1394,7 +1468,7 @@ textarea {
   display: grid;
   place-items: center;
   padding: 28px;
-  background: rgba(8, 9, 11, 0.66);
+  background: var(--overlay-scrim);
   -webkit-backdrop-filter: blur(6px) saturate(120%);
   backdrop-filter: blur(6px) saturate(120%);
   z-index: 50;
@@ -1432,6 +1506,12 @@ textarea {
 }
 
 /* ------------------------------------------------------- command palette -- */
+
+/* Keep the terminal sharp behind the palette / host picker (no frosted glass). */
+.overlay:has(.palette) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 
 .palette {
   width: min(560px, 100%);
@@ -1591,7 +1671,7 @@ textarea {
   padding: 9px 11px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.24);
+  background: var(--control-bg);
 }
 
 .tab-overview-search .filter-icon {
@@ -1646,7 +1726,7 @@ textarea {
 .tab-overview-card:hover,
 .tab-overview-card[aria-selected='true'] {
   border-color: var(--line-2);
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--wash-hover);
 }
 
 .tab-overview-card[aria-selected='true'] {
@@ -1752,7 +1832,7 @@ textarea {
   padding: 2px 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--wash);
   color: var(--faint);
   font-size: 10.5px;
   line-height: 1.2;
@@ -1764,7 +1844,7 @@ textarea {
 }
 
 .tab-overview-badge[data-state='error'] {
-  color: #f0c5c5;
+  color: var(--error-fg);
   border-color: rgba(224, 87, 75, 0.32);
 }
 
@@ -1875,7 +1955,7 @@ textarea {
 .settings-aside {
   border-right: 1px solid var(--line);
   padding: 24px 16px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--panel-tint);
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -1919,7 +1999,12 @@ textarea {
 
 .nav-item[aria-selected='true'] {
   color: var(--fg);
-  background: var(--surface-2);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+:root[data-color-scheme="light"] .nav-item[aria-selected='true'] {
+  background: transparent;
   box-shadow: inset 0 0 0 1px var(--line-2);
 }
 
@@ -2111,7 +2196,7 @@ textarea {
 .prompt-fingerprint {
   margin: 0 0 8px;
   padding: 11px 13px;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--note-tint);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   font-size: 12.5px;
@@ -2219,7 +2304,7 @@ p.set-hint {
   margin-top: 18px;
   padding: 10px 12px;
   border-radius: var(--radius-sm);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--note-tint);
   border: 1px solid var(--line);
 }
 
@@ -2247,8 +2332,8 @@ p.set-hint {
 }
 
 .theme-swatch[aria-selected='true'] {
-  border-color: rgba(255, 255, 255, 0.7);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+  border-color: var(--control-border-focus);
+  box-shadow: inset 0 0 0 1px var(--focus);
 }
 
 .theme-chip {
@@ -2380,7 +2465,7 @@ p.set-hint {
 }
 
 .diag-row .bad {
-  color: #e9a0a0;
+  color: var(--error-fg);
 }
 
 .placeholder-note {
@@ -2456,6 +2541,15 @@ p.set-hint {
 
 html.app-chrome .term-shell {
   top: var(--titlebar-h);
+}
+
+/* Bottom corners: CSS AA against the transparent clear-color (setShape is
+   binary and cannot antialias). Top corners are the caption's job. */
+@media (display-mode: unframed), (display-mode: borderless) {
+  html.app-chrome .term-shell {
+    border-bottom-left-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
+  }
 }
 
 .term-sessions {
@@ -2721,8 +2815,8 @@ html.app-chrome .term-shell {
 }
 
 .term-status[data-state='error'] {
-  color: #f0c5c5;
-  border-color: rgba(240, 150, 150, 0.4);
+  color: var(--error-fg);
+  border-color: rgba(224, 87, 75, 0.4);
 }
 
 .term-debug-btn {
@@ -2854,17 +2948,25 @@ html.app-chrome .term-shell {
   justify-content: flex-end;
   z-index: 2000;
   background: var(--term-bg, var(--bg));
-  -webkit-app-region: drag;
-  app-region: drag;
+  /* Match Ash's 12px radius. The Window Shape API mask is binary (stair-steps);
+     these CSS radii paint the *visible* edge with browser AA against the
+     transparent window clear-color. Do not use overflow:hidden here: it breaks
+     Chromium app-region hit-testing so caption buttons stop receiving clicks. */
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
   user-select: none;
   -webkit-user-select: none;
 }
 
+/* Drag only the flexible middle strip — keep tabs/controls outside the drag
+   ancestor so caption buttons always receive pointer events. */
 .titlebar-drag {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   min-width: 0;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 /* With one tab the title is centered to the window: absolutely positioned and
@@ -2895,6 +2997,8 @@ html.app-chrome .term-shell {
   align-items: center;
   min-width: 0;
   overflow: hidden;
+  /* Sit inside the Window Shape / Ash rounded clip (12px). */
+  padding-left: 12px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -2923,7 +3027,11 @@ html.app-chrome .term-shell {
 
 .win-controls {
   display: flex;
+  flex-shrink: 0;
   align-items: stretch;
+  /* Keep caption buttons inside the rounded window shape mask; the top-right
+     corner bands are inset by ~radius and otherwise eat clicks. */
+  padding-right: 12px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -2975,10 +3083,72 @@ html.app-chrome .term-shell {
   outline: none;
 }
 
+/* Completely hide the custom caption (tabs + window controls). --titlebar-h
+   collapses to 0 so every calc(100vh - var(--titlebar-h)) / top offset follows. */
+html.app-chrome.titlebar-hidden {
+  --titlebar-h: 0px;
+}
+
+html.app-chrome.titlebar-hidden .titlebar {
+  display: none;
+}
+
+/* When the caption is hidden, the surface under the top edge must round too. */
+html.app-chrome.titlebar-hidden body,
+html.app-chrome.titlebar-hidden .term-shell {
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+
+/* Maximized / fullscreen windows are square-cornered on ChromeOS. */
+@media (display-state: maximized), (display-state: fullscreen) {
+  .titlebar,
+  html.app-chrome.titlebar-hidden body,
+  html.app-chrome.titlebar-hidden .term-shell,
+  html.app-chrome .term-shell,
+  html.app-chrome #app {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
+/* Unframed/borderless: transparent window clear-color so CSS border-radius on
+   caption/content can antialias against the desktop. Opaque paint lives on
+   those surfaces, not html/body (or the manifest background_color). The
+   Window Shape mask hugs the CSS curve from the inside (see windowShape.ts). */
+@media (display-mode: unframed), (display-mode: borderless) {
+  html,
+  body {
+    background: transparent;
+    background-image: none;
+  }
+}
+
 /* Make room for the caption bar; only when running as an app window. */
 html.app-chrome body {
   padding-top: var(--titlebar-h);
+  background: transparent;
+  background-image: none;
 }
+
+/* Launcher/content that previously relied on the body fill. Stays below the
+   caption so it cannot paint into the rounded top-corner wedges. */
+html.app-chrome #app {
+  min-height: calc(100vh - var(--titlebar-h));
+  background: var(--bg);
+  background-image: var(--bg-grad);
+}
+
+@media (display-mode: unframed), (display-mode: borderless) {
+  html.app-chrome #app {
+    border-bottom-left-radius: var(--radius);
+    border-bottom-right-radius: var(--radius);
+    overflow: hidden;
+  }
+}
+
 
 html.app-chrome .home,
 html.app-chrome .connect-page {
@@ -3006,12 +3176,12 @@ html.app-chrome .term-debug-panel {
   font-size: 12px;
   color: var(--fg);
   border: 1px dashed var(--line-2);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--wash);
   padding: 6px 12px;
 }
 
 .kb-message {
-  color: #e9a0a0;
+  color: var(--error-fg);
 }
 
 /* Visual bell: a brief inverted flash on the pane that rang BEL. */

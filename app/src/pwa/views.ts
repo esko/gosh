@@ -5,6 +5,7 @@ import { encryptPrivateKey } from '../security/KeyCrypto';
 import { credentialVault } from '../security/credentialVault';
 import { cacheIdentityPassphrase } from '../ssh/IdentityPassphrase';
 import { wipeTrustedHostKeys } from '../ssh/nasshKnownHosts';
+import { dismissActiveAuthPrompts } from '../ssh/authPromptLifecycle';
 import { escapeHTML, formatTime, requiredElement } from './dom';
 import { readDiagnostics } from './diagnostics';
 import { ResttyTerminalAdapter, type PaneDirection, type ResttyPaneSink } from './resttyAdapter';
@@ -67,7 +68,12 @@ import {
   type ShortcutGroup,
 } from './keybindings';
 import { showContextMenu, type ContextMenuItem } from './contextMenu';
-import { CAPTION_TABS_SLOT_ID } from './windowControls';
+import {
+  CAPTION_TABS_SLOT_ID,
+  isTitlebarHidden,
+  setTitlebarHidden,
+  toggleTitlebarHidden,
+} from './windowControls';
 import { createTransport, type TerminalTransport } from './transport';
 import type { PwaTerminalSettings, RecentConnection, TerminalPalette, TerminalTransportStatus } from './types';
 import type { SessionStatusMeta } from '../settings/types';
@@ -90,7 +96,17 @@ import {
 let activeTerminal: ResttyTerminalAdapter | null = null;
 let activeSpec: LaunchConnectionIntent | null = null;
 /** Font currently applied to the active terminal; guards redundant reapplies. */
+/** Last font stack applied to the active terminal (family + weight + fallbacks). */
 let appliedFontSelection: string | null = null;
+
+function fontStackKey(settings: PwaTerminalSettings): string {
+  return [
+    settings.fontFamily,
+    settings.fontWeight,
+    settings.nerdFontFallback ? 'nerd' : 'no-nerd',
+    settings.unicodeSymbolsFallback ? 'unicode' : 'no-unicode',
+  ].join('|');
+}
 let fontSyncCleanup: (() => void) | null = null;
 let activeSessionId: string | null = null;
 let tabStrip: HTMLElement | null = null;
@@ -226,18 +242,25 @@ function confirmCloseSession(session: TermSession, onConfirm: () => void): void 
  * only runs when the selection actually changed.
  */
 async function syncActiveTerminalSettings(): Promise<void> {
-  if (!activeTerminal || !activeSpec) return;
-  const settings = resolveSettings(activeSpec.settingsProfileId);
+  const terminal = activeTerminal;
+  const spec = activeSpec;
+  if (!terminal || !spec) return;
+  const settings = resolveSettings(spec.settingsProfileId);
   applyPwaAppearance(settings); // accent / density / terminal padding
-  activeTerminal.setAppearance(settings);
+  terminal.setAppearance(settings);
   const palette = getThemePalette(settings.theme);
   setThemeColor(palette.background);
   applyTerminalChromeColors(palette); // keep the chrome in sync on live theme change
-  activeTerminal.fit?.(); // padding change resizes the grid
-  if (settings.fontFamily === appliedFontSelection) return;
-  appliedFontSelection = settings.fontFamily;
+  terminal.fit?.(); // padding change resizes the grid
+  const stack = fontStackKey(settings);
+  if (stack === appliedFontSelection) return;
+  const session = activeSession();
+  if (session) session.appliedFont = stack;
+  appliedFontSelection = stack;
   await ensureTerminalFontLoaded(settings);
-  await activeTerminal.setFont(settings);
+  // Tab may have switched during the await — don't paint the old stack onto a new session.
+  if (activeTerminal !== terminal) return;
+  await terminal.setFont(settings);
 }
 
 // ----------------------------------------------------------------- helpers --
@@ -316,16 +339,29 @@ function isPemEncrypted(pemText: string): boolean {
 // the terminal directly via routeFor().
 let appRoot: HTMLElement | null = null;
 let currentRoute: 'home' | 'terminal' | null = null;
+/** Last terminal URL in this window — used to undo browser-back while sessions live. */
+let lastTerminalHref: string | null = null;
 
 function routeFor(url: string): 'home' | 'terminal' {
   const path = new URL(url, window.location.origin).pathname;
   return path.endsWith('terminal.html') ? 'terminal' : 'home';
 }
 
+function rememberTerminalHref(url: string): void {
+  lastTerminalHref = new URL(url, window.location.origin).href;
+}
+
+function teardownLauncher(root: HTMLElement): void {
+  const host = root as HTMLElement & { __livenessCleanup?: () => void; __shotCleanup?: () => void };
+  host.__livenessCleanup?.();
+  host.__shotCleanup?.();
+}
+
 function teardownCurrentView(): void {
   if (currentRoute === 'home') {
     homeKeydownCleanup?.();
     homeKeydownCleanup = null;
+    if (appRoot) teardownLauncher(appRoot);
   } else if (currentRoute === 'terminal') {
     disposeTerminal();
   }
@@ -341,10 +377,18 @@ async function renderRoute(root: HTMLElement, route: 'home' | 'terminal'): Promi
 /** Boot entry: mount the view that matches the current URL and start routing. */
 export async function startRouter(root: HTMLElement): Promise<void> {
   appRoot = root;
+  if (routeFor(window.location.href) === 'terminal') rememberTerminalHref(window.location.href);
   window.addEventListener('popstate', () => {
     if (!appRoot) return;
+    const next = routeFor(window.location.href);
+    // Alt+← / BrowserBack must not dump a live terminal back onto the launcher
+    // (that disposeTerminal()s every session). Stay put until the last tab closes.
+    if (next === 'home' && currentRoute === 'terminal' && sessions.length > 0) {
+      history.pushState(null, '', lastTerminalHref ?? '/terminal.html');
+      return;
+    }
     teardownCurrentView();
-    void renderRoute(appRoot, routeFor(window.location.href));
+    void renderRoute(appRoot, next);
   });
   // A real document unload (tab close, hard reload, new-window open) must still
   // tear the transport down so sockets don't linger.
@@ -360,6 +404,7 @@ function navigate(url: string): void {
   }
   teardownCurrentView();
   history.pushState(null, '', url);
+  if (routeFor(url) === 'terminal') rememberTerminalHref(url);
   void renderRoute(appRoot, routeFor(url));
 }
 
@@ -1751,7 +1796,12 @@ function renderKeyboardTab(
     setRow('Copy on select', `<select name="copyOnSelect">${onOff(s.copyOnSelect)}</select>`, 'Copy the selection to the clipboard as soon as you make it.') +
     setRow('Ctrl+Shift+C / Ctrl+Shift+V', `<select name="ctrlShiftCopyPaste">${onOff(s.ctrlShiftCopyPaste)}</select>`, 'Use these chords for copy/paste (in addition to the shortcuts above).') +
     setRow('Right-click pastes', `<select name="rightClickPaste">${onOff(s.rightClickPaste)}</select>`, 'Off shows the context menu instead.') +
-    setRow('Middle-click pastes', `<select name="middleClickPaste">${onOff(s.middleClickPaste)}</select>`);
+    setRow('Middle-click pastes', `<select name="middleClickPaste">${onOff(s.middleClickPaste)}</select>`) +
+    setRow(
+      'Image paste directory',
+      `<input type="text" name="imagePasteDirectory" class="control-narrow" value="${escapeHTML(s.imagePasteDirectory)}" placeholder="/tmp" autocomplete="off" spellcheck="false">`,
+      'Remote directory for Ctrl+Alt+Shift+V uploads. Absolute (default /tmp) or home-relative.',
+    );
 
   body.querySelectorAll<HTMLButtonElement>('[data-rebind]').forEach((btn) =>
     btn.addEventListener('click', () => {
@@ -1804,6 +1854,14 @@ function renderKeyboardTab(
   body.querySelector<HTMLSelectElement>('[name="middleClickPaste"]')?.addEventListener('change', (e) =>
     save({ middleClickPaste: (e.target as HTMLSelectElement).value === 'on' }),
   );
+  const imagePasteDir = body.querySelector<HTMLInputElement>('[name="imagePasteDirectory"]');
+  const persistImagePasteDir = (): void => {
+    if (!imagePasteDir) return;
+    save({ imagePasteDirectory: imagePasteDir.value });
+    imagePasteDir.value = getSettingsProfile(profileId).settings.imagePasteDirectory;
+  };
+  imagePasteDir?.addEventListener('change', persistImagePasteDir);
+  imagePasteDir?.addEventListener('blur', persistImagePasteDir);
 }
 
 /**
@@ -1996,6 +2054,11 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
       labeled('nerdFontScale', String(s.nerdFontScale), NERD_SCALE_STEPS.map((v): [string, string] => [String(v), `${Math.round(v * 100)}%`])),
       'Scales icon glyphs relative to text (100% matches the text em square).',
     )}
+    ${setRow(
+      'Unicode symbols',
+      onOff('unicodeSymbolsFallback', s.unicodeSymbolsFallback),
+      'Falls back to bundled Noto Sans Symbols so misc Unicode (✻ ⎿ ◼ ◻ and similar) renders when the text font lacks them.',
+    )}
     <div class="group-title">Window</div>
     ${setRow('Padding', `<select class="control-narrow" name="terminalPadding">${opts([0, 4, 8, 12, 16, 24], s.terminalPadding)}</select>`, 'Space around the terminal canvas')}
     ${setRow('Scroll speed', `<select class="control-narrow" name="scrollSensitivity">${opts([0.5, 0.75, 1, 1.5, 2], s.scrollSensitivity)}</select>`, 'Trackpad / wheel scrollback multiplier')}
@@ -2003,6 +2066,7 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
     ${setRow('Accent', labeled('accent', s.accent, [['green', 'Green'], ['blue', 'Blue'], ['amber', 'Amber']]), 'Status/affordance accent color in the app chrome.')}
     ${setRow('Color scheme', labeled('colorScheme', s.colorScheme ?? 'dark', [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']]), 'Tint the app chrome. System follows your OS appearance setting.')}
     ${setRow('Density', labeled('density', s.density, [['comfortable', 'Comfortable'], ['compact', 'Compact']]), 'Spacing of tabs and app chrome.')}
+    ${setRow('Hide title bar', onOff('hideTitlebar', isTitlebarHidden()), 'Completely hide the custom caption, tabs, and window controls. App-wide; also toggle from the keyboard shortcut or command palette.')}
   `;
 
   const fontMsg = body.querySelector<HTMLElement>('#fontMsg');
@@ -2046,8 +2110,13 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
       body.querySelectorAll<HTMLElement>('[data-theme]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.theme === preset)));
     }),
   );
+  body.querySelector<HTMLSelectElement>('[name="hideTitlebar"]')?.addEventListener('change', (event) => {
+    setTitlebarHidden((event.target as HTMLSelectElement).value === 'on');
+    activeTerminal?.fit?.();
+  });
   body.querySelectorAll<HTMLElement>('input, select').forEach((field) =>
     field.addEventListener('change', (event) => {
+      if ((event.target as HTMLElement).getAttribute('name') === 'hideTitlebar') return;
       const get = (n: string): string => body.querySelector<HTMLInputElement | HTMLSelectElement>(`[name="${n}"]`)?.value ?? '';
       save({
         fontFamily: get('fontFamily'),
@@ -2061,6 +2130,7 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
         ligatures: get('ligatures') === 'on',
         nerdFontFallback: get('nerdFontFallback') === 'on',
         nerdFontScale: Number(get('nerdFontScale')),
+        unicodeSymbolsFallback: get('unicodeSymbolsFallback') === 'on',
         terminalPadding: Number(get('terminalPadding')),
         scrollSensitivity: Number(get('scrollSensitivity')),
         scrollback: Number(get('scrollback')),
@@ -2079,20 +2149,29 @@ async function renderDiagnosticsTab(body: HTMLElement): Promise<void> {
   const [diag, knownHosts] = await Promise.all([readDiagnostics(), listKnownHosts()]);
   if (body.dataset.gen !== gen) return;
 
+  const onOff = (on: boolean): string =>
+    `<option value="on"${on ? ' selected' : ''}>On</option><option value="off"${on ? '' : ' selected'}>Off</option>`;
+
   body.innerHTML =
     '<div class="group-title">Readiness</div><div data-diag></div>' +
+    '<div class="group-title" style="margin-top:24px">Developer</div>' +
+    setRow(
+      'Debug pill',
+      `<select name="showDebugHud">${onOff(isDebugHudVisible())}</select>`,
+      'Shows the dbg button on terminal windows. App-wide; off by default. ?debug=1 forces it on for a single load.',
+    ) +
     '<div class="group-title" style="margin-top:24px">Trusted host keys</div>' +
     `<p class="set-hint" style="margin:0 0 12px">${knownHosts.length === 0 ? 'No trusted host keys stored locally.' : `${knownHosts.length} trusted host ${knownHosts.length === 1 ? 'key' : 'keys'} in IndexedDB.`} Clearing forces the fingerprint prompt on the next connect.</p>` +
     `<div class="actions" style="justify-content:flex-start"><button class="btn-ghost btn-danger" type="button" data-wipe-known-hosts>Clear trusted host keys…</button></div>`;
 
   // Unavailable items get a one-line "why" so the panel isn't a dead end.
-  const iwaOnly = 'Available in the installed IWA on ChromeOS.';
+  const goshOnly = 'Available in the installed Gosh app on ChromeOS.';
   const rows: [string, boolean, string?][] = [
     ['Cross-origin isolated', diag.crossOriginIsolated],
-    ['Direct Sockets', diag.directSockets, iwaOnly],
-    ['Private / UDP sockets', diag.directSocketsPrivate, iwaOnly],
+    ['Direct Sockets', diag.directSockets, goshOnly],
+    ['Private / UDP sockets', diag.directSocketsPrivate, goshOnly],
     ['nassh / wassh assets', diag.upstreamAssets, 'Run npm run fetch-assets.'],
-    ['Mosh (UDP + client)', diag.moshReady, iwaOnly],
+    ['Mosh (UDP + client)', diag.moshReady, goshOnly],
     ['Custom caption tabs', true],
   ];
   const host = body.querySelector<HTMLElement>('[data-diag]')!;
@@ -2102,6 +2181,10 @@ async function renderDiagnosticsTab(body: HTMLElement): Promise<void> {
         `<div class="diag-row"><span class="diag-label">${escapeHTML(label)}${!ok && hint ? `<span class="diag-hint">${escapeHTML(hint)}</span>` : ''}</span><span class="${ok ? 'ok' : 'bad'}">${ok ? 'Ready' : 'Unavailable'}</span></div>`,
     )
     .join('');
+
+  body.querySelector<HTMLSelectElement>('[name="showDebugHud"]')?.addEventListener('change', (event) => {
+    setDebugHudVisible((event.target as HTMLSelectElement).value === 'on');
+  });
 
   body.querySelector<HTMLButtonElement>('[data-wipe-known-hosts]')?.addEventListener('click', () =>
     openConfirmModal({
@@ -2153,7 +2236,7 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   installTabShortcuts();
   installShortcutPassThrough();
   installTerminalContextMenu(sessionsHost);
-  if (query.get('debug') !== '0') installTerminalDebugHud(root, sessionsHost, sharedStatus);
+  installTerminalDebugHud(root, sessionsHost, sharedStatus);
 
   // Live-reapply settings when the active tab's profile changes in another window.
   const onSettingsStorage = (event: StorageEvent): void => {
@@ -2219,7 +2302,7 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   session.spec = spec;
   session.surface = surface;
   session.terminal = terminal;
-  session.appliedFont = settings.fontFamily;
+  session.appliedFont = fontStackKey(settings);
   session.resumeEtSessionId = resumeEtSessionId;
   session.title = formatConnectionTarget(spec);
   session.status = 'connecting';
@@ -2324,7 +2407,7 @@ function closePaneConn(session: TermSession, paneId: number): void {
   session.status = paneSessionStatus(session);
   session.statusError = paneStatusError(session);
   if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
-  renderTabs();
+  scheduleTabRender();
   if (session.panes.size === 0) closeSession(session);
 }
 
@@ -2337,7 +2420,7 @@ function onPaneStatus(session: TermSession, paneId: number, state: TerminalTrans
   session.status = paneSessionStatus(session);
   session.statusError = paneStatusError(session);
   if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
-  renderTabs();
+  scheduleTabRender();
   if (state === 'connected' && session.panes.keys().next().value === paneId) {
     session.resumeEtSessionId = conn.transport.getPersistentSessionId?.() ?? session.resumeEtSessionId;
     saveTabLayout();
@@ -2379,7 +2462,11 @@ function setActiveSession(id: string): void {
   const previous = activeSession();
   const session = sessions.find((s) => s.id === id);
   if (!session) return;
-  if (previous && previous.id !== id) void refreshSessionPreview(previous);
+  if (previous && previous.id !== id) {
+    // Password / host-key modals are per-tab; leaving the tab cancels them.
+    dismissActiveAuthPrompts();
+    scheduleSessionPreview(previous);
+  }
   activeSessionId = id;
   sessions.forEach((s) => (s.container.hidden = s.id !== id));
   activeTerminal = session.terminal ?? null;
@@ -2502,6 +2589,11 @@ function paneStatusError(session: TermSession): string | undefined {
   return [...session.panes.values()].find((pane) => pane.status === 'error' && pane.error)?.error;
 }
 
+/** Debounce GPU preview captures on rapid tab switches; connect/disconnect still call refresh directly. */
+const PREVIEW_DEBOUNCE_MS = 350;
+const PREVIEW_MIN_AGE_MS = 2_000;
+const previewDebounceTimers = new Map<string, number>();
+
 async function refreshSessionPreview(session: TermSession | null | undefined): Promise<void> {
   if (!session?.terminal) return;
   const blob = await session.terminal.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
@@ -2511,6 +2603,23 @@ async function refreshSessionPreview(session: TermSession | null | undefined): P
     // session screenshot on the card later (best-effort; failure is harmless).
     if (session.spec) void saveHostScreenshot(hostTargetKey(session.spec), blob).catch(() => undefined);
   }
+}
+
+function scheduleSessionPreview(session: TermSession | null | undefined): void {
+  if (!session?.terminal) return;
+  const last = tabPreviewCache.get(session.id)?.updatedAt ?? 0;
+  if (last && Date.now() - last < PREVIEW_MIN_AGE_MS) return;
+  const existing = previewDebounceTimers.get(session.id);
+  if (existing) window.clearTimeout(existing);
+  const id = session.id;
+  previewDebounceTimers.set(
+    id,
+    window.setTimeout(() => {
+      previewDebounceTimers.delete(id);
+      const live = sessions.find((s) => s.id === id);
+      if (live) void refreshSessionPreview(live);
+    }, PREVIEW_DEBOUNCE_MS),
+  );
 }
 
 function tabOverviewEntry(session: TermSession): TabOverviewEntry {
@@ -2872,6 +2981,11 @@ const shortcutHandlers: Record<ShortcutAction, () => boolean> = {
     openCommandPalette();
     return true;
   },
+  toggleTitlebar: () => {
+    toggleTitlebarHidden();
+    activeTerminal?.fit?.();
+    return true;
+  },
   copy: () => {
     if (!currentSettings().ctrlShiftCopyPaste) return false;
     copySelection();
@@ -2883,7 +2997,6 @@ const shortcutHandlers: Record<ShortcutAction, () => boolean> = {
     return true;
   },
   pasteImage: () => {
-    if (!currentSettings().ctrlShiftCopyPaste) return false;
     void uploadClipboardImageAndPastePath();
     return true;
   },
@@ -2919,6 +3032,41 @@ function installTabShortcuts(): void {
   tabShortcutsCleanup = () => document.removeEventListener('keydown', handler, { capture: true });
 }
 
+const DEBUG_HUD_KEY = 'gosh-debug-hud';
+
+/** App-global: show the terminal dbg pill. Off by default; `?debug=1` forces on. */
+function isDebugHudVisible(): boolean {
+  try {
+    if (new URLSearchParams(location.search).get('debug') === '1') return true;
+    return localStorage.getItem(DEBUG_HUD_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+let debugHudBtn: HTMLButtonElement | null = null;
+let debugHudPanel: HTMLElement | null = null;
+
+function applyDebugHudVisibility(): void {
+  const show = isDebugHudVisible();
+  if (!debugHudBtn) return;
+  debugHudBtn.hidden = !show;
+  if (!show && debugHudPanel) {
+    debugHudPanel.hidden = true;
+    debugHudBtn.setAttribute('aria-expanded', 'false');
+  }
+}
+
+function setDebugHudVisible(visible: boolean): void {
+  try {
+    if (visible) localStorage.setItem(DEBUG_HUD_KEY, '1');
+    else localStorage.removeItem(DEBUG_HUD_KEY);
+  } catch {
+    // Persistence is best-effort; still apply for this session.
+  }
+  applyDebugHudVisibility();
+}
+
 function installTerminalDebugHud(
   shell: HTMLElement,
   terminalRoot: HTMLElement,
@@ -2930,10 +3078,13 @@ function installTerminalDebugHud(
   btn.textContent = 'dbg';
   btn.setAttribute('aria-label', 'Toggle debug panel');
   btn.setAttribute('aria-expanded', 'false');
+  btn.hidden = !isDebugHudVisible();
 
   const panel = document.createElement('div');
   panel.className = 'term-debug-panel';
   panel.hidden = true;
+  debugHudBtn = btn;
+  debugHudPanel = panel;
 
   const toolbar = document.createElement('div');
   toolbar.className = 'term-debug-toolbar';
@@ -2968,7 +3119,19 @@ function installTerminalDebugHud(
   const renderBody = async (extra = ''): Promise<void> => {
     try {
       const diag = await readDiagnostics();
-      const canvas = terminalRoot.querySelector('canvas');
+      // data-renderer lives on the per-tab `.term-surface`, not the sessions host
+      // this HUD was given — reading the host always produced `renderer: ?`.
+      const surface = activeSession()?.surface
+        ?? terminalRoot.querySelector<HTMLElement>('.term-surface[data-renderer]');
+      const renderer = surface?.dataset.renderer ?? '?';
+      // Prefer the largest painted canvas; Restty can leave tiny/offscreen ones
+      // that make a naive querySelector report 1×1.
+      const canvas = [...(surface ?? terminalRoot).querySelectorAll('canvas')].reduce<HTMLCanvasElement | null>((best, next) => {
+        if (!best) return next;
+        const nextArea = Math.max(next.clientWidth * next.clientHeight, next.width * next.height);
+        const bestArea = Math.max(best.clientWidth * best.clientHeight, best.width * best.height);
+        return nextArea > bestArea ? next : best;
+      }, null);
       const size = activeTerminal?.getSize();
       const win = window as unknown as {
         __resttyBackend?: string;
@@ -2978,7 +3141,7 @@ function installTerminalDebugHud(
       };
       const lines = [
         `origin: ${location.origin}`,
-        `renderer: ${terminalRoot.dataset.renderer ?? '?'}`,
+        `renderer: ${renderer}`,
         `backend: ${win.__resttyBackend ?? 'pending'}`,
         `canvas: ${canvas ? `${canvas.width}×${canvas.height} (client ${canvas.clientWidth}×${canvas.clientHeight})` : 'none'}`,
         `term size: ${size ? `${size.cols}×${size.rows}` : '?'}`,
@@ -2988,7 +3151,7 @@ function installTerminalDebugHud(
         `upstream: ${diag.upstreamAssets}`,
         `href: ${location.href}`,
       ];
-      if (win.__resttyAdapter && terminalRoot.dataset.renderer === 'restty') {
+      if (win.__resttyAdapter && renderer === 'restty') {
         lines.push(`restty debug: ${JSON.stringify(win.__resttyAdapter.getDebugSummary())}`);
         const wheelLogs = (win.__resttyDebugLog ?? []).filter((e) => e.location.includes('wheel')).slice(-3);
         if (wheelLogs.length) {
@@ -3164,6 +3327,15 @@ function buildPaletteCommands(): PaletteCommand[] {
     { label: 'Switch session…', group: 'Session', run: () => void openSessionPicker() },
     { label: 'Lock saved passwords', group: 'Session', run: () => void credentialVault.lock() },
     { label: 'New window', group: 'App', run: () => openWindow('/') },
+    {
+      label: isTitlebarHidden() ? 'Show title bar' : 'Hide title bar',
+      group: 'App',
+      key: '⌃⇧H',
+      run: () => {
+        toggleTitlebarHidden();
+        activeTerminal?.fit?.();
+      },
+    },
     { label: 'Settings', group: 'App', run: () => openSettings() },
     { label: 'Back to menu', group: 'App', run: () => navigate('/') },
   ];
@@ -3483,36 +3655,50 @@ function copySelection(): void {
 
 async function pasteClipboard(): Promise<void> {
   const session = activeSession();
-  if (!session?.terminal) return;
-  const paneId = session.terminal.getActivePaneId();
+  const terminal = session?.terminal;
+  if (!session || !terminal) return;
+  const paneId = terminal.getActivePaneId();
   try {
     const paste = await readClipboardPaste();
-    if (paste.kind === 'image') await session.terminal.displayImage(paste.blob, undefined, paneId);
+    if (activeSessionId !== session.id || activeTerminal !== terminal) return;
+    if (paste.kind === 'image') await terminal.displayImage(paste.blob, undefined, paneId);
     else if (paste.kind === 'text') session.panes.get(paneId)?.sink.insertText(paste.text);
   } catch (error) {
-    updateSharedStatus(session, 'error', error instanceof Error ? error.message : String(error));
+    if (activeSessionId === session.id) {
+      updateSharedStatus(session, 'error', error instanceof Error ? error.message : String(error));
+    }
   }
 }
 
 async function uploadClipboardImageAndPastePath(): Promise<void> {
   const session = activeSession();
-  if (!session?.terminal) return;
-  const pane = session.panes.get(session.terminal.getActivePaneId());
+  const terminal = session?.terminal;
+  if (!session || !terminal) return;
+  const paneId = terminal.getActivePaneId();
+  const pane = session.panes.get(paneId);
   if (!pane?.transport.uploadFile) {
     updateSharedStatus(session, 'error', 'Image upload is unavailable for this connection.');
     return;
   }
   try {
     const paste = await readClipboardPaste();
+    if (activeSessionId !== session.id) return;
     if (paste.kind !== 'image') throw new Error('The clipboard does not contain an image.');
     updateSharedStatus(session, 'connecting', 'Uploading clipboard image…');
     const path = await pane.transport.uploadFile(paste.blob, {
-      onProgress: ({ uploaded, total }) => updateSharedStatus(session, 'connecting', `Uploading image… ${Math.round(uploaded / Math.max(1, total) * 100)}%`),
+      onProgress: ({ uploaded, total }) => {
+        if (activeSessionId === session.id) {
+          updateSharedStatus(session, 'connecting', `Uploading image… ${Math.round(uploaded / Math.max(1, total) * 100)}%`);
+        }
+      },
     });
+    if (activeSessionId !== session.id || !session.panes.has(paneId)) return;
     pane.sink.insertText(shellQuotePath(path));
     updateSharedStatus(session, 'connected');
   } catch (error) {
-    updateSharedStatus(session, 'error', error instanceof Error ? error.message : String(error));
+    if (activeSessionId === session.id) {
+      updateSharedStatus(session, 'error', error instanceof Error ? error.message : String(error));
+    }
   }
 }
 
@@ -3560,8 +3746,25 @@ function renderTerminalConnect(root: HTMLElement): void {
 
 // ------------------------------------------------------------------- misc --
 
+/** Alt+←/→ and BrowserBack — history nav that would leave a live terminal. */
+function isBrowserHistoryNavigation(event: KeyboardEvent): boolean {
+  if (event.code === 'BrowserBack' || event.key === 'BrowserBack') return true;
+  if (event.code === 'BrowserForward' || event.key === 'BrowserForward') return true;
+  return Boolean(
+    event.altKey && !event.ctrlKey && !event.metaKey
+    && (event.code === 'ArrowLeft' || event.code === 'ArrowRight'),
+  );
+}
+
 function installShortcutPassThrough(): void {
   const handler = (event: KeyboardEvent): void => {
+    // With open tabs, claim history chords so the SPA does not popstate back to
+    // the launcher (and disconnect). Home / empty-terminal still let them through.
+    if (sessions.length > 0 && isBrowserHistoryNavigation(event)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (shouldPassThroughSystemShortcut(event)) event.stopImmediatePropagation();
   };
   document.addEventListener('keydown', handler, { capture: true });
@@ -3569,8 +3772,11 @@ function installShortcutPassThrough(): void {
 }
 
 export function disposeTerminal(): void {
+  dismissActiveAuthPrompts();
   if (tabRenderFrame) window.cancelAnimationFrame(tabRenderFrame);
   tabRenderFrame = 0;
+  for (const timer of previewDebounceTimers.values()) window.clearTimeout(timer);
+  previewDebounceTimers.clear();
   for (const session of sessions) {
     session.titleSub?.dispose();
     session.paneSubs.forEach((sub) => sub.dispose());
@@ -3583,6 +3789,16 @@ export function disposeTerminal(): void {
   }
   sessions.length = 0;
   tabPreviewCache.clear();
+  // Caption-hosted tab strip lives outside `root` — remove it so Back-to-menu
+  // does not leave a stale strip in the chrome.
+  tabStrip?.remove();
+  tabStrip = null;
+  sessionsHost = null;
+  sharedStatus = null;
+  debugHudBtn?.remove();
+  debugHudPanel?.remove();
+  debugHudBtn = null;
+  debugHudPanel = null;
   fontSyncCleanup?.();
   fontSyncCleanup = null;
   captionCleanup?.();

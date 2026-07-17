@@ -87,7 +87,7 @@ export function installNasshChromePolyfill(): void {
 
   if (!chromeRef.runtime.connect) {
     chromeRef.runtime.connect = () => {
-      throw new Error('chrome.runtime.connect is unavailable in IWA mode');
+      throw new Error('chrome.runtime.connect is unavailable in Gosh');
     };
   }
 

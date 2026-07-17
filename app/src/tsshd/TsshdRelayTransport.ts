@@ -1,13 +1,17 @@
 import type { TerminalSink, TerminalSubscription } from '../terminal/TerminalAdapter';
 import type { TerminalTransport, TransportStatusHandler } from '../pwa/transport';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
+import { RemoteImageUploader } from '../ssh/RemoteImageUploader';
+import { connectNasshSftpSidecar, isSftpSubsystemUnavailable } from '../ssh/NasshSftpSidecar';
+import { uploadViaNasshExec } from '../ssh/NasshExecUploader';
+import { resolveSettings } from '../pwa/settingsProfiles';
 import { createTsshdSession } from './bootstrap';
 import { createTsshdWorkerController, type TsshdWorkerController, type TsshdWorkerEvent } from './TsshdWorkerController';
 
 const TCP_UNAVAILABLE =
-  'Direct Sockets (TCPSocket) is unavailable. Install as an IWA with direct-sockets permission.';
+  'Direct Sockets (TCPSocket) is unavailable. Install Gosh with Direct Sockets permission.';
 const UDP_UNAVAILABLE =
-  'Direct Sockets (UDPSocket) is unavailable. Install as an IWA with direct-sockets permission.';
+  'Direct Sockets (UDPSocket) is unavailable. Install Gosh with Direct Sockets permission.';
 
 function directSocketsError(): string | null {
   const directSockets = globalThis as typeof globalThis & { TCPSocket?: unknown; UDPSocket?: unknown };
@@ -21,6 +25,7 @@ export class TsshdRelayTransport implements TerminalTransport {
   private resize: TerminalSubscription | null = null;
   private controller: TsshdWorkerController | null = null;
   private adapter: TerminalSink | null = null;
+  private uploader: RemoteImageUploader | null = null;
   private disposed = false;
   private ended = false;
   private surfacedError = false;
@@ -29,6 +34,23 @@ export class TsshdRelayTransport implements TerminalTransport {
     private readonly spec: ConnectionIntent,
     private readonly onStatus: TransportStatusHandler,
   ) {}
+
+  /**
+   * Image paste uses the profile's SSH endpoint (SFTP, then exec fallback) —
+   * same sidecar path as ET/Mosh. The tsshd UDP session has no file channel.
+   */
+  uploadFile(
+    blob: Blob,
+    options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void },
+  ): Promise<string> {
+    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
+    this.uploader ??= new RemoteImageUploader({
+      connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
+      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
+      isSubsystemUnavailable: isSftpSubsystemUnavailable,
+    });
+    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
+  }
 
   async connect(adapter: TerminalSink): Promise<void> {
     this.disposed = false;
@@ -111,5 +133,7 @@ export class TsshdRelayTransport implements TerminalTransport {
     this.controller?.dispose();
     this.controller = null;
     this.adapter = null;
+    this.uploader?.dispose();
+    this.uploader = null;
   }
 }

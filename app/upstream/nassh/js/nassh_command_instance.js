@@ -1515,6 +1515,8 @@ CommandInstance.prototype.initProgram_ = async function(argv) {
     // is what we also will use for mosh.
     const remoteCommand =
         `sh -c '` +
+        // Gosh: COLORTERM must be set here — sshd often rejects SendEnv COLORTERM.
+        `export COLORTERM=truecolor; ` +
         `printf "\nMOSH SSH_CONNECTION %s\n" "$SSH_CONNECTION"; ` +
         `exec mosh-server new -s` +
         `'`;

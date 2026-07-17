@@ -154,11 +154,22 @@ const NERD_SYMBOLS_FALLBACK: ResttyFontSource = {
 };
 
 /**
+ * General Unicode symbol fallbacks (OFL Noto). Nerd Fonts cover PUA icons only;
+ * Claude Code and similar TUIs use BMP geometric/technical symbols (✻ ⎿ ◼ ◻)
+ * that JetBrains Mono lacks. Symbols + Symbols 2 split the Unicode symbol
+ * blocks — keep both, in this order, before the Nerd fallback.
+ */
+const UNICODE_SYMBOLS_FALLBACK: ResttyFontSource[] = [
+  { type: 'url', url: '/fonts/NotoSansSymbols-Regular.ttf', label: 'Noto Sans Symbols' },
+  { type: 'url', url: '/fonts/NotoSansSymbols2-Regular.ttf', label: 'Noto Sans Symbols 2' },
+];
+
+/**
  * Resolve a font selection (bundled id or `custom:<id>`) to restty fontSources.
  * The selected font is tried first; JetBrains Mono is always appended so a real
  * text font always loads (cellH > 0) even if a custom buffer is missing or a
- * bundled URL fails, and (when `nerdFallback`) the Symbols Nerd Font is the last
- * fallback so icon glyphs render with any selected font.
+ * bundled URL fails. Optional Unicode-symbol and Nerd-symbol fallbacks follow
+ * so misc symbols and prompt icons render with any selected font.
  */
 /**
  * Ordered face list for a bundled font: the base weight (regular, or medium when
@@ -181,9 +192,13 @@ async function resolveFontSources(
   selection: string,
   nerdFallback: boolean,
   fontWeight: 'regular' | 'medium',
+  unicodeSymbolsFallback = true,
 ): Promise<ResttyFontSource[]> {
-  const withFallbacks = (sources: ResttyFontSource[]): ResttyFontSource[] =>
-    nerdFallback ? [...sources, NERD_SYMBOLS_FALLBACK] : sources;
+  const withFallbacks = (sources: ResttyFontSource[]): ResttyFontSource[] => [
+    ...sources,
+    ...(unicodeSymbolsFallback ? UNICODE_SYMBOLS_FALLBACK : []),
+    ...(nerdFallback ? [NERD_SYMBOLS_FALLBACK] : []),
+  ];
   if (isCustomSelection(selection)) {
     const data = await getCustomFontData(customSelectionId(selection)).catch(() => undefined);
     if (data) return withFallbacks([{ type: 'buffer', data, label: 'Custom font' }, ...BUNDLED_FALLBACK]);
@@ -197,8 +212,19 @@ async function resolveFontSources(
   return withFallbacks([...faces, ...guaranteed]);
 }
 
+/** Matches Settings → Diagnostics → Debug pill (`gosh-debug-hud`). */
+function isDebugLoggingEnabled(): boolean {
+  try {
+    if (new URLSearchParams(location.search).get('debug') === '1') return true;
+    return localStorage.getItem('gosh-debug-hud') === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** Trim the device wheel ring (kept for the debug HUD; no network egress). */
 function pushWheelLog(data: Record<string, unknown>): void {
+  if (!isDebugLoggingEnabled()) return;
   const win = window as unknown as { __resttyDebugLog?: { location: string; data: Record<string, unknown> }[] };
   const ring = win.__resttyDebugLog ?? [];
   ring.push({ location: 'wheel', data });
@@ -240,9 +266,9 @@ function playBellTone(): void {
 
 /** Trim the PTY input ring (kept for the debug HUD; no network egress). */
 function pushPtyLog(data: string): void {
+  if (!isDebugLoggingEnabled()) return;
   const win = window as unknown as { __resttyPtyLog?: string[] };
-  const log = win.__resttyPtyLog;
-  if (!log) return;
+  const log = (win.__resttyPtyLog ??= []);
   log.push(data);
   if (log.length > PTY_LOG_LIMIT) log.shift();
 }
@@ -780,7 +806,12 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     // buffer sources before opening; restty's default font list (Local Font
     // Access + CDN) is unusable in the IWA. JetBrains Mono is always appended as
     // a fallback so a real font loads (cellH > 0), which keeps scrolling alive.
-    const fontSources = await resolveFontSources(settings.fontFamily, settings.nerdFontFallback, settings.fontWeight);
+    const fontSources = await resolveFontSources(
+      settings.fontFamily,
+      settings.nerdFontFallback,
+      settings.fontWeight,
+      settings.unicodeSymbolsFallback,
+    );
 
     const term = new Terminal({
       // Per-pane app options: every pane (the first and every split) gets its
@@ -842,7 +873,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     };
     win.__resttyAdapter = adapter;
     win.__resttyBackend = adapter.surface?.getBackend?.() ?? '';
-    win.__resttyPtyLog = [];
+    // PTY log is allocated lazily when the debug HUD is on (see pushPtyLog).
     return adapter;
   }
 
@@ -1330,7 +1361,12 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   /** Reapply the terminal font live (every pane) without reopening. */
   async setFont(settings: PwaTerminalSettings): Promise<void> {
     this.settings = settings;
-    const sources = await resolveFontSources(settings.fontFamily, settings.nerdFontFallback, settings.fontWeight);
+    const sources = await resolveFontSources(
+      settings.fontFamily,
+      settings.nerdFontFallback,
+      settings.fontWeight,
+      settings.unicodeSymbolsFallback,
+    );
     await this.surface?.setFontSources?.(sources);
     // restty's setFontSources updates cell metrics + schedules a paint but omits
     // the WASM renderUpdate() that setFontSize performs, so already-painted cells

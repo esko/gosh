@@ -7,6 +7,7 @@ type Manifest = {
   display_override?: string[];
   permissions_policy?: Record<string, unknown>;
   tab_strip?: unknown;
+  background_color?: string;
 };
 
 const read = (rel: string): Manifest =>
@@ -21,6 +22,8 @@ describe('IWA window manifest', () => {
     const manifest = read(WELL_KNOWN);
     expect(manifest.tab_strip).toBeUndefined();
     expect(manifest.display_override).not.toContain('tabbed');
+    // Opaque background_color fills square corners behind the rounded OS clip.
+    expect(manifest.background_color).toBe('transparent');
   });
 
   it('keeps the public and well-known permissions policies in sync', () => {

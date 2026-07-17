@@ -59,6 +59,10 @@ export class TerminalQueryScanner {
 
   ingest(chunk: Uint8Array | string): { kittyReplies: string[]; sendDa1: boolean } {
     const chunkText = decodeChunk(chunk);
+    // Hot path: plain text with no pending ESC in the carry — skip concat/matchAll.
+    if (!hasEscapeByte(chunkText) && !this.carry.includes('\x1b')) {
+      return { kittyReplies: [], sendDa1: false };
+    }
     this.carry = (this.carry + chunkText).slice(-8192);
     const kittyReplies: string[] = [];
 
@@ -111,12 +115,22 @@ export function terminalQueryReplies(chunk: Uint8Array | string): string[] {
  * answered in the ET worker; forwarding them causes visible control-character
  * garbage and races Restty's delayed DA1 shim against icat detect.
  */
+/** True when the text might contain a kitty/DA1/DSR probe we strip (not mere SGR). */
+function mightContainTerminalProbe(text: string): boolean {
+  return text.includes('\x1b_G')
+    || text.includes(DA1_REPLY)
+    || /\x1b\[0?c/.test(text)
+    || /\x1b\[\d+;\d+R/.test(text);
+}
+
 export function stripInboundTerminalProbes(chunk: Uint8Array | string): string {
   if (typeof chunk === 'string') {
-    return hasEscapeByte(chunk) ? stripProbesFromText(chunk) : chunk;
+    if (!hasEscapeByte(chunk) || !mightContainTerminalProbe(chunk)) return chunk;
+    return stripProbesFromText(chunk);
   }
   if (!hasEscapeByte(chunk)) return probeStripDecoder.decode(chunk, { stream: true });
-  return stripProbesFromText(probeStripDecoder.decode(chunk, { stream: true }));
+  const text = probeStripDecoder.decode(chunk, { stream: true });
+  return mightContainTerminalProbe(text) ? stripProbesFromText(text) : text;
 }
 
 /** Remove terminal-generated query replies so duplicate late acks are not sent to ET. */

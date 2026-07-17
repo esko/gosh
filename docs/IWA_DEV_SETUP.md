@@ -36,8 +36,10 @@ One-time setup, then a repeatable smoke path. No hosting or `.swbn` required.
 
 1. `chrome://flags/#enable-isolated-web-app-dev-mode` → **Enabled** → restart Chrome
 2. Also enable `chrome://flags/#enable-isolated-web-apps` if present (required on some channels)
-3. In Crostini (or Linux on Chromebook): clone repo, `npm install`, `git submodule update --init upstream/libapps`, `npm run fetch-assets`
-4. Optional: `chrome://flags/#enable-direct-sockets-for-isolated-web-apps` if TCPSocket is missing after install
+3. For rounded unframed windows: `chrome://flags/#enable-chromeos-isolated-web-app-set-shape` → **Enabled** (Window Shape API; otherwise Ash keeps a square clip). Restart Chrome after changing.
+4. For caption minimize/maximize: `chrome://flags/#enable-desktop-pwas-additional-windowing-controls` → **Enabled** (Additional Windowing Controls / `window.minimize|maximize|restore`). Without this flag those methods are missing even when `window-management` permission is granted. Restart Chrome after changing.
+5. In Crostini (or Linux on Chromebook): clone repo, `npm install`, `git submodule update --init upstream/libapps`, `npm run fetch-assets`
+6. Optional: `chrome://flags/#enable-direct-sockets-for-isolated-web-apps` if TCPSocket is missing after install
 
 ### Sanity-check: install a reference IWA first
 
@@ -248,7 +250,7 @@ WEB_BUNDLE_SIGNING_PASSPHRASE='…' npm run bundle:iwa
 ### `WEB_BUNDLE_SIGNING_PASSPHRASE`
 
 - Required for `npm run bundle:iwa` when `encrypted_key.pem` is passphrase-protected (default from `openssl pkcs8 -topk8`).
-- Passed to `wbn-sign` via `--password-env WEB_BUNDLE_SIGNING_PASSPHRASE`.
+- Read automatically by `wbn-sign` when the PEM is encrypted.
 - Omit only if your PEM is unencrypted (not recommended).
 
 ### Bundle headers

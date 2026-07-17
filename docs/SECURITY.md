@@ -148,9 +148,10 @@ SSH traffic uses upstream wassh via nassh `CommandInstance` (`--field-trial-dire
   profile SSH host and port. It reuses identity staging, known-host state, live
   host-key confirmation, and secure-input UI; it does not weaken SSH trust.
 - Original bytes are written with `0600` permissions under
-  `~/.cache/gosh/pastes/` through an exclusive `.part` name and atomic
+  the configured image-paste directory (default `/tmp`) through an exclusive
+  `.part` name and atomic
   rename. Cancellation and failure remove the partial file best-effort.
-- Cleanup considers only randomized `iwa-paste-*` files owned by this feature
+- Cleanup considers only randomized `gosh-paste-*` (and legacy `iwa-paste-*`) files owned by this feature
   and older than seven days. Cleanup failure does not broaden deletion or block
   a new upload. Remote files remain exposed to the security boundary of the
   remote Unix account until deleted.
@@ -174,7 +175,7 @@ require-trusted-types-for 'script'
 trusted-types default
 ```
 
-The bundle declares `require-trusted-types-for 'script'` (the directive that actually enables Trusted Types enforcement, which Chrome requires on IWAs) together with `trusted-types default` (the policy allowlist). The app registers a **default** Trusted Types policy in `app/src/security/trustedTypes.ts` before any `innerHTML` rendering so the shell can boot.
+The bundle declares `require-trusted-types-for 'script'` (the directive that actually enables Trusted Types enforcement, which Chrome requires on IWAs) together with `trusted-types default` (the policy allowlist). The app registers a **default** Trusted Types policy in `app/src/security/trustedTypes.ts` before any `innerHTML` rendering so the shell can boot. Upstream nassh's `sanitizeScriptUrl` is patched to return a plain string instead of creating a blocked `nassh` policy, so `Worker()` script URLs are validated by that default policy (see `docs/UPSTREAM_SYNC.md`).
 
 This policy mirrors Chrome's required IWA baseline verbatim. Chrome **injects** the required CSP onto every resource served from the bundle; any policy the bundle declares is enforced *in addition* (policies combine as an intersection), so this header cannot relax the baseline — it can only match it or tighten it. In particular `font-src` is `'self' blob: data:` (no `https:`): **remote `@font-face` fonts cannot load in an IWA**.
 

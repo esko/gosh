@@ -109,6 +109,12 @@ describe('TerminalQueryScanner', () => {
     ).toHaveLength(3);
     expect(scanner.ingest(ICAT_DIRECT_QUERY).kittyReplies).toEqual(['\x1b_Gi=1;OK\x1b\\']);
   });
+
+  it('skips work on plain text chunks when no escape is pending', () => {
+    const scanner = new TerminalQueryScanner();
+    expect(scanner.ingest('hello world\r\n')).toEqual({ kittyReplies: [], sendDa1: false });
+    expect(scanner.ingest('more output without probes')).toEqual({ kittyReplies: [], sendDa1: false });
+  });
 });
 
 describe('stripInboundTerminalProbes', () => {
@@ -125,6 +131,11 @@ describe('stripInboundTerminalProbes', () => {
   it('preserves kitty image transmit packets for Restty to render', () => {
     const transmit = '\x1b_Ga=T,f=100,i=1,s=1,v=1,m=1;AAAA\x1b\\';
     expect(stripInboundTerminalProbes(`x${transmit}y`)).toBe(`x${transmit}y`);
+  });
+
+  it('leaves ordinary SGR / CSI color sequences untouched without regex work', () => {
+    const colored = '\x1b[1;36mGosh\x1b[0m\r\n';
+    expect(stripInboundTerminalProbes(colored)).toBe(colored);
   });
 });
 

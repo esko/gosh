@@ -9,6 +9,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall/js"
@@ -240,6 +241,72 @@ var state struct {
 	stdin      io.WriteCloser
 }
 
+// inputPump serializes keystrokes onto stdin. Spawning a goroutine per
+// tsshdSendInput call races under backpressure and reorders/drops keys on
+// slow links; enqueue here is non-blocking and preserves order.
+type inputPump struct {
+	mu     sync.Mutex
+	chunks []string
+	stdin  io.WriteCloser
+	wake   chan struct{}
+}
+
+func (p *inputPump) signal() {
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (p *inputPump) enqueue(data string) {
+	if data == "" {
+		return
+	}
+	p.mu.Lock()
+	p.chunks = append(p.chunks, data)
+	p.mu.Unlock()
+	p.signal()
+}
+
+func (p *inputPump) setStdin(stdin io.WriteCloser) {
+	p.mu.Lock()
+	p.stdin = stdin
+	p.mu.Unlock()
+	p.signal()
+}
+
+func (p *inputPump) reset(discardPending bool) {
+	p.mu.Lock()
+	p.stdin = nil
+	if discardPending {
+		p.chunks = nil
+	}
+	p.mu.Unlock()
+}
+
+func (p *inputPump) loop() {
+	for range p.wake {
+		for {
+			p.mu.Lock()
+			if p.stdin == nil || len(p.chunks) == 0 {
+				p.mu.Unlock()
+				break
+			}
+			data := strings.Join(p.chunks, "")
+			p.chunks = p.chunks[:0]
+			stdin := p.stdin
+			p.mu.Unlock()
+			if _, err := io.WriteString(stdin, data); err != nil {
+				postError(fmt.Errorf("send tsshd input: %w", err))
+				p.reset(true)
+				break
+			}
+		}
+	}
+}
+
+var inputs = &inputPump{wake: make(chan struct{}, 1)}
+
 var callbacks []js.Func
 var generationCounter atomic.Uint64
 
@@ -271,6 +338,7 @@ func (w outputWriter) Write(data []byte) (int, error) {
 }
 
 func closeCurrent() {
+	inputs.reset(true)
 	state.Lock()
 	stdin, session, client := state.stdin, state.session, state.client
 	state.stdin, state.session, state.client = nil, nil, nil
@@ -340,6 +408,9 @@ func connect(configJSON string) {
 		}
 		return
 	}
+	// Default tsshd discards stdin while the server heartbeat is timed out.
+	// On slow/lossy links that silently drops keypresses; keep them instead.
+	_ = client.SetKeepPendingInput(true)
 	if generation != generationCounter.Load() {
 		_ = client.Close()
 		return
@@ -410,6 +481,7 @@ func connect(configJSON string) {
 	}
 	state.generation, state.client, state.session, state.stdin = generation, client, session, stdin
 	state.Unlock()
+	inputs.setStdin(stdin)
 	post("status", "status", "connected")
 	go func() { _, _ = io.Copy(outputWriter{generation}, stdout) }()
 	go func() { _, _ = io.Copy(outputWriter{generation}, stderr) }()
@@ -429,6 +501,7 @@ func register(name string, fn func(this js.Value, args []js.Value) any) {
 }
 
 func main() {
+	go inputs.loop()
 	register("tsshdConnect", func(this js.Value, args []js.Value) any {
 		if len(args) != 1 {
 			postError(fmt.Errorf("missing connect configuration"))
@@ -441,17 +514,7 @@ func main() {
 		if len(args) == 0 {
 			return nil
 		}
-		state.Lock()
-		stdin := state.stdin
-		state.Unlock()
-		if stdin != nil {
-			data := args[0].String()
-			go func() {
-				if _, err := io.WriteString(stdin, data); err != nil {
-					postError(fmt.Errorf("send tsshd input: %w", err))
-				}
-			}()
-		}
+		inputs.enqueue(args[0].String())
 		return nil
 	})
 	register("tsshdResize", func(this js.Value, args []js.Value) any {

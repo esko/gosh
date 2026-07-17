@@ -1,4 +1,5 @@
 import { escapeHTML } from '../pwa/dom';
+import { registerAuthPromptDismiss } from './authPromptLifecycle';
 
 /**
  * In-app modal for nassh secureInput (password, passphrase, keyboard-interactive).
@@ -87,11 +88,17 @@ export function showSecureInputPrompt(
     input?.addEventListener('keydown', updateCaps);
     input?.addEventListener('keyup', updateCaps);
 
+    let finished = false;
+    let unregister = (): void => undefined;
     const finish = (value: string | null): void => {
+      if (finished) return;
+      finished = true;
+      unregister();
       overlay.remove();
       document.removeEventListener('keydown', onKeyDown, true);
       resolve({ value, save: value !== null && Boolean(saveToggle?.checked) });
     };
+    unregister = registerAuthPromptDismiss(() => finish(null));
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') {
         event.preventDefault();

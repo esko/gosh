@@ -1,4 +1,5 @@
 import { getKnownHost, saveKnownHost } from '../storage/indexedDb';
+import { registerAuthPromptDismiss } from './authPromptLifecycle';
 
 export type HostTrustChoice = 'once' | 'always' | 'cancel';
 
@@ -117,6 +118,7 @@ export function showKnownHostPrompt(options: KnownHostPromptOptions): Promise<Ho
     document.body.append(backdrop);
 
     let finished = false;
+    let unregister = (): void => undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
@@ -126,10 +128,12 @@ export function showKnownHostPrompt(options: KnownHostPromptOptions): Promise<Ho
     const finish = (choice: HostTrustChoice) => {
       if (finished) return;
       finished = true;
+      unregister();
       document.removeEventListener('keydown', onKeyDown, true);
       backdrop.remove();
       resolve(choice);
     };
+    unregister = registerAuthPromptDismiss(() => finish('cancel'));
 
     dialog.querySelectorAll<HTMLButtonElement>('[data-choice]').forEach((button) => {
       button.addEventListener('click', () => {

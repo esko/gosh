@@ -124,4 +124,6 @@ Keep this ledger current as generated patches are added:
 | wassh Direct Sockets adaptation | `scripts/fetch-upstream-assets.mjs` | IWA socket compatibility | fetch script should verify expected socket symbols before patching |
 | wassh TTY pixel dimensions | `scripts/fetch-upstream-assets.mjs` | Populate `TIOCGWINSZ` pixels for terminal image clients such as `kitten icat` | exact upstream zero-pixel block must match before replacement |
 | nassh locale/bootstrap adaptation | `scripts/fetch-upstream-assets.mjs` and `app/src/ssh/` | Runtime messages without extension packaging | typecheck and SSH smoke |
+| nassh Trusted Types policy skip | `scripts/fetch-upstream-assets.mjs` | CSP allowlists only `default`; upstream `createPolicy('nassh')` blocks SSH Worker startup | exact upstream `sanitizeScriptUrl` body must match before replacement |
+| nassh Mosh COLORTERM export | `scripts/fetch-upstream-assets.mjs` | sshd often rejects `SendEnv COLORTERM`; export before `mosh-server` so truecolor apps work | exact mosh `remoteCommand` printf/exec lines must match before replacement |
 | Restty pane resize/zoom DOM access | `app/src/pwa/resttyAdapter.ts` | No public Restty resize/maximize API; drives `.pane-split` inline `flex` and a `.pane` overlay | manual: focus/resize/zoom with 3+ split panes after a Restty bump (no automated check) |

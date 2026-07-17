@@ -10,7 +10,13 @@
     <!-- Paint the dark base immediately so navigation/load never flashes a
          white body before styles.css (loaded via the JS module) applies. -->
     <style>
-      html { background-color: #16171b; color-scheme: dark; }
+      html { color-scheme: dark; background-color: #16171b; }
+      /* Unframed IWA: keep the window clear-color transparent so ChromeOS can
+         anti-alias the 12px rounded clip. An opaque html/manifest fill paints
+         square corners behind the caption. */
+      @media (display-mode: unframed), (display-mode: borderless) {
+        html { background-color: transparent; }
+      }
     </style>
   </head>
   <body>

@@ -10,9 +10,12 @@
  * Window actions use the Additional Windowing Controls API
  * (`window.minimize/maximize/restore`, gated by the `window-management`
  * permission) with feature detection; `window.close()` always works for an app
- * window. In a plain browser tab the browser supplies its own frame, so the
- * custom title bar is not shown.
+ * window. Rounded corners use the ChromeOS Window Shape API
+ * (`chromeos.isolatedWebApp.setShape` — see windowShape.ts). In a plain browser
+ * tab the browser supplies its own frame, so the custom title bar is not shown.
  */
+
+import { installWindowShape, syncWindowShape } from './windowShape';
 
 type AcwWindow = Window & {
   minimize?: () => Promise<void> | void;
@@ -24,6 +27,41 @@ type AcwWindow = Window & {
 const TITLEBAR_ID = 'app-titlebar';
 /** Slot in the caption (left of the window controls) for custom terminal tabs. */
 export const CAPTION_TABS_SLOT_ID = 'app-titlebar-tabs';
+const TITLEBAR_HIDDEN_KEY = 'gosh-titlebar-hidden';
+const TITLEBAR_HIDDEN_CLASS = 'titlebar-hidden';
+
+/** App-global: completely hide the custom caption (tabs + window controls). */
+export function isTitlebarHidden(): boolean {
+  try {
+    return localStorage.getItem(TITLEBAR_HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** Apply the persisted hide/show preference to the document. */
+export function applyTitlebarVisibility(): void {
+  document.documentElement.classList.toggle(TITLEBAR_HIDDEN_CLASS, isTitlebarHidden());
+}
+
+export function setTitlebarHidden(hidden: boolean): void {
+  try {
+    if (hidden) localStorage.setItem(TITLEBAR_HIDDEN_KEY, '1');
+    else localStorage.removeItem(TITLEBAR_HIDDEN_KEY);
+  } catch {
+    // Persistence is best-effort; still apply for this session.
+  }
+  applyTitlebarVisibility();
+  // Layout changes from --titlebar-h: 0 need a resize pass for Restty.
+  window.dispatchEvent(new Event('resize'));
+}
+
+/** Toggle caption visibility. Returns the new hidden state. */
+export function toggleTitlebarHidden(): boolean {
+  const next = !isTitlebarHidden();
+  setTitlebarHidden(next);
+  return next;
+}
 
 // 16×16 glyphs, centered, using currentColor so they follow the theme.
 const ICONS = {
@@ -65,6 +103,7 @@ async function requestWindowManagement(): Promise<void> {
     /* needs a user gesture on fresh install — retried from pointerdown below */
   }
   mountCaption();
+  void syncWindowShape();
 }
 
 async function ensureWindowManagement(): Promise<void> {
@@ -85,10 +124,13 @@ export function installWindowControls(): void {
   // Mount immediately if already frameless, and re-check on display-mode changes
   // so the caption appears once the mode flips — without it the user is stuck
   // with the native standalone bar even after the grant.
+  applyTitlebarVisibility();
   mountCaption();
+  installWindowShape();
   for (const mode of ['unframed', 'borderless']) {
     window.matchMedia(`(display-mode: ${mode})`).addEventListener?.('change', () => {
       mountCaption();
+      void syncWindowShape();
     });
   }
   void ensureWindowManagement();
@@ -100,13 +142,17 @@ function mountCaption(): void {
   if (!isAppWindow()) return;
   if (document.getElementById(TITLEBAR_ID)) return;
   document.documentElement.classList.add('app-chrome');
+  applyTitlebarVisibility();
 
   const bar = document.createElement('div');
   bar.id = TITLEBAR_ID;
   bar.className = 'titlebar';
+  // Title is a sibling of the drag strip (not a child) so it cannot expand the
+  // app-region:drag hit target over the window controls.
   bar.innerHTML = `
     <div class="titlebar-tabs" id="${CAPTION_TABS_SLOT_ID}"></div>
-    <div class="titlebar-drag"><span class="titlebar-title"></span></div>
+    <div class="titlebar-drag"></div>
+    <span class="titlebar-title"></span>
     <div class="win-controls">
       <button class="win-btn" type="button" data-act="minimize" aria-label="Minimize">${ICONS.minimize}</button>
       <button class="win-btn" type="button" data-act="maximize" aria-label="Maximize">${ICONS.maximize}</button>
@@ -136,17 +182,56 @@ function mountCaption(): void {
   window.addEventListener('displaystatechange', syncMaxIcon);
   window.matchMedia('(display-state: maximized)').addEventListener?.('change', syncMaxIcon);
 
-  const w = window as AcwWindow;
   const toggleMaximize = async (): Promise<void> => {
-    if (isMaximized()) await w.restore?.();
-    else await w.maximize?.();
+    await runWindowAction(async (w) => {
+      if (isMaximized()) {
+        if (typeof w.restore !== 'function') throw new Error('window.restore is unavailable');
+        await w.restore();
+      } else {
+        if (typeof w.maximize !== 'function') throw new Error('window.maximize is unavailable');
+        await w.maximize();
+      }
+    });
     syncMaxIcon();
   };
-  bar.querySelector('[data-act="minimize"]')?.addEventListener('click', () => void w.minimize?.());
-  maxBtn.addEventListener('click', () => void toggleMaximize());
-  bar.querySelector('[data-act="close"]')?.addEventListener('click', () => window.close());
+
+  bindWindowButton(bar.querySelector('[data-act="minimize"]'), async () => {
+    await runWindowAction(async (w) => {
+      if (typeof w.minimize !== 'function') throw new Error('window.minimize is unavailable');
+      await w.minimize();
+    });
+  });
+  bindWindowButton(maxBtn, () => toggleMaximize());
+  bindWindowButton(bar.querySelector('[data-act="close"]'), () => {
+    window.close();
+  });
   // ChromeOS: double-clicking the caption (not a button) maximizes/restores.
   bar.addEventListener('dblclick', (event) => {
     if (!(event.target as Element)?.closest('.win-controls')) void toggleMaximize();
+  });
+}
+
+/**
+ * Run an ACW action under the current user gesture.
+ * Do not await permission prompts here — that burns transient activation and
+ * causes minimize/maximize to reject even when permission is grantable.
+ */
+async function runWindowAction(action: (w: AcwWindow) => Promise<void>): Promise<void> {
+  await action(window as AcwWindow);
+}
+
+function bindWindowButton(
+  button: Element | null,
+  action: () => void | Promise<void>,
+): void {
+  if (!button) return;
+  // Use click (keeps transient activation for ACW). pointerup+preventDefault
+  // can drop the gesture before minimize/maximize run.
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    void Promise.resolve(action()).catch(() => {
+      // Permission denied / API unavailable (e.g. AWC flag off).
+    });
   });
 }

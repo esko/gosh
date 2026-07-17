@@ -26,11 +26,12 @@ offers negotiated streaming, structured errors, and atomic filesystem actions.
   lazy per-pane nassh SFTP sidecar, and inserts a POSIX-shell-quoted absolute
   path without submitting the command.
 - Sidecars reuse the profile host, SSH port, username, identity staging,
-  known-host store, host-key prompt, and secure-input prompt. Mosh and ET use
-  their profile's SSH endpoint for this sidecar.
-- Uploads are limited to 25 MiB, stored below `~/.cache/gosh/pastes/`, use
-  randomized `iwa-paste-*` names, mode `0600`, a `.part` file, and atomic
-  rename. App-owned files older than seven days are removed best-effort.
+  known-host store, host-key prompt, and secure-input prompt. Mosh, ET, and
+  tsshd use their profile's SSH endpoint for this sidecar.
+- Uploads are limited to 25 MiB, stored under the configurable image-paste
+  directory (default `/tmp`), use randomized `gosh-paste-*` names, mode `0600`,
+  a `.part` file, and atomic rename. App-owned files older than seven days are
+  removed best-effort.
 - Kitty file (`t=f`), temporary-file (`t=t`), and shared-memory (`t=s`) media
   are not emulated across SSH. Restty remains responsible for parsing valid
   remote direct transmissions, placements, animation, queries, and deletion.

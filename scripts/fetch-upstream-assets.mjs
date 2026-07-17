@@ -365,6 +365,61 @@ async function patchNasshRuntimeUrls() {
   await fsp.writeFile(subprocPath, source, 'utf8');
 }
 
+/**
+ * IWA CSP is `trusted-types default` only. Upstream sanitizeScriptUrl creates a
+ * passthrough `nassh` policy, which Chrome blocks and which then fails SSH
+ * connect before the wassh Worker starts. Return a string so Worker() sinks are
+ * validated by app/src/security/trustedTypes.ts instead.
+ */
+async function patchNasshTrustedTypes() {
+  const nasshPath = path.join(OUT_DIR, 'nassh/js/nassh.js');
+  let source = await fsp.readFile(nasshPath, 'utf8');
+  const before = ` export function sanitizeScriptUrl(url) {
+  if (globalThis.trustedTypes?.createPolicy) {
+    if (!sanitizeScriptUrl.policy) {
+      sanitizeScriptUrl.policy = trustedTypes.createPolicy('nassh', {
+        createScriptURL: (url) => url,
+      });
+    }
+    return sanitizeScriptUrl.policy.createScriptURL(url);
+  }
+  return url;
+}`;
+  const after = ` export function sanitizeScriptUrl(url) {
+  // Gosh IWA: CSP allowlists only trusted-types default. Upstream creates a
+  // passthrough nassh policy here, which is blocked and breaks SSH connect.
+  // Return a string so Worker() sinks use app/src/security/trustedTypes.ts.
+  return url;
+}`;
+  if (!source.includes(before)) {
+    throw new Error('nassh.js sanitizeScriptUrl Trusted Types pattern not found');
+  }
+  source = source.replace(before, after);
+  await fsp.writeFile(nasshPath, source, 'utf8');
+}
+
+/**
+ * Mosh bootstrap SSH hop: export COLORTERM before mosh-server so the session
+ * shell sees truecolor even when sshd rejects SendEnv COLORTERM.
+ */
+async function patchNasshMoshTruecolor() {
+  const commandPath = path.join(OUT_DIR, 'nassh/js/nassh_command_instance.js');
+  let source = await fsp.readFile(commandPath, 'utf8');
+  const before =
+    "        `printf \"\\nMOSH SSH_CONNECTION %s\\n\" \"$SSH_CONNECTION\"; ` +\n" +
+    "        `exec mosh-server new -s` +";
+  const after =
+    "        // Gosh: COLORTERM must be set here — sshd often rejects SendEnv COLORTERM.\n" +
+    "        `export COLORTERM=truecolor; ` +\n" +
+    "        `printf \"\\nMOSH SSH_CONNECTION %s\\n\" \"$SSH_CONNECTION\"; ` +\n" +
+    "        `exec mosh-server new -s` +";
+  if (!source.includes(before)) {
+    throw new Error('nassh_command_instance.js mosh remoteCommand pattern not found');
+  }
+  source = source.replace(before, after);
+  await fsp.writeFile(commandPath, source, 'utf8');
+}
+
 function printManifest() {
   manifest.sort((a, b) => a.dest.localeCompare(b.dest));
   const total = manifest.reduce((sum, row) => sum + row.bytes, 0);
@@ -417,6 +472,8 @@ async function main() {
   await patchWasshDirectSockets();
   await patchWasshTtyPixelSize();
   await patchNasshRuntimeUrls();
+  await patchNasshTrustedTypes();
+  await patchNasshMoshTruecolor();
 
   if (wasshCount === 0) {
     throw new Error('no wassh/js/*.js files copied');

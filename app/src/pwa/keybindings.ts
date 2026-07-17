@@ -18,6 +18,7 @@ export type ShortcutAction =
   | 'resizePaneUp'
   | 'resizePaneDown'
   | 'commandPalette'
+  | 'toggleTitlebar'
   | 'copy'
   | 'paste'
   | 'pasteImage';
@@ -42,6 +43,7 @@ export const SHORTCUT_ACTIONS: { id: ShortcutAction; label: string; group: Short
   { id: 'resizePaneUp', label: 'Resize pane up', group: 'Panes' },
   { id: 'resizePaneDown', label: 'Resize pane down', group: 'Panes' },
   { id: 'commandPalette', label: 'Command palette', group: 'View' },
+  { id: 'toggleTitlebar', label: 'Toggle title bar', group: 'View' },
   { id: 'copy', label: 'Copy', group: 'Clipboard' },
   { id: 'paste', label: 'Paste', group: 'Clipboard' },
   { id: 'pasteImage', label: 'Upload image and paste path', group: 'Clipboard' },
@@ -69,6 +71,7 @@ export const DEFAULT_BINDINGS: Record<ShortcutAction, string> = {
   resizePaneUp: chordKey(mods(true, true, false), 'ArrowUp'),
   resizePaneDown: chordKey(mods(true, true, false), 'ArrowDown'),
   commandPalette: chordKey(mods(true, false, true), 'KeyP'),
+  toggleTitlebar: chordKey(mods(true, false, true), 'KeyH'),
   copy: chordKey(mods(true, false, true), 'KeyC'),
   paste: chordKey(mods(true, false, true), 'KeyV'),
   pasteImage: chordKey(mods(true, true, true), 'KeyV'),

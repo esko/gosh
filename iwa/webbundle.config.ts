@@ -60,7 +60,7 @@ export const IWA_CSP =
 
 export const bundleConfig: WebBundleConfig = {
   appName: 'gosh',
-  webBundleId: 'PLACEHOLDER_RUN_wbn-dump-id_AFTER_GENERATING_KEY',
+  webBundleId: 'mqkgfdwpsmx3j3mdhqsojvxti4osvhhmda6hkmqrato64atz4nnaaaic',
   version: '0.1.1',
   distDir: 'dist',
   unsignedBundle: 'dist/gosh.unsigned.wbn',

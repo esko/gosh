@@ -10,7 +10,7 @@ export async function checkMoshPrerequisites(): Promise<MoshGateResult> {
     return {
       ok: false,
       reason: 'missing-udp',
-      message: 'Mosh requires UDPSocket. Install as an IWA with Direct Sockets UDP support.',
+      message: 'Mosh requires UDPSocket. Install Gosh with Direct Sockets UDP support.',
     };
   }
 

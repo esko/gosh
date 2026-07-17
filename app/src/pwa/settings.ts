@@ -8,8 +8,13 @@ import {
   isCustomSelection,
 } from './terminalFonts';
 import { getCustomFontData } from './customFontStore';
+import { DEFAULT_REMOTE_PASTE_DIRECTORY } from '../ssh/RemoteImageUploader';
 
 export const SETTINGS_KEY = 'gosh-legacy-pwa-terminal-settings';
+
+/** Safe remote paste path: absolute or home-relative, no `..` / shell metacharacters. */
+const IMAGE_PASTE_DIR_RE = /^(?:\/(?:[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)?|[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/;
+const IMAGE_PASTE_DIR_SEGMENT_RE = /^(?:\.[A-Za-z0-9_-]+|[A-Za-z0-9_][A-Za-z0-9._-]*)$/;
 
 export const DEFAULT_PWA_SETTINGS: PwaTerminalSettings = {
   fontFamily: DEFAULT_FONT_ID,
@@ -29,6 +34,7 @@ export const DEFAULT_PWA_SETTINGS: PwaTerminalSettings = {
   ligatures: true,
   nerdFontFallback: true,
   nerdFontScale: 0.75,
+  unicodeSymbolsFallback: true,
   confirmClose: false,
   closeOnExit: true,
   termType: 'xterm-256color',
@@ -37,6 +43,7 @@ export const DEFAULT_PWA_SETTINGS: PwaTerminalSettings = {
   ctrlShiftCopyPaste: true,
   rightClickPaste: false,
   middleClickPaste: false,
+  imagePasteDirectory: DEFAULT_REMOTE_PASTE_DIRECTORY,
   colorScheme: 'dark',
 };
 
@@ -138,6 +145,9 @@ export function normalizePwaSettings(value: Partial<PwaTerminalSettings> | Recor
     ligatures: typeof value.ligatures === 'boolean' ? value.ligatures : DEFAULT_PWA_SETTINGS.ligatures,
     nerdFontFallback: typeof value.nerdFontFallback === 'boolean' ? value.nerdFontFallback : DEFAULT_PWA_SETTINGS.nerdFontFallback,
     nerdFontScale: Number.isFinite(nerdFontScale) ? clamp(nerdFontScale, 0.5, 1.5) : DEFAULT_PWA_SETTINGS.nerdFontScale,
+    unicodeSymbolsFallback: typeof value.unicodeSymbolsFallback === 'boolean'
+      ? value.unicodeSymbolsFallback
+      : DEFAULT_PWA_SETTINGS.unicodeSymbolsFallback,
     confirmClose: typeof value.confirmClose === 'boolean' ? value.confirmClose : DEFAULT_PWA_SETTINGS.confirmClose,
     closeOnExit: typeof value.closeOnExit === 'boolean' ? value.closeOnExit : DEFAULT_PWA_SETTINGS.closeOnExit,
     termType,
@@ -146,8 +156,22 @@ export function normalizePwaSettings(value: Partial<PwaTerminalSettings> | Recor
     ctrlShiftCopyPaste: typeof value.ctrlShiftCopyPaste === 'boolean' ? value.ctrlShiftCopyPaste : DEFAULT_PWA_SETTINGS.ctrlShiftCopyPaste,
     rightClickPaste: typeof value.rightClickPaste === 'boolean' ? value.rightClickPaste : DEFAULT_PWA_SETTINGS.rightClickPaste,
     middleClickPaste: typeof value.middleClickPaste === 'boolean' ? value.middleClickPaste : DEFAULT_PWA_SETTINGS.middleClickPaste,
+    imagePasteDirectory: normalizeImagePasteDirectory(value.imagePasteDirectory),
     colorScheme: value.colorScheme === 'light' || value.colorScheme === 'system' ? value.colorScheme : 'dark',
   };
+}
+
+function normalizeImagePasteDirectory(value: unknown): string {
+  if (typeof value !== 'string') return DEFAULT_PWA_SETTINGS.imagePasteDirectory;
+  const trimmed = value.trim().replace(/\/+$/, '') || '/';
+  if (trimmed.length > 200 || !IMAGE_PASTE_DIR_RE.test(trimmed)) {
+    return DEFAULT_PWA_SETTINGS.imagePasteDirectory;
+  }
+  const segments = trimmed.split('/').filter(Boolean);
+  if (segments.some((segment) => !IMAGE_PASTE_DIR_SEGMENT_RE.test(segment))) {
+    return DEFAULT_PWA_SETTINGS.imagePasteDirectory;
+  }
+  return trimmed;
 }
 
 export function applyPwaAppearance(settings: PwaTerminalSettings): void {
