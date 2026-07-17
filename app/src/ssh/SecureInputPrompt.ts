@@ -1,5 +1,5 @@
 import { escapeHTML } from '../pwa/dom';
-import { registerAuthPromptDismiss } from './authPromptLifecycle';
+import { registerAuthPromptDismiss, restoreFocusAfterAuthPrompt } from './authPromptLifecycle';
 
 /**
  * In-app modal for nassh secureInput (password, passphrase, keyboard-interactive).
@@ -48,7 +48,7 @@ export function showSecureInputPrompt(
       <p class="prompt-body">${escapeHTML(message)}</p>
       <label class="field"><span>${label}</span>
         <div class="secure-input-wrap">
-          <input class="secure-input-field" type="${echo ? 'text' : 'password'}" autocomplete="off" spellcheck="false" ${maxLength > 0 ? `maxlength="${maxLength}"` : ''} autofocus>
+          <input class="secure-input-field" type="${echo ? 'text' : 'password'}" autocomplete="off" spellcheck="false" ${maxLength > 0 ? `maxlength="${maxLength}"` : ''}>
           ${isPassword ? `<button type="button" class="secure-input-reveal" data-reveal aria-label="Show password" aria-pressed="false" title="Show password">${EYE_SVG}</button>` : ''}
         </div>
       </label>
@@ -96,6 +96,7 @@ export function showSecureInputPrompt(
       unregister();
       overlay.remove();
       document.removeEventListener('keydown', onKeyDown, true);
+      restoreFocusAfterAuthPrompt();
       resolve({ value, save: value !== null && Boolean(saveToggle?.checked) });
     };
     unregister = registerAuthPromptDismiss(() => finish(null));

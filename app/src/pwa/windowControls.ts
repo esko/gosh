@@ -25,6 +25,8 @@ type AcwWindow = Window & {
 };
 
 const TITLEBAR_ID = 'app-titlebar';
+/** Invisible top drag target used while the caption is hidden. */
+const MOVE_STRIP_ID = 'app-window-move-strip';
 /** Slot in the caption (left of the window controls) for custom terminal tabs. */
 export const CAPTION_TABS_SLOT_ID = 'app-titlebar-tabs';
 const TITLEBAR_HIDDEN_KEY = 'gosh-titlebar-hidden';
@@ -44,6 +46,9 @@ export function applyTitlebarVisibility(): void {
   document.documentElement.classList.toggle(TITLEBAR_HIDDEN_CLASS, isTitlebarHidden());
 }
 
+/** Fired after titlebar show/hide has been applied and CSS layout has settled. */
+export const TITLEBAR_LAYOUT_EVENT = 'gosh:titlebar-layout';
+
 export function setTitlebarHidden(hidden: boolean): void {
   try {
     if (hidden) localStorage.setItem(TITLEBAR_HIDDEN_KEY, '1');
@@ -52,8 +57,23 @@ export function setTitlebarHidden(hidden: boolean): void {
     // Persistence is best-effort; still apply for this session.
   }
   applyTitlebarVisibility();
-  // Layout changes from --titlebar-h: 0 need a resize pass for Restty.
-  window.dispatchEvent(new Event('resize'));
+  // --titlebar-h / .term-shell top change only after style+layout. A sync
+  // resize/fit here still sees the old box; wait two frames, then notify.
+  notifyTitlebarLayoutChange();
+}
+
+/** Schedule post-reflow resize notifications for Restty / window shape. */
+export function notifyTitlebarLayoutChange(): void {
+  const fire = (): void => {
+    window.dispatchEvent(new Event('resize'));
+    window.dispatchEvent(new Event(TITLEBAR_LAYOUT_EVENT));
+  };
+  const raf = globalThis.requestAnimationFrame?.bind(globalThis);
+  if (!raf) {
+    fire();
+    return;
+  }
+  raf(() => raf(fire));
 }
 
 /** Toggle caption visibility. Returns the new hidden state. */
@@ -159,6 +179,17 @@ function mountCaption(): void {
       <button class="win-btn win-close" type="button" data-act="close" aria-label="Close">${ICONS.close}</button>
     </div>`;
   document.body.prepend(bar);
+
+  // Caption-hidden mode: keep a thin top drag target so the window can still be
+  // moved (and so Chromium keeps desktop-frame hit testing armed for edges).
+  if (!document.getElementById(MOVE_STRIP_ID)) {
+    const moveStrip = document.createElement('div');
+    moveStrip.id = MOVE_STRIP_ID;
+    moveStrip.className = 'window-move-strip';
+    moveStrip.setAttribute('aria-hidden', 'true');
+    document.body.prepend(moveStrip);
+  }
+
   // Let the terminal view relocate its tab strip into the caption slot now that
   // it exists (the caption can mount after the terminal renders).
   window.dispatchEvent(new CustomEvent('app-caption-mounted'));

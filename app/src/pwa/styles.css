@@ -3088,13 +3088,56 @@ html.app-chrome .term-shell {
 }
 
 /* Completely hide the custom caption (tabs + window controls). --titlebar-h
-   collapses to 0 so every calc(100vh - var(--titlebar-h)) / top offset follows. */
+   collapses to 0 so every calc(100vh - var(--titlebar-h)) / top offset follows.
+   --window-edge-hit leaves Ash's inner resize band free of Restty canvas /
+   launcher chrome so edge drag-resize still works (full-bleed HTCLIENT content
+   otherwise eats the border). */
 html.app-chrome.titlebar-hidden {
   --titlebar-h: 0px;
+  --window-edge-hit: 6px;
 }
 
 html.app-chrome.titlebar-hidden .titlebar {
   display: none;
+}
+
+/* Paint the edge band the same as the window surface so the inset isn't a gap. */
+html.app-chrome.titlebar-hidden body {
+  background: var(--term-bg, var(--bg));
+  background-image: none;
+}
+
+/* Pull interactive content inside the OS resize band on all four sides. */
+html.app-chrome.titlebar-hidden .term-shell {
+  top: var(--window-edge-hit);
+  right: var(--window-edge-hit);
+  bottom: var(--window-edge-hit);
+  left: var(--window-edge-hit);
+}
+
+html.app-chrome.titlebar-hidden #app {
+  margin: var(--window-edge-hit);
+  box-sizing: border-box;
+  min-height: calc(100vh - 2 * var(--window-edge-hit));
+  max-width: calc(100vw - 2 * var(--window-edge-hit));
+}
+
+/* Thin top drag strip so the window stays movable with the caption hidden.
+   Inset from the true edges so it doesn't cover the resize corners. */
+.window-move-strip {
+  display: none;
+}
+
+html.app-chrome.titlebar-hidden .window-move-strip {
+  display: block;
+  position: fixed;
+  top: var(--window-edge-hit);
+  left: calc(var(--window-edge-hit) + 20px);
+  right: calc(var(--window-edge-hit) + 20px);
+  height: 4px;
+  z-index: 2500;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 /* When the caption is hidden, the surface under the top edge must round too. */
@@ -3104,8 +3147,17 @@ html.app-chrome.titlebar-hidden .term-shell {
   border-top-right-radius: var(--radius);
 }
 
+html.app-chrome.titlebar-hidden body {
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+
 /* Maximized / fullscreen windows are square-cornered on ChromeOS. */
 @media (display-state: maximized), (display-state: fullscreen) {
+  html.app-chrome.titlebar-hidden {
+    --window-edge-hit: 0px;
+  }
+
   .titlebar,
   html.app-chrome.titlebar-hidden body,
   html.app-chrome.titlebar-hidden .term-shell,
@@ -3115,6 +3167,10 @@ html.app-chrome.titlebar-hidden .term-shell {
     border-top-right-radius: 0;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
+  }
+
+  html.app-chrome.titlebar-hidden .window-move-strip {
+    display: none;
   }
 }
 

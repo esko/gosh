@@ -3,7 +3,7 @@
   "name": "Gosh",
   "short_name": "Gosh",
   "description": "Gosh \u2014 ChromeOS SSH client",
-  "version": "0.1.161",
+  "version": "0.1.165",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

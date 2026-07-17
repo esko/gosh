@@ -5,7 +5,7 @@ import { encryptPrivateKey } from '../security/KeyCrypto';
 import { credentialVault } from '../security/credentialVault';
 import { cacheIdentityPassphrase } from '../ssh/IdentityPassphrase';
 import { wipeTrustedHostKeys } from '../ssh/nasshKnownHosts';
-import { dismissActiveAuthPrompts } from '../ssh/authPromptLifecycle';
+import { dismissActiveAuthPrompts, setAuthPromptFocusRestore } from '../ssh/authPromptLifecycle';
 import { escapeHTML, formatTime, requiredElement } from './dom';
 import { readDiagnostics } from './diagnostics';
 import { ResttyTerminalAdapter, type PaneDirection, type ResttyPaneSink } from './resttyAdapter';
@@ -72,6 +72,7 @@ import {
   CAPTION_TABS_SLOT_ID,
   isTitlebarHidden,
   setTitlebarHidden,
+  TITLEBAR_LAYOUT_EVENT,
   toggleTitlebarHidden,
 } from './windowControls';
 import { createTransport, type TerminalTransport } from './transport';
@@ -90,6 +91,13 @@ import {
   moveTabOverviewSelection,
   type TabOverviewEntry,
 } from './tabOverview';
+import {
+  CONNECT_RETRY_ATTEMPTS,
+  connectRetryDelayMs,
+  isTransientConnectError,
+  panesToResume,
+  sleep,
+} from './sessionLifecycle';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -138,6 +146,8 @@ type PaneConn = {
   status: TerminalTransportStatus;
   error?: string;
   reconnecting: boolean;
+  /** Set when the remote shell exited cleanly — restore must not auto-reconnect. */
+  cleanExit: boolean;
 };
 
 /**
@@ -169,6 +179,9 @@ let statusHideTimer = 0;
 let tabRenderFrame = 0;
 const tabPreviewCache = new TabPreviewCache();
 const TAB_PREVIEW_SIZE = { width: 480, height: 270 };
+/** True after freeze/BFCache suspend until resume reconnect finishes. */
+let terminalSuspended = false;
+let resumeTransportsPromise: Promise<void> | null = null;
 
 function activeSession(): TermSession | null {
   return sessions.find((s) => s.id === activeSessionId) ?? null;
@@ -389,9 +402,27 @@ export async function startRouter(root: HTMLElement): Promise<void> {
     teardownCurrentView();
     void renderRoute(appRoot, next);
   });
-  // A real document unload (tab close, hard reload, new-window open) must still
-  // tear the transport down so sockets don't linger.
-  window.addEventListener('pagehide', () => disposeTerminal());
+  // Recoverable hide (BFCache / freeze): drop live sockets but keep the UI so
+  // pageshow/resume can reconnect. Real unload still fully disposes.
+  window.addEventListener('pagehide', (event) => {
+    if (event.persisted) {
+      suspendTerminalTransports();
+      return;
+    }
+    disposeTerminal();
+  });
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) void resumeTerminalTransports();
+  });
+  document.addEventListener('freeze', () => suspendTerminalTransports());
+  document.addEventListener('resume', () => {
+    void resumeTerminalTransports();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && terminalSuspended) {
+      void resumeTerminalTransports();
+    }
+  });
   await renderRoute(root, routeFor(window.location.href));
 }
 
@@ -2132,7 +2163,6 @@ README  <span style="color:${p.magenta}">.env</span></span>`;
   );
   body.querySelector<HTMLSelectElement>('[name="hideTitlebar"]')?.addEventListener('change', (event) => {
     setTitlebarHidden((event.target as HTMLSelectElement).value === 'on');
-    activeTerminal?.fit?.();
   });
   body.querySelectorAll<HTMLElement>('input, select').forEach((field) =>
     field.addEventListener('change', (event) => {
@@ -2265,6 +2295,21 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   window.addEventListener('storage', onSettingsStorage);
   fontSyncCleanup = () => window.removeEventListener('storage', onSettingsStorage);
 
+  // Auth modals steal focus; restore it to the active terminal when they close.
+  setAuthPromptFocusRestore(() => activeTerminal?.focus());
+
+  // Titlebar hide/show changes --titlebar-h and .term-shell top; refit every
+  // session after layout so the PTY grid matches the new viewport.
+  const onTitlebarLayout = (): void => {
+    for (const session of sessions) session.terminal?.fit?.();
+  };
+  window.addEventListener(TITLEBAR_LAYOUT_EVENT, onTitlebarLayout);
+  const previousCaptionCleanup = captionCleanup;
+  captionCleanup = () => {
+    window.removeEventListener(TITLEBAR_LAYOUT_EVENT, onTitlebarLayout);
+    previousCaptionCleanup?.();
+  };
+
   // Restore this window's tabs on reload/crash when they belong to the same
   // connection (sessionStorage is per-window); otherwise start a single tab.
   const layout = loadTabLayout();
@@ -2276,6 +2321,16 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     const session = await createSession(spec);
     setActiveSession(session.id);
   }
+}
+
+/** Double-rAF focus so Restty's canvas/input surface is laid out first. */
+function focusTerminalSessionSoon(session: TermSession): void {
+  const id = session.id;
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      if (activeSessionId === id) session.terminal?.focus();
+    });
+  });
 }
 
 /** Build a fully-connected session (its own renderer + transport) in a new tab. */
@@ -2309,6 +2364,12 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   spec = { ...spec, etSessionId: undefined };
   const settings = resolveSettings(spec.settingsProfileId);
   await ensureTerminalFontLoaded(settings);
+
+  // Drop launcher/form focus so Restty's input surface (and later auth modals)
+  // aren't fighting an already-focused element — Chrome otherwise logs
+  // "Autofocus processing was blocked" and typing stays on the wrong target.
+  const prior = document.activeElement;
+  if (prior instanceof HTMLElement && prior !== document.body) prior.blur();
 
   const surface = document.createElement('main');
   surface.className = 'term-surface';
@@ -2398,23 +2459,57 @@ async function openPaneConn(session: TermSession, sink: ResttyPaneSink): Promise
     status: 'connecting',
     error: undefined,
     reconnecting: false,
-    transport: createTransport(
-      { ...session.spec!, etSessionId: session.panes.size === 0 ? session.resumeEtSessionId : undefined },
-      (state, error, meta) => onPaneStatus(session, sink.paneId, state, error, meta),
-    ),
+    cleanExit: false,
+    transport: createPaneTransport(session, sink.paneId),
   };
   session.panes.set(sink.paneId, conn);
-  try {
-    await conn.transport.connect(sink);
-  } catch {
-    // The transport already surfaced the failure through onStatus()/the
-    // terminal. A dispose() while this pane is still connecting (e.g. the tab
-    // was closed mid-resume) also rejects here; swallow it so it does not
-    // become an unhandled rejection ("ET worker controller was disposed.").
+  for (let attempt = 0; attempt < CONNECT_RETRY_ATTEMPTS; attempt += 1) {
+    if (!session.panes.has(sink.paneId)) return;
+    try {
+      await conn.transport.connect(sink);
+    } catch (error) {
+      // Transport already surfaced the failure through onStatus(). A dispose()
+      // while connecting also rejects here; swallow so it does not become an
+      // unhandled rejection ("ET worker controller was disposed.").
+      if (!session.panes.has(sink.paneId)) return;
+      const message = conn.error ?? (error instanceof Error ? error.message : String(error));
+      if (attempt + 1 >= CONNECT_RETRY_ATTEMPTS || !isTransientConnectError(message)) return;
+      await sleep(connectRetryDelayMs(attempt));
+      if (!session.panes.has(sink.paneId)) return;
+      replacePaneTransport(session, conn);
+      continue;
+    }
+    // Some gates report error via onStatus without throwing (e.g. mosh UDP).
+    if (conn.status === 'error' || conn.status === 'disconnected') {
+      const message = conn.error ?? 'Connection failed';
+      if (attempt + 1 >= CONNECT_RETRY_ATTEMPTS || !isTransientConnectError(message)) return;
+      await sleep(connectRetryDelayMs(attempt));
+      if (!session.panes.has(sink.paneId)) return;
+      replacePaneTransport(session, conn);
+      continue;
+    }
+    if (session.panes.size === 1) session.resumeEtSessionId = conn.transport.getPersistentSessionId?.();
+    saveTabLayout();
     return;
   }
-  if (session.panes.size === 1) session.resumeEtSessionId = conn.transport.getPersistentSessionId?.();
-  saveTabLayout();
+}
+
+function createPaneTransport(session: TermSession, paneId: number): TerminalTransport {
+  const firstPaneId = session.panes.keys().next().value;
+  const useResume = session.panes.size === 0 || firstPaneId === paneId;
+  return createTransport(
+    { ...session.spec!, etSessionId: useResume ? session.resumeEtSessionId : undefined },
+    (state, error, meta) => onPaneStatus(session, paneId, state, error, meta),
+  );
+}
+
+function replacePaneTransport(session: TermSession, conn: PaneConn): void {
+  void conn.transport.disconnect().catch(() => undefined);
+  conn.transport.dispose();
+  conn.transport = createPaneTransport(session, conn.paneId);
+  conn.status = 'connecting';
+  conn.error = undefined;
+  conn.cleanExit = false;
 }
 
 /** Tear down a closed restty pane's transport; the last pane closing ends the tab. */
@@ -2437,23 +2532,32 @@ function onPaneStatus(session: TermSession, paneId: number, state: TerminalTrans
   const effectiveState = state === 'disconnected' && meta?.disconnectReason === 'transport' ? 'error' : state;
   conn.status = effectiveState;
   conn.error = error;
+  if (state === 'disconnected' && meta?.disconnectReason === 'normal-exit') conn.cleanExit = true;
+  else if (state === 'connected' || state === 'connecting') conn.cleanExit = false;
   session.status = paneSessionStatus(session);
   session.statusError = paneStatusError(session);
   if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
   scheduleTabRender();
-  if (state === 'connected' && session.panes.keys().next().value === paneId) {
-    session.resumeEtSessionId = conn.transport.getPersistentSessionId?.() ?? session.resumeEtSessionId;
-    saveTabLayout();
-    // Capture a host thumbnail shortly after the first pane connects so a freshly
-    // connected host shows a real screenshot on the launcher without waiting for a
-    // tab switch — give the shell a beat to paint its prompt first.
-    window.setTimeout(() => {
-      if (sessions.includes(session) && sessionHasConnectedPane(session)) void refreshSessionPreview(session);
-    }, 1500);
+  if (state === 'connected') {
+    if (session.panes.keys().next().value === paneId) {
+      session.resumeEtSessionId = conn.transport.getPersistentSessionId?.() ?? session.resumeEtSessionId;
+      saveTabLayout();
+      // Capture a host thumbnail shortly after the first pane connects so a freshly
+      // connected host shows a real screenshot on the launcher without waiting for a
+      // tab switch — give the shell a beat to paint its prompt first.
+      window.setTimeout(() => {
+        if (sessions.includes(session) && sessionHasConnectedPane(session)) void refreshSessionPreview(session);
+      }, 1500);
+    }
+    // Early focus during create/setActiveSession often loses the race with layout
+    // and auth modals; re-arm the keyboard surface once the pane is actually live.
+    if (session.id === activeSessionId && !conn.reconnecting) {
+      focusTerminalSessionSoon(session);
+    }
   }
   // Capture once more on a non-reconnecting disconnect: the pane still holds its
   // final frame, so the launcher keeps a useful last-seen screenshot.
-  if ((state === 'disconnected' || effectiveState === 'error') && !conn.reconnecting) {
+  if ((state === 'disconnected' || effectiveState === 'error') && !conn.reconnecting && !terminalSuspended) {
     void refreshSessionPreview(session);
   }
   // A clean disconnect closes that pane (the tab ends with its last pane);
@@ -2519,13 +2623,11 @@ function setActiveSession(id: string): void {
   renderTabs();
   saveTabLayout();
   session.terminal.fit?.();
-  // Focus on the next frame: the container was just unhidden above, and when a
-  // session is activated straight after creation (profile launch) the canvas
-  // isn't laid out yet, so a synchronous focus() no-ops and focus falls back to
-  // <body>. Guard against rapid re-activation focusing a stale session.
-  requestAnimationFrame(() => {
-    if (activeSessionId === id) session.terminal?.focus();
-  });
+  // Focus after layout: the container was just unhidden, and on a fresh profile
+  // launch the canvas often isn't ready in a single rAF (focus no-ops → body).
+  // A second frame covers that; `onPaneStatus(connected)` focuses again once the
+  // session is live. Guard against rapid re-activation focusing a stale session.
+  focusTerminalSessionSoon(session);
 }
 
 function closeSession(session: TermSession): void {
@@ -3003,7 +3105,6 @@ const shortcutHandlers: Record<ShortcutAction, () => boolean> = {
   },
   toggleTitlebar: () => {
     toggleTitlebarHidden();
-    activeTerminal?.fit?.();
     return true;
   },
   copy: () => {
@@ -3353,7 +3454,6 @@ function buildPaletteCommands(): PaletteCommand[] {
       key: '⌃⇧H',
       run: () => {
         toggleTitlebarHidden();
-        activeTerminal?.fit?.();
       },
     },
     { label: 'Settings', group: 'App', run: () => openSettings() },
@@ -3739,14 +3839,67 @@ async function reconnect(): Promise<void> {
   if (!session?.terminal) return;
   const conn = session.panes.get(session.terminal.getActivePaneId());
   if (!conn) return;
+  await reconnectPane(session, conn, { clearScreen: true });
+}
+
+/**
+ * Drop live sockets while keeping Restty surfaces and tab state for BFCache /
+ * freeze restore. Real unload still uses {@link disposeTerminal}.
+ */
+function suspendTerminalTransports(): void {
+  if (sessions.length === 0) return;
+  terminalSuspended = true;
+  for (const session of sessions) {
+    if (session.kind !== 'terminal') continue;
+    for (const conn of session.panes.values()) {
+      if (conn.cleanExit) continue;
+      void conn.transport.disconnect().catch(() => undefined);
+      conn.transport.dispose();
+      conn.status = 'disconnected';
+      conn.error = 'Session suspended — reconnecting when the window restores…';
+    }
+    session.status = paneSessionStatus(session);
+    session.statusError = paneStatusError(session);
+    if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
+  }
+  scheduleTabRender();
+}
+
+async function resumeTerminalTransports(): Promise<void> {
+  if (!terminalSuspended) return;
+  if (resumeTransportsPromise) return resumeTransportsPromise;
+  resumeTransportsPromise = (async () => {
+    terminalSuspended = false;
+    for (const session of sessions) {
+      if (session.kind !== 'terminal' || !session.spec) continue;
+      let cleared = false;
+      for (const conn of panesToResume(session.panes.values())) {
+        await reconnectPane(session, conn, { clearScreen: !cleared });
+        cleared = true;
+      }
+    }
+  })().finally(() => {
+    resumeTransportsPromise = null;
+  });
+  return resumeTransportsPromise;
+}
+
+async function reconnectPane(
+  session: TermSession,
+  conn: PaneConn,
+  options: { clearScreen?: boolean } = {},
+): Promise<void> {
+  if (conn.reconnecting || conn.cleanExit || !session.spec) return;
   conn.reconnecting = true;
   try {
-    session.terminal.write('\x1b[2J\x1b[H');
-    await conn.transport.disconnect();
+    if (options.clearScreen) session.terminal?.write('\x1b[2J\x1b[H');
+    replacePaneTransport(session, conn);
     await conn.transport.connect(conn.sink);
+    if (session.panes.keys().next().value === conn.paneId) {
+      session.resumeEtSessionId = conn.transport.getPersistentSessionId?.() ?? session.resumeEtSessionId;
+    }
   } catch {
-    // Failure is already surfaced through onStatus(); callers invoke reconnect()
-    // as a fire-and-forget (void), so don't let a rejection go unhandled.
+    // Failure is already surfaced through onStatus(); callers often fire-and-forget.
   } finally {
     conn.reconnecting = false;
   }
@@ -3792,6 +3945,9 @@ function installShortcutPassThrough(): void {
 }
 
 export function disposeTerminal(): void {
+  terminalSuspended = false;
+  resumeTransportsPromise = null;
+  setAuthPromptFocusRestore(null);
   dismissActiveAuthPrompts();
   if (tabRenderFrame) window.cancelAnimationFrame(tabRenderFrame);
   tabRenderFrame = 0;

@@ -1,5 +1,5 @@
 import { getKnownHost, saveKnownHost } from '../storage/indexedDb';
-import { registerAuthPromptDismiss } from './authPromptLifecycle';
+import { registerAuthPromptDismiss, restoreFocusAfterAuthPrompt } from './authPromptLifecycle';
 
 export type HostTrustChoice = 'once' | 'always' | 'cancel';
 
@@ -131,6 +131,7 @@ export function showKnownHostPrompt(options: KnownHostPromptOptions): Promise<Ho
       unregister();
       document.removeEventListener('keydown', onKeyDown, true);
       backdrop.remove();
+      restoreFocusAfterAuthPrompt();
       resolve(choice);
     };
     unregister = registerAuthPromptDismiss(() => finish('cancel'));

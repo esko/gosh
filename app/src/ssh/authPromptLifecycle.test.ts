@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { dismissActiveAuthPrompts, registerAuthPromptDismiss } from './authPromptLifecycle';
+import {
+  dismissActiveAuthPrompts,
+  registerAuthPromptDismiss,
+  restoreFocusAfterAuthPrompt,
+  setAuthPromptFocusRestore,
+} from './authPromptLifecycle';
 
 describe('authPromptLifecycle', () => {
   it('dismisses every registered prompt and ignores unregisterd ones', () => {
@@ -23,5 +28,21 @@ describe('authPromptLifecycle', () => {
     expect(selfRemoving).toHaveBeenCalledOnce();
     dismissActiveAuthPrompts();
     expect(selfRemoving).toHaveBeenCalledOnce();
+  });
+
+  it('restores terminal focus after an auth prompt closes', async () => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+    const restore = vi.fn();
+    setAuthPromptFocusRestore(restore);
+    try {
+      restoreFocusAfterAuthPrompt();
+      expect(restore).toHaveBeenCalledOnce();
+    } finally {
+      setAuthPromptFocusRestore(null);
+      vi.unstubAllGlobals();
+    }
   });
 });

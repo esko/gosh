@@ -3,6 +3,7 @@ import {
   applyTitlebarVisibility,
   isTitlebarHidden,
   setTitlebarHidden,
+  TITLEBAR_LAYOUT_EVENT,
   toggleTitlebarHidden,
 } from './windowControls';
 
@@ -42,15 +43,19 @@ function makeDocumentStub(): { classList: Set<string>; documentElement: { classL
 
 describe('titlebar visibility', () => {
   let stub: ReturnType<typeof makeDocumentStub>;
+  let dispatchEvent: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     stub = makeDocumentStub();
     stub.documentElement.className = 'app-chrome';
+    dispatchEvent = vi.fn();
     vi.stubGlobal('localStorage', makeMemoryStorage());
     vi.stubGlobal('document', { documentElement: stub.documentElement });
-    vi.stubGlobal('window', {
-      dispatchEvent: vi.fn(),
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
     });
+    vi.stubGlobal('window', { dispatchEvent });
   });
 
   afterEach(() => {
@@ -71,5 +76,12 @@ describe('titlebar visibility', () => {
     expect(isTitlebarHidden()).toBe(false);
     expect(stub.documentElement.classList.contains('titlebar-hidden')).toBe(false);
     expect(localStorage.getItem('gosh-titlebar-hidden')).toBeNull();
+  });
+
+  it('notifies resize and titlebar-layout after CSS layout settles', () => {
+    toggleTitlebarHidden();
+    const types = dispatchEvent.mock.calls.map(([event]) => (event as Event).type);
+    expect(types).toContain('resize');
+    expect(types).toContain(TITLEBAR_LAYOUT_EVENT);
   });
 });

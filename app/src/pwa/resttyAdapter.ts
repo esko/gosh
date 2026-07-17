@@ -1266,7 +1266,10 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   }
 
   focus(): void {
-    this.term?.focus();
+    // Prefer pane-level focus so the active split's input surface is armed;
+    // falling back to term.focus() covers the pre-pane-ready window.
+    if (this.panes.size > 0) this.focusPane(this.activePaneId);
+    else this.term?.focus();
   }
 
   fit(): void {
