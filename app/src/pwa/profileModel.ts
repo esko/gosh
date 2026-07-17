@@ -42,8 +42,9 @@ async function saveProfileLastConnected(profileId: string, lastConnectedAt: numb
   if (profile) await saveProfile({ ...profile, lastConnectedAt });
 }
 
-function connectionKey(intent: Pick<ConnectionIntent, 'protocol' | 'username' | 'hostname' | 'port' | 'etPort'>): string {
-  return `${intent.protocol}:${intent.username ?? ''}@${intent.hostname}:${intent.port ?? ''}:${intent.etPort ?? ''}`;
+function connectionKey(intent: Pick<ConnectionIntent, 'protocol' | 'username' | 'hostname' | 'port' | 'etPort' | 'tsshd'>): string {
+  const udpMode = intent.protocol === 'tsshd' ? (intent.tsshd?.udpMode ?? 'KCP') : '';
+  return `${intent.protocol}:${intent.username ?? ''}@${intent.hostname}:${intent.port ?? ''}:${intent.etPort ?? ''}:${udpMode}`;
 }
 
 /**

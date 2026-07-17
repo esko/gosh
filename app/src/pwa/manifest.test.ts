@@ -3,11 +3,19 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { IWA_PERMISSIONS_POLICY } from '../iwa/permissionsPolicy';
 
+type ManifestIcon = {
+  src: string;
+  sizes: string;
+  type: string;
+  purpose?: string;
+};
+
 type Manifest = {
   display_override?: string[];
   permissions_policy?: Record<string, unknown>;
   tab_strip?: unknown;
   background_color?: string;
+  icons?: ManifestIcon[];
 };
 
 const read = (rel: string): Manifest =>
@@ -47,5 +55,26 @@ describe('IWA window manifest', () => {
     expect(IWA_PERMISSIONS_POLICY).toContain('clipboard-read=(self)');
     expect(IWA_PERMISSIONS_POLICY).toContain('clipboard-write=(self)');
     expect(IWA_PERMISSIONS_POLICY).toContain('window-management=(self)');
+  });
+
+  it('ships maskable app icons at the install sizes Chrome requires', () => {
+    const icons = read(WELL_KNOWN).icons ?? [];
+    const maskable = icons.filter((icon) => icon.purpose?.split(/\s+/).includes('maskable'));
+    expect(maskable.map((icon) => icon.sizes).sort()).toEqual([
+      '128x128',
+      '192x192',
+      '384x384',
+      '48x48',
+      '512x512',
+      '72x72',
+      '96x96',
+    ]);
+    expect(maskable.every((icon) => icon.type === 'image/png')).toBe(true);
+    expect(icons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ src: '/icon-192.png', sizes: '192x192', purpose: 'any' }),
+        expect.objectContaining({ src: '/icon-512.png', sizes: '512x512', purpose: 'any' }),
+      ]),
+    );
   });
 });

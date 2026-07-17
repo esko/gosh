@@ -60,6 +60,7 @@ describe('ConnectionIntent', () => {
     const intent: any = normalizeConnectionIntent({ protocol: 'tsshd', hostname: 'host', args: [], tsshd: {} } as any);
     expect(intent.protocol).toBe('tsshd');
     expect(intent.port).toBe(22);
+    expect(intent.tsshd.udpMode).toBe('KCP');
   });
 
   it('serializes tsshd options to query params', () => {
@@ -71,5 +72,17 @@ describe('ConnectionIntent', () => {
     expect(q.get('protocol')).toBe('tsshd');
     expect(q.get('udpMode')).toBe('KCP');
     expect(q.get('tsshdPort')).toBe('61001-61999');
+  });
+
+  it('round-trips tsshd QUIC mode from profile and query', () => {
+    const profile = {
+      id: 't', name: 'T', protocol: 'tsshd' as const, host: 'example.com', port: 22,
+      username: 'user', tsshd: { udpMode: 'QUIC' as const },
+    };
+    const fromProfile = connectionIntentFromProfile(profile);
+    expect(fromProfile.tsshd?.udpMode).toBe('QUIC');
+    const q = new URLSearchParams(connectionIntentToQuery(fromProfile));
+    expect(q.get('udpMode')).toBe('QUIC');
+    expect(connectionIntentFromQuery(q)?.tsshd?.udpMode).toBe('QUIC');
   });
 });

@@ -3,7 +3,7 @@ import { NasshCommandBridge } from '../ssh/NasshCommandBridge';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
 import { isKnownHostReadyForConnect } from '../ssh/nasshKnownHosts';
 import { buildTsshdBootstrapCommand, parseTsshdOutput, type TsshdServerInfo } from './bootstrapCommand';
-import type { TsshdBootstrapResult, TsshdUdpMode } from './types';
+import { TSSHD_DEFAULT_UDP_MODE, type TsshdBootstrapResult, type TsshdUdpMode } from './types';
 
 class CaptureTerminal implements TerminalSink {
   private static readonly MAX_SCAN = 1 << 16;
@@ -68,7 +68,7 @@ async function runTsshdBootstrapPreflight(spec: ConnectionIntent): Promise<void>
 export async function createTsshdSession(spec: ConnectionIntent): Promise<TsshdBootstrapResult> {
   await runTsshdBootstrapPreflight(spec);
 
-  const udpMode: TsshdUdpMode = spec.tsshd?.udpMode ?? 'KCP';
+  const udpMode: TsshdUdpMode = spec.tsshd?.udpMode ?? TSSHD_DEFAULT_UDP_MODE;
   const terminal = new CaptureTerminal();
   const command = buildTsshdBootstrapCommand(udpMode, {
     tsshdPath: spec.tsshd?.tsshdPath,

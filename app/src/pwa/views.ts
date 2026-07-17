@@ -270,9 +270,8 @@ const GEAR_SVG = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" st
 const PENCIL_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>`;
 const PLUS_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>`;
 const CHEVRON_DOWN_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"></path></svg>`;
-// Launcher brand mark: a terminal tile with a prompt chevron + cursor. Neutral
-// (no accent) so it obeys the Color-Means-Status rule.
-const BRAND_MARK = `<svg width="30" height="30" viewBox="0 0 30 30" fill="none" aria-hidden="true"><rect x="1.25" y="1.25" width="27.5" height="27.5" rx="8" fill="rgba(255,255,255,0.04)" stroke="currentColor" stroke-opacity="0.18"></rect><path d="M9 11.5 12.5 15 9 18.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M15 18.5h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>`;
+// Launcher brand mark: the maskable app icon (neon CRT ghost).
+const BRAND_MARK = `<img class="home-mark-img" src="/icons/icon-96.png" width="30" height="30" alt="" draggable="false">`;
 const SEARCH_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>`;
 const KEY_SVG = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"></circle><path d="m10.5 12.5 7-7"></path><path d="m17 4 3 3"></path><path d="m14 7 3 3"></path></svg>`;
 
@@ -1130,6 +1129,8 @@ type ConnFormValues = {
   port: number;
   protocol: 'ssh' | 'et' | 'mosh' | 'tsshd';
   etPort?: number;
+  /** tsshd UDP mode; only set when protocol is `tsshd`. */
+  tsshdUdpMode?: 'QUIC' | 'KCP';
   settingsProfileId?: string;
   name: string;
   keyText: string;
@@ -1168,6 +1169,15 @@ async function buildConnectionResult(
     cacheIdentityPassphrase(identityId, values.passphrase);
   }
 
+  const tsshd =
+    values.protocol === 'tsshd'
+      ? {
+          udpMode: values.tsshdUdpMode ?? 'KCP',
+          tsshdPortRange: existing?.tsshd?.tsshdPortRange,
+          tsshdPath: existing?.tsshd?.tsshdPath,
+        }
+      : undefined;
+
   if (save) {
     const profile: Profile = {
       ...existing,
@@ -1177,6 +1187,7 @@ async function buildConnectionResult(
       host: values.host,
       port: values.port,
       etPort: values.etPort,
+      tsshd,
       username: values.user,
       identityId,
       settingsProfileId: values.settingsProfileId,
@@ -1190,6 +1201,7 @@ async function buildConnectionResult(
     hostname: values.host,
     port: values.port,
     etPort: values.etPort,
+    tsshd,
     identityId,
     settingsProfileId: values.settingsProfileId,
     args: [],
@@ -1208,6 +1220,8 @@ function connectionFieldsHTML(existing?: Profile): string {
       : '';
   const proto = existing?.protocol ?? 'ssh';
   const sel = (value: string): string => (proto === value ? 'selected' : '');
+  const udpMode = existing?.tsshd?.udpMode === 'QUIC' ? 'QUIC' : 'KCP';
+  const udpSel = (value: string): string => (udpMode === value ? 'selected' : '');
   const nameValue = existing && existing.name !== formatConnectionTarget(profileToSpec(existing)) ? existing.name : '';
   return `
     <label class="field"><span>name — optional</span><input name="name" maxlength="${PROFILE_NAME_MAX_LENGTH}" value="${escapeHTML(normalizeProfileName(nameValue))}" placeholder="defaults to user@host" autocomplete="off" spellcheck="false"></label>
@@ -1218,6 +1232,7 @@ function connectionFieldsHTML(existing?: Profile): string {
     </div>
     <label class="field"><span>protocol</span><select name="protocol"><option value="ssh" ${sel('ssh')}>SSH</option><option value="et" ${sel('et')}>Eternal Terminal</option><option value="mosh" ${sel('mosh')}>Mosh</option><option value="tsshd" ${sel('tsshd')}>tsshd</option></select></label>
     <label class="field" data-et-port hidden><span>ET port</span><input name="etPort" type="number" min="1" max="65535" value="${existing?.etPort ?? 2022}"></label>
+    <label class="field" data-tsshd-mode hidden><span>UDP mode</span><select name="udpMode"><option value="KCP" ${udpSel('KCP')}>KCP</option><option value="QUIC" ${udpSel('QUIC')}>QUIC</option></select></label>
     ${spField}
     <div class="key-section">
       <button type="button" class="key-toggle" data-key-toggle aria-expanded="false">
@@ -1241,10 +1256,10 @@ function connectionFieldsHTML(existing?: Profile): string {
 }
 
 /**
- * Wire the shared connection fields inside `form`: protocol-conditional ET port,
- * the collapsible key block, the styled file picker, and the reveal-passphrase
- * behavior. Returns the values getter the submit handlers use. Pure DOM glue —
- * no submit logic, which differs between the inline form and the modal.
+ * Wire the shared connection fields inside `form`: protocol-conditional ET port /
+ * tsshd UDP mode, the collapsible key block, the styled file picker, and the
+ * reveal-passphrase behavior. Returns the values getter the submit handlers use.
+ * Pure DOM glue — no submit logic, which differs between the inline form and the modal.
  */
 function wireConnectionFields(form: HTMLFormElement): { readValues: () => ConnFormValues; openKeySection: () => void } {
   const keyArea = form.querySelector<HTMLTextAreaElement>('[name="key"]')!;
@@ -1252,11 +1267,15 @@ function wireConnectionFields(form: HTMLFormElement): { readValues: () => ConnFo
   const passField = form.querySelector<HTMLElement>('[data-pass]')!;
   const protocolField = form.querySelector<HTMLSelectElement>('[name="protocol"]')!;
   const etPortField = form.querySelector<HTMLElement>('[data-et-port]')!;
+  const tsshdModeField = form.querySelector<HTMLElement>('[data-tsshd-mode]')!;
   const keyToggle = form.querySelector<HTMLButtonElement>('[data-key-toggle]')!;
   const keyBody = form.querySelector<HTMLElement>('[data-key-body]')!;
   const keyFileName = form.querySelector<HTMLElement>('[data-keyfile-name]')!;
 
-  const syncProtocol = (): void => { etPortField.hidden = protocolField.value !== 'et'; };
+  const syncProtocol = (): void => {
+    etPortField.hidden = protocolField.value !== 'et';
+    tsshdModeField.hidden = protocolField.value !== 'tsshd';
+  };
   protocolField.addEventListener('change', syncProtocol);
   syncProtocol();
 
@@ -1284,6 +1303,7 @@ function wireConnectionFields(form: HTMLFormElement): { readValues: () => ConnFo
       port: Number(data.get('port') ?? 22) || 22,
       protocol,
       etPort: protocol === 'et' ? Number(data.get('etPort') ?? 2022) || 2022 : undefined,
+      tsshdUdpMode: protocol === 'tsshd' ? (data.get('udpMode') === 'QUIC' ? 'QUIC' : 'KCP') : undefined,
       settingsProfileId: String(data.get('sp') ?? '').trim() || undefined,
       name: normalizeProfileName(data.get('name')) || `${user}@${host}`,
       keyText: String(data.get('key') ?? '').trim(),

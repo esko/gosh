@@ -84,8 +84,9 @@ export function normalizeConnectionIntent<T extends LaunchConnectionIntent>(inte
 }
 
 export function connectionIntentFromProfile(profile: Profile): ConnectionIntent {
+  const protocol = profile.protocol ?? 'ssh';
   return normalizeConnectionIntent({
-    protocol: profile.protocol ?? 'ssh',
+    protocol,
     username: profile.username,
     hostname: profile.host,
     port: profile.port,
@@ -96,6 +97,7 @@ export function connectionIntentFromProfile(profile: Profile): ConnectionIntent 
     identityId: profile.identityId,
     settingsProfileId: profile.settingsProfileId,
     startupCommand: profile.startupCommand,
+    ...(protocol === 'tsshd' ? { tsshd: profile.tsshd } : {}),
   });
 }
 

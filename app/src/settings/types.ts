@@ -38,6 +38,15 @@ export type Profile = {
   port: number;
   /** Eternal Terminal daemon port; `port` remains the SSH bootstrap port. */
   etPort?: number;
+  /**
+   * tsshd UDP transport options; only meaningful when protocol is `tsshd`.
+   * `udpMode` selects QUIC (upstream default) or KCP.
+   */
+  tsshd?: {
+    udpMode?: 'QUIC' | 'KCP';
+    tsshdPortRange?: string;
+    tsshdPath?: string;
+  };
   username: string;
   identityId?: string;
   connectionArgs?: string;

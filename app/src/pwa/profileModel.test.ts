@@ -91,6 +91,23 @@ describe('profile to terminal query mapping', () => {
       etPort: 2022,
     });
   });
+
+  it('round-trips tsshd QUIC udpMode through profile and query', () => {
+    const profile: Profile = {
+      id: 'tsshd-profile',
+      name: 'QUIC host',
+      protocol: 'tsshd',
+      host: 'example.com',
+      port: 22,
+      username: 'alice',
+      tsshd: { udpMode: 'QUIC' },
+    };
+    const query = specToQuery(profileToSpec(profile));
+    expect(specFromQuery(new URLSearchParams(query))).toMatchObject({
+      protocol: 'tsshd',
+      tsshd: { udpMode: 'QUIC' },
+    });
+  });
 });
 
 describe('layoutSpecKey', () => {

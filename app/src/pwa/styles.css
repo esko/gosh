@@ -711,8 +711,12 @@ html.app-chrome .term-launcher .launch {
   color: var(--muted);
 }
 
-.home-mark svg {
+.home-mark-img {
   display: block;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  object-fit: cover;
 }
 
 .home-wordmark {
