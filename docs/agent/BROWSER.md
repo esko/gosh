@@ -5,7 +5,7 @@ Gosh browser tabs embed third-party web content with the Chromium **Controlled F
 ## Opening a browser tab
 
 - **Tab strip:** click the **⌄** menu on the new-tab control → **New browser tab**, **New mixed tab (side by side)**, or **New mixed tab (stacked)** (terminal + browser split; requires a connected spec on an existing terminal tab)
-- **Command palette:** `Ctrl+Shift+P` → **New browser tab**, **New mixed tab (side by side)**, **New mixed tab (stacked)**, **Split browser beside terminal**, or **Split browser below terminal** (convert active terminal tab)
+- **Command palette:** `Ctrl+Shift+P` → **New browser tab**, **New mixed tab (side by side)**, **New mixed tab (stacked)**, **Split browser beside terminal**, or **Split browser below terminal** (convert active terminal tab). On a mixed tab: **Split terminal right/down** or **Split browser right/down**.
 
 The address bar supports back, forward, reload, and stop. Enter a URL or hostname to navigate.
 
@@ -107,7 +107,7 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 ## Known limitations
 
 - No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
-- Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; `pane.zoom` toggles maximize for the focused mixed leaf (`Ctrl+Shift+Z` in the UI, same as Restty pane zoom on terminal-only tabs)
+- Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; the same split targets are available from the command palette and terminal context menu. `Ctrl+Shift+E` / `Ctrl+Shift+D` split a new terminal leaf when a terminal leaf is focused. `pane.zoom` toggles maximize for the focused mixed leaf (`Ctrl+Shift+Z` in the UI, same as Restty pane zoom on terminal-only tabs)
 - Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
 - Browser tabs are not restored from `sessionStorage` tab layout
 - No `newwindow` / `dialog` automation yet

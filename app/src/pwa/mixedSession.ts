@@ -140,6 +140,31 @@ export function splitMixedLayoutLeaf(
   return splitLeaf(layout, leafId, direction, newSurface);
 }
 
+export type MixedPaneRef = {
+  paneId: string;
+  surface: 'terminal' | 'browser';
+};
+
+/** Active pane (and optional surface override) for a mixed-tab `pane.split`. */
+export function resolveMixedSplitTarget(
+  tabId: string,
+  panes: ReadonlyArray<{ paneId: string; tabId: string; active?: boolean; surface: 'terminal' | 'browser' }>,
+  requestedSurface?: 'terminal' | 'browser',
+): MixedPaneRef | null {
+  const pane = panes.find((p) => p.tabId === tabId && p.active);
+  if (!pane) return null;
+  return { paneId: pane.paneId, surface: requestedSurface ?? pane.surface };
+}
+
+/** Restty split keys on mixed tabs only split when a terminal leaf is focused. */
+export function mixedSplitAllowedForKeyboard(
+  activePane: { surface: 'terminal' | 'browser' } | null | undefined,
+  requestedSurface?: 'terminal' | 'browser',
+): boolean {
+  if (requestedSurface !== undefined) return true;
+  return activePane?.surface === 'terminal';
+}
+
 export function focusMixedLeafDom(container: HTMLElement, leaf: MixedLeafState): void {
   if (leaf.surface === 'terminal') {
     leaf.terminal?.focus();

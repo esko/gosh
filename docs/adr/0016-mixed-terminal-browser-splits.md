@@ -39,6 +39,7 @@ Alternatives considered:
 - **Convert:** command palette → **Split browser beside terminal** (vertical) or **Split browser below terminal** (horizontal) on an active terminal tab.
 - Divider drag and `Ctrl+Alt+Arrow` resize adjust the Gosh split ratio; `Ctrl+Shift+Arrow` moves focus between leaves; `Ctrl+Shift+W` closes the focused mixed leaf (promotes surviving leaf to a single-kind tab when one remains).
 - **Zoom:** `Ctrl+Shift+Z` toggles maximize for the focused mixed leaf (same binding as Restty pane zoom on terminal-only tabs). Restores prior split ratios on toggle.
+- **Split:** command palette or terminal context menu → **Split terminal right/down** or **Split browser right/down** on an active mixed tab. `Ctrl+Shift+E` / `Ctrl+Shift+D` split a new **terminal** leaf when a terminal leaf is focused (same keys as Restty on terminal-only tabs).
 
 ### Serialization and restore
 
@@ -65,7 +66,6 @@ Alternatives considered:
 ## Follow-up
 
 - Drag-reorder leaves
-- Keyboard/UI shortcuts for mixed `pane.split` (agent RPC is implemented)
 - Pure browser-only tab restore (mixed and terminal tabs restore today)
 
 ## References
