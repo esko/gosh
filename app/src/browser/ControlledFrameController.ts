@@ -1,8 +1,13 @@
 import { handleBrowserPermissionRequest } from './policies';
 import { BrowserAutomation } from './BrowserAutomation';
 import type {
+  BrowserDialogType,
+  ControlledFrameDialogController,
+  ControlledFrameDialogEvent,
   ControlledFrameElementLike,
   ControlledFrameLoadEvent,
+  ControlledFrameNewWindowController,
+  ControlledFrameNewWindowEvent,
   ControlledFramePermissionRequestEvent,
 } from './controlledFrameTypes';
 
@@ -16,11 +21,26 @@ export type ControlledFrameNavState = {
   failureReason?: string;
 };
 
+export type BrowserDialogRequest = {
+  messageType: BrowserDialogType;
+  messageText: string;
+};
+
+export type BrowserNewWindowRequest = {
+  targetUrl: string;
+  name: string;
+  disposition?: string;
+};
+
 export type ControlledFrameControllerOptions = {
   tabId?: string;
+  paneId?: string;
   initialUrl?: string;
   onStateChange?: (state: ControlledFrameNavState) => void;
+  onDialog?: (request: BrowserDialogRequest) => void;
+  onNewWindow?: (request: BrowserNewWindowRequest) => void;
   sleep?: (ms: number) => Promise<void>;
+  pendingTimeoutMs?: number;
 };
 
 type StateListener = (state: ControlledFrameNavState) => void;
@@ -32,6 +52,23 @@ const DEFAULT_STATE: ControlledFrameNavState = {
   canGoBack: false,
   canGoForward: false,
   failed: false,
+};
+
+export const BROWSER_PENDING_TIMEOUT_MS = 30_000;
+
+type PendingDialog = {
+  messageType: BrowserDialogType;
+  messageText: string;
+  controller: ControlledFrameDialogController;
+  timeout: ReturnType<typeof setTimeout>;
+};
+
+type PendingNewWindow = {
+  targetUrl: string;
+  name: string;
+  disposition?: string;
+  controller: ControlledFrameNewWindowController;
+  timeout: ReturnType<typeof setTimeout>;
 };
 
 export function normalizeBrowserUrl(input: string): string {
@@ -46,15 +83,23 @@ export class ControlledFrameController {
   private state: ControlledFrameNavState = { ...DEFAULT_STATE };
   private readonly listeners = new Set<StateListener>();
   private readonly onStateChange?: (state: ControlledFrameNavState) => void;
+  private readonly onDialog?: (request: BrowserDialogRequest) => void;
+  private readonly onNewWindow?: (request: BrowserNewWindowRequest) => void;
+  private readonly pendingTimeoutMs: number;
   readonly automation: BrowserAutomation | null;
   private disposed = false;
   private readonly handlers: Record<string, EventListener>;
+  private pendingDialog: PendingDialog | null = null;
+  private pendingNewWindow: PendingNewWindow | null = null;
 
   constructor(
     private readonly element: ControlledFrameElementLike,
     options?: ControlledFrameControllerOptions,
   ) {
     this.onStateChange = options?.onStateChange;
+    this.onDialog = options?.onDialog;
+    this.onNewWindow = options?.onNewWindow;
+    this.pendingTimeoutMs = options?.pendingTimeoutMs ?? BROWSER_PENDING_TIMEOUT_MS;
     this.automation = options?.tabId
       ? new BrowserAutomation(element, {
           tabId: options.tabId,
@@ -69,6 +114,8 @@ export class ControlledFrameController {
       loadstop: () => this.onLoadStop(),
       loadabort: (event) => this.onLoadAbort(event as ControlledFrameLoadEvent),
       permissionrequest: (event) => this.onPermissionRequest(event as ControlledFramePermissionRequestEvent),
+      dialog: (event) => this.onDialogEvent(event as ControlledFrameDialogEvent),
+      newwindow: (event) => this.onNewWindowEvent(event as ControlledFrameNewWindowEvent),
     };
     for (const [type, handler] of Object.entries(this.handlers)) {
       element.addEventListener(type, handler);
@@ -94,6 +141,46 @@ export class ControlledFrameController {
 
   getTitle(): string {
     return this.state.title;
+  }
+
+  hasPendingDialog(): boolean {
+    return this.pendingDialog !== null;
+  }
+
+  hasPendingNewWindow(): boolean {
+    return this.pendingNewWindow !== null;
+  }
+
+  handleDialog(action: 'accept' | 'dismiss', promptText?: string): { handled: boolean } {
+    this.assertAlive();
+    const pending = this.pendingDialog;
+    if (!pending) return { handled: false };
+    this.clearPendingDialog();
+    if (action === 'accept') {
+      acceptDialog(pending.controller, promptText);
+    } else {
+      cancelDialog(pending.controller);
+    }
+    return { handled: true };
+  }
+
+  handleNewWindow(
+    action: 'deny' | 'open-tab',
+    urlOverride?: string,
+    openTab?: (url: string) => string | null,
+  ): { handled: boolean; tabId?: string } {
+    this.assertAlive();
+    const pending = this.pendingNewWindow;
+    if (!pending) return { handled: false };
+    this.clearPendingNewWindow();
+    const url = urlOverride?.trim() ? normalizeBrowserUrl(urlOverride) : pending.targetUrl;
+    if (action === 'open-tab' && openTab) {
+      const tabId = openTab(url) ?? undefined;
+      discardNewWindow(pending.controller);
+      return { handled: true, tabId };
+    }
+    discardNewWindow(pending.controller);
+    return { handled: true };
   }
 
   navigate(url: string): void {
@@ -156,11 +243,77 @@ export class ControlledFrameController {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.dismissPendingDialog();
+    this.discardPendingNewWindow();
     for (const [type, handler] of Object.entries(this.handlers)) {
       this.element.removeEventListener(type, handler);
     }
     this.element.stop?.();
     this.listeners.clear();
+  }
+
+  private onDialogEvent(event: ControlledFrameDialogEvent): void {
+    const dialogMessage = event.dialogMessage;
+    const messageType = event.messageType ?? dialogMessage?.messageType ?? 'alert';
+    const messageText = event.messageText ?? dialogMessage?.messageText ?? '';
+    const controller = event.dialog ?? dialogMessage?.dialog;
+    if (!controller) {
+      return;
+    }
+    this.dismissPendingDialog();
+    const pending: PendingDialog = {
+      messageType,
+      messageText,
+      controller,
+      timeout: setTimeout(() => this.dismissPendingDialog(), this.pendingTimeoutMs),
+    };
+    this.pendingDialog = pending;
+    this.onDialog?.({ messageType, messageText });
+  }
+
+  private onNewWindowEvent(event: ControlledFrameNewWindowEvent): void {
+    const details = event.newWindow;
+    const targetUrl = details?.targetUrl ?? event.targetUrl ?? '';
+    const name = details?.name ?? event.name ?? '';
+    const disposition = details?.windowOpenDisposition ?? event.windowOpenDisposition;
+    const controller = details?.window ?? event.window;
+    if (!controller) return;
+    this.discardPendingNewWindow();
+    const pending: PendingNewWindow = {
+      targetUrl,
+      name,
+      disposition,
+      controller,
+      timeout: setTimeout(() => this.discardPendingNewWindow(), this.pendingTimeoutMs),
+    };
+    this.pendingNewWindow = pending;
+    this.onNewWindow?.({ targetUrl, name, disposition });
+  }
+
+  private dismissPendingDialog(): void {
+    const pending = this.pendingDialog;
+    if (!pending) return;
+    this.clearPendingDialog();
+    cancelDialog(pending.controller);
+  }
+
+  private discardPendingNewWindow(): void {
+    const pending = this.pendingNewWindow;
+    if (!pending) return;
+    this.clearPendingNewWindow();
+    discardNewWindow(pending.controller);
+  }
+
+  private clearPendingDialog(): void {
+    if (!this.pendingDialog) return;
+    clearTimeout(this.pendingDialog.timeout);
+    this.pendingDialog = null;
+  }
+
+  private clearPendingNewWindow(): void {
+    if (!this.pendingNewWindow) return;
+    clearTimeout(this.pendingNewWindow.timeout);
+    this.pendingNewWindow = null;
   }
 
   private onLoadStart(event: ControlledFrameLoadEvent): void {
@@ -224,6 +377,22 @@ export class ControlledFrameController {
   private assertAlive(): void {
     if (this.disposed) throw new Error('ControlledFrameController was disposed');
   }
+}
+
+function acceptDialog(controller: ControlledFrameDialogController, response?: string): void {
+  if (typeof controller.okay === 'function') {
+    controller.okay(response);
+    return;
+  }
+  controller.ok?.(response);
+}
+
+function cancelDialog(controller: ControlledFrameDialogController): void {
+  controller.cancel?.();
+}
+
+function discardNewWindow(controller: ControlledFrameNewWindowController): void {
+  controller.discard?.();
 }
 
 function titleForUrl(url: string): string {

@@ -160,6 +160,41 @@ export class AgentControlService {
     });
   }
 
+  /** Controlled Frame alert/confirm/prompt (opaque tab / pane ids; message text only). */
+  noteBrowserDialog(
+    tabId: string,
+    request: { messageType: 'alert' | 'confirm' | 'prompt'; messageText: string },
+    paneId?: string,
+  ): void {
+    const tab = this.registry.getTab(tabId);
+    if (!tab || (tab.kind !== 'browser' && tab.kind !== 'mixed')) return;
+    this.events.emit('browser.dialog', {
+      windowId: this.registry.windowId,
+      tabId,
+      paneId,
+      dialogType: request.messageType,
+      message: request.messageText,
+    });
+  }
+
+  /** Controlled Frame window.open / target=_blank (opaque tab / pane ids). */
+  noteBrowserNewWindow(
+    tabId: string,
+    request: { targetUrl: string; name: string; disposition?: string },
+    paneId?: string,
+  ): void {
+    const tab = this.registry.getTab(tabId);
+    if (!tab || (tab.kind !== 'browser' && tab.kind !== 'mixed')) return;
+    this.events.emit('browser.newwindow', {
+      windowId: this.registry.windowId,
+      tabId,
+      paneId,
+      url: request.targetUrl,
+      name: request.name,
+      windowOpenDisposition: request.disposition,
+    });
+  }
+
   getCurrentCommand(paneId: string): CommandRecord | null {
     return this.commandTracker.getCurrentCommand(paneId);
   }
@@ -421,6 +456,54 @@ export class AgentControlService {
     const { host, target } = resolved.value;
     try {
       return agentOk({ tabId: target.tabId, paneId: target.paneId, title: host.getTitle(target) });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  browserHandleDialog(
+    input: BrowserRpcInput & { action: 'accept' | 'dismiss'; promptText?: string },
+  ): AgentResult<{ tabId: string; paneId?: string; handled: boolean }> {
+    const resolved = this.resolveBrowserTarget(input);
+    if (!resolved.ok) return resolved;
+    if (input.action !== 'accept' && input.action !== 'dismiss') {
+      return agentErr('invalid-argument', 'action must be accept or dismiss');
+    }
+    if (input.promptText !== undefined && typeof input.promptText !== 'string') {
+      return agentErr('invalid-argument', 'promptText must be a string');
+    }
+    const { host, target } = resolved.value;
+    try {
+      const result = host.handleDialog(target, {
+        action: input.action,
+        promptText: input.promptText,
+      });
+      return agentOk({ tabId: target.tabId, paneId: target.paneId, handled: result.handled });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  browserHandleNewWindow(
+    input: BrowserRpcInput & { action: 'deny' | 'open-tab'; url?: string },
+  ): AgentResult<{ tabId: string; paneId?: string; handled: boolean; openedTabId?: string }> {
+    const resolved = this.resolveBrowserTarget(input);
+    if (!resolved.ok) return resolved;
+    if (input.action !== 'deny' && input.action !== 'open-tab') {
+      return agentErr('invalid-argument', 'action must be deny or open-tab');
+    }
+    if (input.url !== undefined && typeof input.url !== 'string') {
+      return agentErr('invalid-argument', 'url must be a string');
+    }
+    const { host, target } = resolved.value;
+    try {
+      const result = host.handleNewWindow(target, { action: input.action, url: input.url });
+      return agentOk({
+        tabId: target.tabId,
+        paneId: target.paneId,
+        handled: result.handled,
+        openedTabId: result.tabId,
+      });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }

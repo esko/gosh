@@ -416,6 +416,49 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
       printJson(result);
       return 0;
     }
+
+    if (action === 'handle-dialog') {
+      const { flags } = parseFlags(parsed.rest, {
+        ...browserFlags,
+        action: 'string',
+        'prompt-text': 'string',
+      });
+      const target = parseBrowserTarget(flags);
+      const dialogAction = flags.action;
+      if (dialogAction !== 'accept' && dialogAction !== 'dismiss') {
+        throw new Error('--action must be accept or dismiss');
+      }
+      const params: AgentRpcParams['browser.handleDialog'] = {
+        ...target,
+        action: dialogAction,
+      };
+      if (typeof flags['prompt-text'] === 'string') params.promptText = flags['prompt-text'];
+      const result = await withClient(parsed, (client) => client.call('browser.handleDialog', params));
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'handle-newwindow') {
+      const { flags, positional, passthrough } = parseFlags(parsed.rest, {
+        ...browserFlags,
+        action: 'string',
+        url: 'string',
+      });
+      const target = parseBrowserTarget(flags);
+      const windowAction = flags.action;
+      if (windowAction !== 'deny' && windowAction !== 'open-tab') {
+        throw new Error('--action must be deny or open-tab');
+      }
+      const params: AgentRpcParams['browser.handleNewWindow'] = {
+        ...target,
+        action: windowAction,
+      };
+      const url = typeof flags.url === 'string' ? flags.url : passthrough[0] ?? positional[0];
+      if (typeof url === 'string') params.url = url;
+      const result = await withClient(parsed, (client) => client.call('browser.handleNewWindow', params));
+      printJson(result);
+      return 0;
+    }
   }
 
   if (group === 'events') {

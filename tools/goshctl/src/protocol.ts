@@ -71,6 +71,8 @@ export type AgentMethodName =
   | 'browser.press'
   | 'browser.getUrl'
   | 'browser.getTitle'
+  | 'browser.handleDialog'
+  | 'browser.handleNewWindow'
   | 'events.subscribe';
 
 export type AgentRpcParams = {
@@ -107,6 +109,18 @@ export type AgentRpcParams = {
   'browser.press': { tabId?: string; paneId?: string; ref: string; key: string };
   'browser.getUrl': { tabId?: string; paneId?: string };
   'browser.getTitle': { tabId?: string; paneId?: string };
+  'browser.handleDialog': {
+    tabId?: string;
+    paneId?: string;
+    action: 'accept' | 'dismiss';
+    promptText?: string;
+  };
+  'browser.handleNewWindow': {
+    tabId?: string;
+    paneId?: string;
+    action: 'deny' | 'open-tab';
+    url?: string;
+  };
   'events.subscribe': { types?: string[] };
 };
 

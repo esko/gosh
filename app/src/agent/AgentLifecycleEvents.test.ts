@@ -141,4 +141,33 @@ describe('Agent lifecycle events', () => {
     expect(events[1]?.failureReason).toBe('stopped');
     resetAgentControl();
   });
+
+  it('emits browser.dialog and browser.newwindow from note helpers', () => {
+    const registry = new WorkspaceRegistry({ windowId: 'win_browser' });
+    const tabId = registry.openTab({ kind: 'browser', title: 'Browser' });
+    const service = new AgentControlService({ registry, host: null });
+    const events: Array<{ type: string; dialogType?: string; message?: string; url?: string; name?: string }> =
+      [];
+    service.subscribe((event) => {
+      events.push({
+        type: event.type,
+        dialogType: event.dialogType,
+        message: event.message,
+        url: event.url,
+        name: event.name,
+      });
+    });
+
+    service.noteBrowserDialog(tabId, { messageType: 'confirm', messageText: 'OK?' });
+    service.noteBrowserNewWindow(tabId, {
+      targetUrl: 'https://popup.test',
+      name: '_blank',
+      disposition: 'new_foreground_tab',
+    });
+
+    expect(events).toEqual([
+      { type: 'browser.dialog', dialogType: 'confirm', message: 'OK?' },
+      { type: 'browser.newwindow', url: 'https://popup.test', name: '_blank' },
+    ]);
+  });
 });

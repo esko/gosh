@@ -9,10 +9,13 @@ import { browserStoragePartition } from './policies';
 
 export type BrowserSessionOptions = {
   tabId: string;
+  paneId?: string;
   container: HTMLElement;
   initialUrl?: string;
   onTitleChange?: (title: string) => void;
   onAgentNavState?: (state: ControlledFrameNavState) => void;
+  onDialog?: (request: { messageType: 'alert' | 'confirm' | 'prompt'; messageText: string }) => void;
+  onNewWindow?: (request: { targetUrl: string; name: string; disposition?: string }) => void;
   createElement?: (partition: string) => ControlledFrameElementLike;
 };
 
@@ -27,7 +30,7 @@ const RELOAD_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="curr
 const STOP_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>';
 
 export function mountBrowserSession(options: BrowserSessionOptions): BrowserSessionHandle {
-  const { tabId, container, initialUrl, onTitleChange, onAgentNavState, createElement = createControlledFrameElement } = options;
+  const { tabId, paneId, container, initialUrl, onTitleChange, onAgentNavState, onDialog, onNewWindow, createElement = createControlledFrameElement } = options;
   container.className = 'term-session term-browser';
   container.replaceChildren();
 
@@ -96,6 +99,7 @@ export function mountBrowserSession(options: BrowserSessionOptions): BrowserSess
 
   const controller = new ControlledFrameController(frame, {
     tabId,
+    paneId,
     initialUrl,
     onStateChange: (state) => {
       urlInput.value = state.url === 'about:blank' ? '' : state.url;
@@ -113,6 +117,8 @@ export function mountBrowserSession(options: BrowserSessionOptions): BrowserSess
       onTitleChange?.(state.title);
       onAgentNavState?.(state);
     },
+    onDialog,
+    onNewWindow,
   });
 
   urlForm.addEventListener('submit', (event) => {

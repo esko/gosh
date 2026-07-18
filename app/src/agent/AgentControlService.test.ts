@@ -191,6 +191,8 @@ describe('AgentControlService', () => {
       press: vi.fn(async () => undefined),
       getUrl: vi.fn(() => 'https://example.com'),
       getTitle: vi.fn(() => 'Example'),
+      handleDialog: vi.fn(() => ({ handled: true })),
+      handleNewWindow: vi.fn(() => ({ handled: true })),
     };
     const service = new AgentControlService({ registry, host: null, browserHost });
     expect(service.capabilities().methods.browserNavigate.available).toBe(true);
@@ -235,6 +237,8 @@ describe('AgentControlService browser pane targeting', () => {
       press: vi.fn(async () => undefined),
       getUrl: vi.fn((target: { leafId?: string }) => controllers.get(target.leafId!)?.getUrl() ?? ''),
       getTitle: vi.fn((target: { leafId?: string }) => controllers.get(target.leafId!)?.getTitle() ?? ''),
+      handleDialog: vi.fn(() => ({ handled: true })),
+      handleNewWindow: vi.fn(() => ({ handled: true, tabId: 'tab_opened' })),
     };
     const service = new AgentControlService({ registry, host: null, browserHost });
     return { registry, service, tabId, paneA, paneB, browserHost, controllers };
@@ -301,6 +305,8 @@ describe('AgentControlService browser pane targeting', () => {
         press: vi.fn(async () => undefined),
         getUrl: vi.fn(() => ''),
         getTitle: vi.fn(() => ''),
+        handleDialog: vi.fn(() => ({ handled: false })),
+        handleNewWindow: vi.fn(() => ({ handled: false })),
       },
     });
     const result = service.browserGetUrl({ paneId });
@@ -316,6 +322,26 @@ describe('AgentControlService browser pane targeting', () => {
     service.subscribe((event) => events.push({ type: event.type, paneId: event.paneId }));
     service.browserNavigate({ paneId: paneA, url: 'https://event.test' });
     expect(events).toEqual([{ type: 'browser.navigated', paneId: paneA }]);
+  });
+
+  it('routes browser.handleDialog and browser.handleNewWindow through BrowserHost', () => {
+    const { service, tabId, paneB, browserHost } = mixedBrowserSetup();
+    const dialog = service.browserHandleDialog({ paneId: paneB, action: 'accept', promptText: 'yes' });
+    expect(dialog).toEqual({ ok: true, value: { tabId, paneId: paneB, handled: true } });
+    expect(browserHost.handleDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ tabId, paneId: paneB }),
+      { action: 'accept', promptText: 'yes' },
+    );
+
+    const opened = service.browserHandleNewWindow({ paneId: paneB, action: 'open-tab' });
+    expect(opened).toEqual({
+      ok: true,
+      value: { tabId, paneId: paneB, handled: true, openedTabId: 'tab_opened' },
+    });
+    expect(browserHost.handleNewWindow).toHaveBeenCalledWith(
+      expect.objectContaining({ tabId, paneId: paneB }),
+      { action: 'open-tab', url: undefined },
+    );
   });
 });
 

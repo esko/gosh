@@ -24,6 +24,10 @@ export class AgentEventBus {
       exitCode?: number | null;
       url?: string;
       failureReason?: string;
+      dialogType?: 'alert' | 'confirm' | 'prompt';
+      message?: string;
+      name?: string;
+      windowOpenDisposition?: string;
     },
   ): AgentEvent {
     const event: AgentEvent = {
@@ -37,6 +41,10 @@ export class AgentEventBus {
       exitCode: payload.exitCode,
       url: payload.url,
       failureReason: payload.failureReason,
+      dialogType: payload.dialogType,
+      message: payload.message,
+      name: payload.name,
+      windowOpenDisposition: payload.windowOpenDisposition,
     };
     for (const listener of this.listeners) {
       try {

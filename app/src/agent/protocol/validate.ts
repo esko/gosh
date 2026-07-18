@@ -261,11 +261,50 @@ function validateMethodParams(
       if (!url.ok) return url;
       return { ok: true, params: { tabId: target.tabId, paneId: target.paneId, url: url.value } };
     }
-    case 'browser.back':
-    case 'browser.forward':
-    case 'browser.reload':
     case 'browser.getUrl':
     case 'browser.getTitle': {
+      if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId } };
+    }
+    case 'browser.handleDialog': {
+      if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
+      const action = params.action;
+      if (action !== 'accept' && action !== 'dismiss') {
+        return invalidParams(id, 'action must be accept or dismiss');
+      }
+      const promptText = optionalString(params, 'promptText');
+      if (params.promptText !== undefined && promptText === undefined) {
+        return invalidParams(id, 'promptText must be a string');
+      }
+      return {
+        ok: true,
+        params: { tabId: target.tabId, paneId: target.paneId, action, promptText },
+      };
+    }
+    case 'browser.handleNewWindow': {
+      if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
+      const action = params.action;
+      if (action !== 'deny' && action !== 'open-tab') {
+        return invalidParams(id, 'action must be deny or open-tab');
+      }
+      const url = optionalString(params, 'url');
+      if (params.url !== undefined && url === undefined) {
+        return invalidParams(id, 'url must be a string');
+      }
+      return {
+        ok: true,
+        params: { tabId: target.tabId, paneId: target.paneId, action, url },
+      };
+    }
+    case 'browser.back':
+    case 'browser.forward':
+    case 'browser.reload': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
       const target = validateBrowserTarget(id, params);
       if (!target.ok) return target;

@@ -40,6 +40,7 @@ export type AgentSessionRef = {
 export type AgentSessionLookup = {
   findByTabId(tabId: string): AgentSessionRef | undefined;
   sleep(ms: number): Promise<void>;
+  openBrowserTab?: (url: string) => string | null;
   closeMixedPane?: (tabId: string, paneId: string) => boolean;
   focusMixedPane?: (tabId: string, paneId: string) => void;
   resizeMixedPane?: (tabId: string, paneId: string, direction: PaneDirection, amount: number) => boolean;
@@ -334,6 +335,20 @@ export function createBrowserHost(lookup: AgentSessionLookup): BrowserHost {
     getTitle(target) {
       return browserControllerForTarget(requireBrowserSession(target), target).getTitle();
     },
+    handleDialog(target, input) {
+      return browserControllerForTarget(requireBrowserSession(target), target).handleDialog(
+        input.action,
+        input.promptText,
+      );
+    },
+    handleNewWindow(target, input) {
+      const openTab = lookup.openBrowserTab;
+      return browserControllerForTarget(requireBrowserSession(target), target).handleNewWindow(
+        input.action,
+        input.url,
+        openTab ? (url) => openTab(url) : undefined,
+      );
+    },
   };
 }
 
@@ -399,5 +414,18 @@ export function createBrowserAgentStateHook(tabId: string, paneId?: string): (st
       getAgentControlService().noteBrowserLoadFailed(tabId, state.url, state.failureReason, paneId);
     }
     wasFailed = state.failed;
+  };
+}
+
+/** Agent hooks for Controlled Frame dialog / newwindow automation. */
+export function createBrowserAgentHooks(tabId: string, paneId?: string) {
+  return {
+    onAgentNavState: createBrowserAgentStateHook(tabId, paneId),
+    onDialog: (request: { messageType: 'alert' | 'confirm' | 'prompt'; messageText: string }) => {
+      getAgentControlService().noteBrowserDialog(tabId, request, paneId);
+    },
+    onNewWindow: (request: { targetUrl: string; name: string; disposition?: string }) => {
+      getAgentControlService().noteBrowserNewWindow(tabId, request, paneId);
+    },
   };
 }
