@@ -178,9 +178,44 @@ export function createBrowserHost(lookup: AgentSessionLookup): BrowserHost {
     return session.browser;
   };
 
+  const requireAutomation = (tabId: string) => {
+    const controller = requireBrowserTab(tabId);
+    if (!controller.automation) {
+      throw new Error(`Browser automation is not available for tab: ${tabId}`);
+    }
+    return controller.automation;
+  };
+
   return {
     navigate(tabId, url) {
       requireBrowserTab(tabId).navigate(url);
+    },
+    async back(tabId) {
+      return requireBrowserTab(tabId).back();
+    },
+    async forward(tabId) {
+      return requireBrowserTab(tabId).forward();
+    },
+    reload(tabId) {
+      requireBrowserTab(tabId).reload();
+    },
+    async waitFor(tabId, input) {
+      return requireAutomation(tabId).waitFor(input);
+    },
+    async snapshot(tabId, input) {
+      return requireAutomation(tabId).snapshot(input);
+    },
+    async query(tabId, input) {
+      return requireAutomation(tabId).query(input);
+    },
+    async click(tabId, input) {
+      await requireAutomation(tabId).click(input.ref);
+    },
+    async type(tabId, input) {
+      await requireAutomation(tabId).type(input.ref, input.text, { clear: input.clear });
+    },
+    async press(tabId, input) {
+      await requireAutomation(tabId).press(input.ref, input.key);
     },
     getUrl(tabId) {
       return requireBrowserTab(tabId).getUrl();

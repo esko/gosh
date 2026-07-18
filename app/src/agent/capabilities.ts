@@ -25,6 +25,7 @@ export function buildCapabilities(options?: {
         : 'terminalRun is not wired in this build.';
   const browser = options?.hasBrowserHost ?? false;
   const browserReason = browser ? undefined : 'Browser host is not wired.';
+  const browserCap = { available: browser, reason: browserReason };
   return {
     methods: {
       capabilities: { available: true },
@@ -40,9 +41,18 @@ export function buildCapabilities(options?: {
       terminalRead: { available: terminalRead, reason: terminalReadReason },
       terminalRun: { available: terminalRun, reason: terminalRunReason },
       paneDiagnostics: { available: host, reason: hostReason },
-      browserNavigate: { available: browser, reason: browserReason },
-      browserGetUrl: { available: browser, reason: browserReason },
-      browserGetTitle: { available: browser, reason: browserReason },
+      browserNavigate: browserCap,
+      browserBack: browserCap,
+      browserForward: browserCap,
+      browserReload: browserCap,
+      browserWaitFor: browserCap,
+      browserSnapshot: browserCap,
+      browserQuery: browserCap,
+      browserClick: browserCap,
+      browserType: browserCap,
+      browserPress: browserCap,
+      browserGetUrl: browserCap,
+      browserGetTitle: browserCap,
       subscribe: { available: true },
     },
   };

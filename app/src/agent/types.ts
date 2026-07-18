@@ -115,6 +115,15 @@ export type AgentCapabilityMethod =
   | 'terminalRun'
   | 'paneDiagnostics'
   | 'browserNavigate'
+  | 'browserBack'
+  | 'browserForward'
+  | 'browserReload'
+  | 'browserWaitFor'
+  | 'browserSnapshot'
+  | 'browserQuery'
+  | 'browserClick'
+  | 'browserType'
+  | 'browserPress'
   | 'browserGetUrl'
   | 'browserGetTitle'
   | 'subscribe';
@@ -156,9 +165,37 @@ export type PaneHost = {
   isZoomed?(paneId: string): boolean;
 };
 
+import type {
+  BrowserQueryResult,
+  BrowserSnapshotResult,
+  BrowserWaitForResult,
+  BrowserWaitForState,
+} from '../browser/browserAutomationTypes';
+
 /** Imperative seam for browser tabs (Controlled Frame). */
 export type BrowserHost = {
   navigate(tabId: string, url: string): void;
+  back(tabId: string): Promise<boolean>;
+  forward(tabId: string): Promise<boolean>;
+  reload(tabId: string): void;
+  waitFor(
+    tabId: string,
+    input: {
+      selector?: string;
+      text?: string;
+      loadState?: BrowserWaitForState;
+      timeoutMs?: number;
+      pollIntervalMs?: number;
+    },
+  ): Promise<BrowserWaitForResult>;
+  snapshot(tabId: string, input?: { maxNodes?: number; maxBytes?: number }): Promise<BrowserSnapshotResult>;
+  query(
+    tabId: string,
+    input: { role?: string; name?: string; text?: string; selector?: string },
+  ): Promise<BrowserQueryResult>;
+  click(tabId: string, input: { ref: string }): Promise<void>;
+  type(tabId: string, input: { ref: string; text: string; clear?: boolean }): Promise<void>;
+  press(tabId: string, input: { ref: string; key: string }): Promise<void>;
   getUrl(tabId: string): string;
   getTitle(tabId: string): string;
 };

@@ -28,6 +28,8 @@ export type ControlledFrameElementLike = {
   canGoBack?(): boolean;
   canGoForward?(): boolean;
   getTitle?(): string;
+  isLoading?(): boolean;
+  executeScript?(details: { code?: string; files?: string[] }): Promise<unknown>;
   addEventListener(type: string, listener: EventListener): void;
   removeEventListener(type: string, listener: EventListener): void;
 };
