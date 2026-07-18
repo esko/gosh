@@ -730,7 +730,9 @@ export class AgentControlService {
     if (!browser.ok) return browser;
     const tab = this.registry.getTab(tabId);
     if (!tab) return agentErr('not-found', `Unknown tab: ${tabId}`);
-    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${tabId}`);
+    if (tab.kind !== 'browser' && tab.kind !== 'mixed') {
+      return agentErr('invalid-argument', `Tab is not a browser tab: ${tabId}`);
+    }
     return agentOk({ host: browser.value });
   }
 }

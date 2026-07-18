@@ -119,6 +119,20 @@ import {
 import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
+import type { MixedLayoutNode } from '../layout/MixedLayout';
+import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
+import {
+  attachMixedBrowserLeaf,
+  collapseMixedLayout,
+  createMixedLayout,
+  disposeMixedLeaf,
+  focusMixedLeafDom,
+  mountMixedLayout,
+  resizeMixedLeaf,
+  browserLeafId,
+  terminalLeafId,
+  type MixedLeafState,
+} from './mixedSession';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -180,7 +194,7 @@ type PaneConn = {
  */
 type TermSession = {
   id: string;
-  kind: 'launcher' | 'terminal' | 'browser';
+  kind: 'launcher' | 'terminal' | 'browser' | 'mixed';
   spec?: LaunchConnectionIntent;
   title: string;
   status: TerminalTransportStatus;
@@ -190,6 +204,9 @@ type TermSession = {
   terminal?: ResttyTerminalAdapter;
   browser?: ControlledFrameController | null;
   browserDispose?: () => void;
+  mixedLayout?: MixedLayoutNode;
+  mixedMount?: MixedLayoutDomMount | null;
+  mixedLeaves?: Map<string, MixedLeafState>;
   panes: Map<number, PaneConn>;
   paneSubs: TerminalSubscription[];
   appliedFont?: string;
@@ -198,6 +215,42 @@ type TermSession = {
   /** Re-render an in-window launcher tab so host screenshots stay fresh. */
   reloadLauncher?: () => void | Promise<void>;
 };
+
+function primaryTerminal(session: TermSession): ResttyTerminalAdapter | null {
+  if (session.terminal) return session.terminal;
+  if (session.kind === 'mixed' && session.mixedLayout) {
+    const leafId = terminalLeafId(session.mixedLayout);
+    return leafId ? session.mixedLeaves?.get(leafId)?.terminal ?? null : null;
+  }
+  return null;
+}
+
+function focusMixedPaneInDirection(dir: PaneDirection): boolean {
+  const session = activeSession();
+  if (!session || session.kind !== 'mixed' || !session.mixedLayout || session.mixedLayout.kind !== 'split') {
+    return false;
+  }
+  const termLeaf = terminalLeafId(session.mixedLayout);
+  const browserLeaf = browserLeafId(session.mixedLayout);
+  if (!termLeaf || !browserLeaf) return false;
+  const activePane = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active);
+  const onTerminal = activePane?.surface === 'terminal';
+  const { direction } = session.mixedLayout;
+  if (direction === 'vertical') {
+    if (dir === 'right' && onTerminal) focusMixedLeaf(session, browserLeaf);
+    else if (dir === 'left' && !onTerminal) focusMixedLeaf(session, termLeaf);
+    else return false;
+  } else {
+    if (dir === 'down' && onTerminal) focusMixedLeaf(session, browserLeaf);
+    else if (dir === 'up' && !onTerminal) focusMixedLeaf(session, termLeaf);
+    else return false;
+  }
+  return true;
+}
+
+function sessionPaneCount(session: TermSession): number {
+  return getWorkspaceRegistry().listPanes({ tabId: session.id }).length || session.panes.size;
+}
 
 const sessions: TermSession[] = [];
 let statusHideTimer = 0;
@@ -263,8 +316,9 @@ function currentSettings(): PwaTerminalSettings {
  * routes through the styled confirm modal (no native dialog).
  */
 function confirmCloseSession(session: TermSession, onConfirm: () => void): void {
-  if (session.kind !== 'terminal' || !session.spec) return onConfirm(); // launcher / browser: nothing to confirm
-  if (!resolveSettings(session.spec.settingsProfileId).confirmClose || !sessionHasConnectedPane(session)) return onConfirm();
+  if (session.kind !== 'terminal' && session.kind !== 'mixed') return onConfirm();
+  if (session.kind === 'mixed' && !sessionHasConnectedPane(session)) return onConfirm();
+  if (!resolveSettings(session.spec?.settingsProfileId).confirmClose || !sessionHasConnectedPane(session)) return onConfirm();
   openConfirmModal({
     title: 'Close tab',
     body: `Close ${session.title}? The session is still connected.`,
@@ -2384,7 +2438,13 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   // Titlebar hide/show changes --titlebar-h and .term-shell top; refit every
   // session after layout so the PTY grid matches the new viewport.
   const onTitlebarLayout = (): void => {
-    for (const session of sessions) session.terminal?.fit?.();
+    for (const session of sessions) {
+      if (session.kind === 'mixed') {
+        for (const leaf of session.mixedLeaves?.values() ?? []) leaf.terminal?.fit?.();
+      } else {
+        session.terminal?.fit?.();
+      }
+    }
   };
   window.addEventListener(TITLEBAR_LAYOUT_EVENT, onTitlebarLayout);
   const previousCaptionCleanup = captionCleanup;
@@ -2398,6 +2458,9 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   installAgentControl({
     findByTabId: (tabId) => sessions.find((s) => s.id === tabId),
     sleep,
+    closeMixedPane: closeMixedPaneById,
+    focusMixedPane: focusMixedPaneById,
+    resizeMixedPane: resizeMixedPaneById,
   });
   agentControlCleanup?.();
   const disposeControlIndicator = mountAgentControlIndicator(root);
@@ -2434,7 +2497,7 @@ function focusTerminalSessionSoon(session: TermSession): void {
   const id = session.id;
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      if (activeSessionId === id) session.terminal?.focus();
+      if (activeSessionId === id) primaryTerminal(session)?.focus();
     });
   });
 }
@@ -2596,6 +2659,263 @@ function createBrowserTab(initialUrl?: string): TermSession {
   return session;
 }
 
+function focusMixedLeaf(session: TermSession, leafId: string): void {
+  const leaf = session.mixedLeaves?.get(leafId);
+  if (!leaf) return;
+  const reg = getWorkspaceRegistry();
+  const paneId =
+    leaf.surface === 'browser'
+      ? reg.paneIdForLeaf(session.id, leafId)
+      : leaf.terminal
+        ? reg.paneIdForRestty(session.id, leaf.terminal.getActivePaneId())
+        : undefined;
+  if (paneId) reg.setActivePane(paneId);
+  if (leaf.surface === 'terminal' && leaf.terminal) {
+    activeTerminal = leaf.terminal;
+    activeSpec = session.spec ?? null;
+    appliedFontSelection = session.appliedFont ?? null;
+    (window as unknown as { __resttyAdapter?: unknown }).__resttyAdapter = leaf.terminal;
+    leaf.terminal.focus();
+    return;
+  }
+  activeTerminal = null;
+  activeSpec = session.spec ?? null;
+  focusMixedLeafDom(session.container, leaf);
+}
+
+async function wireMixedTerminalLeaf(
+  session: TermSession,
+  leafId: string,
+  hostEl: HTMLElement,
+  spec: LaunchConnectionIntent,
+): Promise<void> {
+  const resumeEtSessionId = spec.etSessionId;
+  const connectSpec = { ...spec, etSessionId: undefined };
+  const settings = resolveSettings(connectSpec.settingsProfileId);
+  await ensureTerminalFontLoaded(settings);
+
+  const surface = document.createElement('main');
+  surface.className = 'term-surface mixed-terminal-surface';
+  surface.setAttribute('aria-label', 'Terminal');
+  hostEl.append(surface);
+
+  const terminal = await ResttyTerminalAdapter.create(surface, settings);
+  surface.dataset.renderer = 'restty';
+
+  const titleSub = terminal.onTitle((value) => {
+    session.title = value.trim() || formatConnectionTarget(connectSpec);
+    getWorkspaceRegistry().setTabTitle(session.id, session.title);
+    if (session.id === activeSessionId) document.title = session.title;
+    scheduleTabRender();
+  });
+
+  terminal.setAppearance?.(settings);
+  session.mixedLeaves!.set(leafId, { leafId, surface: 'terminal', terminal, titleSub });
+  session.spec = connectSpec;
+  session.status = 'connecting';
+  session.resumeEtSessionId = resumeEtSessionId;
+  session.appliedFont = fontStackKey(settings);
+
+  session.paneSubs.push(terminal.onPaneClose((id) => closePaneConn(session, id)));
+  session.paneSubs.push(terminal.onPaneOpen((sink) => void openPaneConn(session, sink, leafId)));
+  session.paneSubs.push(wireTerminalOsc133(session.id, terminal));
+  session.paneSubs.push(
+    terminal.onActivePaneChange((resttyId) => {
+      const paneId = getWorkspaceRegistry().paneIdForRestty(session.id, resttyId);
+      if (paneId) getWorkspaceRegistry().setActivePane(paneId);
+    }),
+  );
+
+  await recordConnection(connectSpec);
+  terminal.fit?.();
+}
+
+/** Open a mixed tab: terminal left, Controlled Frame browser right (ADR 0016). */
+async function createMixedTab(spec: LaunchConnectionIntent): Promise<TermSession> {
+  const container = document.createElement('div');
+  container.className = 'term-session term-mixed';
+  sessionsHost!.append(container);
+  const title = formatConnectionTarget(spec);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'mixed', title });
+  const { layout, terminalLeafId, browserLeafId } = createMixedLayout(tabId, 'vertical');
+  const mixedLeaves = new Map<string, MixedLeafState>();
+  const session: TermSession = {
+    id: tabId,
+    kind: 'mixed',
+    spec,
+    title,
+    status: 'connecting',
+    statusError: undefined,
+    container,
+    panes: new Map(),
+    paneSubs: [],
+    titleSub: null,
+    mixedLayout: layout,
+    mixedLeaves,
+    mixedMount: null,
+  };
+  sessions.push(session);
+  session.mixedMount = mountMixedLayout(
+    container,
+    layout,
+    (next) => {
+      session.mixedLayout = next;
+    },
+    (leaf) => focusMixedLeaf(session, leaf),
+  );
+  await wireMixedTerminalLeaf(session, terminalLeafId, session.mixedMount.leafHosts.get(terminalLeafId)!, spec);
+  attachMixedBrowserLeaf(
+    getWorkspaceRegistry(),
+    tabId,
+    mixedLeaves,
+    browserLeafId,
+    session.mixedMount.leafHosts.get(browserLeafId)!,
+  );
+  renderTabs();
+  return session;
+}
+
+/** Convert the active terminal tab into a mixed layout with a browser leaf beside it. */
+async function splitBrowserBesideActiveTerminal(direction: 'vertical' | 'horizontal' = 'vertical'): Promise<boolean> {
+  const session = activeSession();
+  if (!session || session.kind !== 'terminal' || !session.terminal || !session.spec || !session.surface) return false;
+
+  const { layout, terminalLeafId, browserLeafId } = createMixedLayout(session.id, direction);
+  const mixedLeaves = new Map<string, MixedLeafState>();
+  session.kind = 'mixed';
+  session.mixedLayout = layout;
+  session.mixedLeaves = mixedLeaves;
+  session.container.classList.add('term-mixed');
+  session.mixedMount = mountMixedLayout(
+    session.container,
+    layout,
+    (next) => {
+      session.mixedLayout = next;
+    },
+    (leaf) => focusMixedLeaf(session, leaf),
+  );
+
+  const termHost = session.mixedMount.leafHosts.get(terminalLeafId)!;
+  termHost.append(session.surface);
+  mixedLeaves.set(terminalLeafId, {
+    leafId: terminalLeafId,
+    surface: 'terminal',
+    terminal: session.terminal,
+    titleSub: session.titleSub,
+  });
+  session.surface = undefined;
+  session.terminal = undefined;
+  session.titleSub = null;
+
+  attachMixedBrowserLeaf(
+    getWorkspaceRegistry(),
+    session.id,
+    mixedLeaves,
+    browserLeafId,
+    session.mixedMount.leafHosts.get(browserLeafId)!,
+  );
+  getWorkspaceRegistry().setTabKind(session.id, 'mixed');
+  renderTabs();
+  focusMixedLeaf(session, terminalLeafId);
+  return true;
+}
+
+function promoteMixedToTerminal(session: TermSession, leafId: string): void {
+  const leaf = session.mixedLeaves?.get(leafId);
+  if (!leaf || leaf.surface !== 'terminal' || !leaf.terminal) return;
+  const leafHost = session.container.querySelector<HTMLElement>(`[data-mixed-leaf-id="${leafId}"]`);
+  session.kind = 'terminal';
+  session.terminal = leaf.terminal;
+  session.surface = leafHost?.querySelector<HTMLElement>('.mixed-terminal-surface') ?? undefined;
+  session.titleSub = leaf.titleSub ?? null;
+  session.mixedLayout = undefined;
+  session.mixedMount?.dispose();
+  session.mixedMount = undefined;
+  session.mixedLeaves = undefined;
+  session.container.classList.remove('term-mixed');
+  session.container.replaceChildren();
+  if (leafHost) session.container.append(leafHost.firstElementChild ?? leafHost);
+  getWorkspaceRegistry().setTabKind(session.id, 'terminal');
+}
+
+function promoteMixedToBrowser(session: TermSession, leafId: string): void {
+  const leaf = session.mixedLeaves?.get(leafId);
+  if (!leaf || leaf.surface !== 'browser') return;
+  const leafHost = session.container.querySelector<HTMLElement>(`[data-mixed-leaf-id="${leafId}"]`);
+  session.kind = 'browser';
+  session.browser = leaf.browser ?? null;
+  session.browserDispose = leaf.browserDispose;
+  session.mixedLayout = undefined;
+  session.mixedMount?.dispose();
+  session.mixedMount = undefined;
+  session.mixedLeaves = undefined;
+  session.container.className = 'term-session term-browser';
+  session.container.replaceChildren();
+  if (leafHost) session.container.append(leafHost);
+  getWorkspaceRegistry().setTabKind(session.id, 'browser');
+}
+
+function closeMixedPaneById(tabId: string, paneId: string): boolean {
+  const session = sessions.find((s) => s.id === tabId);
+  if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout || !session.mixedLeaves) {
+    return false;
+  }
+  const pane = getWorkspaceRegistry().getPane(paneId);
+  if (!pane || pane.tabId !== tabId) return false;
+  const leafId =
+    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  if (!leafId) return false;
+
+  if (pane.surface === 'terminal' && pane.resttyPaneId !== undefined) {
+    const leaf = session.mixedLeaves.get(leafId);
+    if (leaf?.terminal) leaf.terminal.closePaneById(pane.resttyPaneId);
+    closePaneConn(session, pane.resttyPaneId, { allowEmpty: true });
+  } else if (pane.surface === 'browser') {
+    getWorkspaceRegistry().closePane(paneId);
+    disposeMixedLeaf(session.mixedLeaves, leafId);
+  }
+
+  const next = collapseMixedLayout(session.mixedMount, session.mixedLayout, leafId);
+  if (!next) {
+    closeSession(session);
+    return true;
+  }
+  session.mixedLayout = next;
+  if (next.kind === 'leaf') {
+    if (next.surface === 'terminal') promoteMixedToTerminal(session, next.leafId);
+    else promoteMixedToBrowser(session, next.leafId);
+  }
+  renderTabs();
+  return true;
+}
+
+function focusMixedPaneById(tabId: string, paneId: string): void {
+  const session = sessions.find((s) => s.id === tabId);
+  if (!session || session.kind !== 'mixed' || !session.mixedLayout) return;
+  const pane = getWorkspaceRegistry().getPane(paneId);
+  if (!pane) return;
+  const leafId =
+    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  if (leafId) focusMixedLeaf(session, leafId);
+}
+
+function resizeMixedPaneById(
+  tabId: string,
+  paneId: string,
+  direction: PaneDirection,
+  amount: number,
+): boolean {
+  const session = sessions.find((s) => s.id === tabId);
+  if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout) return false;
+  const pane = getWorkspaceRegistry().getPane(paneId);
+  if (!pane) return false;
+  const leafId =
+    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  if (!leafId) return false;
+  const step = Math.max(0.01, Math.min(0.25, amount / 100));
+  return resizeMixedLeaf(session.mixedMount, session.mixedLayout, leafId, direction, step);
+}
+
 /** Upgrade a launcher tab to a live terminal once its host is chosen. */
 async function connectLauncherTab(session: TermSession, spec: LaunchConnectionIntent): Promise<void> {
   if (session.kind === 'terminal') return; // already connected (double pick)
@@ -2606,11 +2926,13 @@ async function connectLauncherTab(session: TermSession, spec: LaunchConnectionIn
 }
 
 /** Bind a fresh transport to a newly opened restty pane (split or first pane). */
-async function openPaneConn(session: TermSession, sink: ResttyPaneSink): Promise<void> {
+async function openPaneConn(session: TermSession, sink: ResttyPaneSink, leafId?: string): Promise<void> {
   if (session.panes.has(sink.paneId)) return;
   getWorkspaceRegistry().openPane({
     tabId: session.id,
+    surface: 'terminal',
     resttyPaneId: sink.paneId,
+    leafId,
     active: true,
   });
   const conn: PaneConn = {
@@ -2673,7 +2995,7 @@ function replacePaneTransport(session: TermSession, conn: PaneConn): void {
 }
 
 /** Tear down a closed restty pane's transport; the last pane closing ends the tab. */
-function closePaneConn(session: TermSession, paneId: number): void {
+function closePaneConn(session: TermSession, paneId: number, options?: { allowEmpty?: boolean }): void {
   const conn = session.panes.get(paneId);
   if (!conn) return;
   session.panes.delete(paneId);
@@ -2685,7 +3007,21 @@ function closePaneConn(session: TermSession, paneId: number): void {
   session.statusError = paneStatusError(session);
   if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
   scheduleTabRender();
-  if (session.panes.size === 0) closeSession(session);
+  if (session.panes.size === 0) {
+    if (session.kind === 'mixed' && session.mixedLayout && options?.allowEmpty) {
+      const termLeaf = terminalLeafId(session.mixedLayout);
+      if (termLeaf) {
+        disposeMixedLeaf(session.mixedLeaves!, termLeaf);
+        const next = collapseMixedLayout(session.mixedMount!, session.mixedLayout, termLeaf);
+        if (next?.kind === 'leaf' && next.surface === 'browser') {
+          session.mixedLayout = next;
+          promoteMixedToBrowser(session, next.leafId);
+        }
+      }
+      return;
+    }
+    if (session.kind !== 'mixed') closeSession(session);
+  }
 }
 
 function onPaneStatus(session: TermSession, paneId: number, state: TerminalTransportStatus, error?: string, meta?: SessionStatusMeta): void {
@@ -2732,7 +3068,7 @@ function onPaneStatus(session: TermSession, paneId: number, state: TerminalTrans
     window.setTimeout(() => {
       if (conn.reconnecting || !session.panes.has(paneId)) return;
       if (session.panes.size <= 1) closeSession(session);
-      else session.terminal?.closePaneById(paneId);
+      else primaryTerminal(session)?.closePaneById(paneId);
     }, 700);
   }
 }
@@ -2763,7 +3099,7 @@ function beginSessionPreviewHandoff(active: TermSession, previous: TermSession |
   active.container.style.zIndex = '1';
   for (const s of sessions) {
     if (s.id === active.id) continue;
-    if (previous && s.id === previous.id && previous.terminal) {
+    if (previous && s.id === previous.id && primaryTerminal(previous)) {
       s.container.hidden = false;
       s.container.style.zIndex = '0';
       s.container.style.pointerEvents = 'none';
@@ -2802,8 +3138,8 @@ function setActiveSession(id: string): void {
   // Capture the leaving terminal while it still has layout; hide it after.
   // When landing on a launcher tab, reload host screenshots only after that
   // capture persists — otherwise the cards re-render with the previous blob.
-  const leavingTerminal = previous && previous.id !== id ? previous : null;
-  if (leavingTerminal?.terminal) {
+  const leavingTerminal = previous && previous.id !== id && primaryTerminal(previous) ? previous : null;
+  if (leavingTerminal && primaryTerminal(leavingTerminal)) {
     beginSessionPreviewHandoff(session, leavingTerminal);
     void refreshSessionPreview(leavingTerminal).finally(() => {
       finishSessionPreviewHandoff(leavingTerminal, id);
@@ -2815,10 +3151,31 @@ function setActiveSession(id: string): void {
       s.container.hidden = s.id !== id;
     });
   }
-  activeTerminal = session.terminal ?? null;
+  activeTerminal = primaryTerminal(session);
   activeSpec = session.spec ?? null;
   appliedFontSelection = session.appliedFont ?? null;
-  (window as unknown as { __resttyAdapter?: unknown }).__resttyAdapter = session.terminal;
+  (window as unknown as { __resttyAdapter?: unknown }).__resttyAdapter = activeTerminal;
+
+  if (session.kind === 'mixed' && session.mixedLayout) {
+    const settings = session.spec ? resolveSettings(session.spec.settingsProfileId) : currentSettings();
+    applyPwaAppearance(settings);
+    const palette = getThemePalette(settings.theme);
+    setThemeColor(palette.background);
+    applyTerminalChromeColors(palette);
+    document.title = session.title;
+    updateSharedStatus(session, tabStatus(session), session.statusError);
+    renderTabs();
+    saveTabLayout();
+    const activePaneId = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active)?.paneId;
+    const activePane = activePaneId ? getWorkspaceRegistry().getPane(activePaneId) : undefined;
+    const focusLeaf =
+      activePane?.leafId ??
+      (activePane?.surface === 'browser' ? browserLeafId(session.mixedLayout) : undefined) ??
+      terminalLeafId(session.mixedLayout);
+    if (focusLeaf) focusMixedLeaf(session, focusLeaf);
+    for (const leaf of session.mixedLeaves?.values() ?? []) leaf.terminal?.fit?.();
+    return;
+  }
 
   if (session.kind === 'browser') {
     setThemeColor('#202124');
@@ -2876,6 +3233,17 @@ function closeSession(session: TermSession): void {
   if (index < 0) return;
   tabPreviewCache.revoke(session.id);
   session.titleSub?.dispose();
+  if (session.mixedLeaves) {
+    for (const leaf of session.mixedLeaves.values()) {
+      leaf.titleSub?.dispose();
+      leaf.browserDispose?.();
+      leaf.terminal?.dispose();
+    }
+    session.mixedLeaves.clear();
+  }
+  session.mixedMount?.dispose();
+  session.mixedMount = undefined;
+  session.mixedLayout = undefined;
   session.paneSubs.forEach((sub) => sub.dispose());
   session.paneSubs = [];
   session.browserDispose?.();
@@ -2901,6 +3269,11 @@ function closeSession(session: TermSession): void {
     renderTabs();
     saveTabLayout();
   }
+}
+
+async function openMixedTab(spec: LaunchConnectionIntent): Promise<void> {
+  const session = await createMixedTab(spec);
+  setActiveSession(session.id);
 }
 
 async function openTab(spec: LaunchConnectionIntent): Promise<void> {
@@ -2957,21 +3330,23 @@ function paneStatusError(session: TermSession): string | undefined {
 }
 
 async function refreshSessionPreview(session: TermSession | null | undefined): Promise<void> {
-  if (!session?.terminal) return;
-  const existing = previewCaptureInflight.get(session.id);
+  if (!session) return;
+  const target = session;
+  const terminal = primaryTerminal(target);
+  if (!terminal) return;
+  const existing = previewCaptureInflight.get(target.id);
   if (existing) return existing;
   let work!: Promise<void>;
   work = (async () => {
-    const blob = await session.terminal!.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
-    if (blob && sessions.includes(session)) {
-      tabPreviewCache.set(session.id, blob);
-      // Persist before callers (e.g. launcher reload) re-read IndexedDB.
-      if (session.spec) await saveHostScreenshot(hostTargetKey(session.spec), blob).catch(() => undefined);
+    const blob = await terminal.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
+    if (blob && sessions.includes(target)) {
+      tabPreviewCache.set(target.id, blob);
+      if (target.spec) await saveHostScreenshot(hostTargetKey(target.spec), blob).catch(() => undefined);
     }
   })().finally(() => {
-    if (previewCaptureInflight.get(session.id) === work) previewCaptureInflight.delete(session.id);
+    if (previewCaptureInflight.get(target.id) === work) previewCaptureInflight.delete(target.id);
   });
-  previewCaptureInflight.set(session.id, work);
+  previewCaptureInflight.set(target.id, work);
   return work;
 }
 
@@ -2981,10 +3356,10 @@ function tabOverviewEntry(session: TermSession): TabOverviewEntry {
     id: session.id,
     title: session.title,
     target,
-    protocol: session.spec?.protocol ?? (session.kind === 'terminal' ? 'ssh' : undefined),
+    protocol: session.spec?.protocol ?? (session.kind === 'terminal' || session.kind === 'mixed' ? 'ssh' : undefined),
     kind: session.kind,
     status: tabStatus(session),
-    paneCount: session.panes.size,
+    paneCount: sessionPaneCount(session),
     active: session.id === activeSessionId,
     previewUrl: tabPreviewCache.get(session.id)?.url,
   };
@@ -3005,12 +3380,13 @@ function renderTabs(): void {
     .map((s) => {
       const launcher = s.kind === 'launcher';
       const browser = s.kind === 'browser';
-      const paneCount = s.panes.size;
+      const mixed = s.kind === 'mixed';
+      const paneCount = sessionPaneCount(s);
       const splits = paneCount > 1 ? `<span class="term-tab-panes" title="${paneCount} panes">⊞${paneCount}</span>` : '';
       const status = launcher || browser
         ? ''
         : `<span class="term-tab-status" data-state="${escapeHTML(tabStatus(s))}" aria-hidden="true"></span>`;
-      const tabClass = launcher ? ' term-tab-launcher' : browser ? ' term-tab-browser' : '';
+      const tabClass = launcher ? ' term-tab-launcher' : browser ? ' term-tab-browser' : mixed ? ' term-tab-mixed' : '';
       return `<div class="term-tab${tabClass}" role="tab" draggable="true" data-id="${s.id}" aria-selected="${s.id === activeSessionId}" title="${escapeHTML(s.title)}">
         ${status}
         <span class="term-tab-title">${escapeHTML(s.title)}</span>
@@ -3106,6 +3482,7 @@ async function openNewTabMenu(anchor: HTMLElement): Promise<void> {
   const items: ContextMenuItem[] = [
     { type: 'item', label: 'New tab', onSelect: () => setActiveSession(createLauncherTab().id) },
     { type: 'item', label: 'New browser tab', onSelect: () => setActiveSession(createBrowserTab().id) },
+    { type: 'item', label: 'New mixed tab', disabled: !activeSpec, onSelect: () => activeSpec && void openMixedTab(activeSpec) },
   ];
   if (activeSpec) items.push({ type: 'item', label: 'Duplicate current tab', onSelect: () => activeSpec && void openTab(activeSpec) });
   items.push({ type: 'separator' });
@@ -3131,7 +3508,7 @@ function tabOverviewBadgeHTML(entry: TabOverviewEntry): string {
     ? `<span class="tab-overview-badge">${escapeHTML(entry.protocol === 'et' ? 'ET' : entry.protocol === 'tsshd' ? 'TS' : entry.protocol.toUpperCase())}</span>`
     : '';
   const panes = entry.paneCount > 1 ? `<span class="tab-overview-badge">⊞ ${entry.paneCount}</span>` : '';
-  const statusLabel = entry.kind === 'launcher' ? 'New Tab' : entry.kind === 'browser' ? 'Browser' : entry.status;
+  const statusLabel = entry.kind === 'launcher' ? 'New Tab' : entry.kind === 'browser' ? 'Browser' : entry.kind === 'mixed' ? 'Mixed' : entry.status;
   return `${protocol}${panes}<span class="tab-overview-badge" data-state="${escapeHTML(entry.status)}">${escapeHTML(statusLabel)}</span>`;
 }
 
@@ -3141,7 +3518,7 @@ function tabOverviewCardHTML(entry: TabOverviewEntry, index: number, selected: b
     : `<div class="tab-overview-placeholder"><span>${entry.kind === 'launcher' ? 'New Tab' : entry.kind === 'browser' ? 'Browser' : 'No preview yet'}</span></div>`;
   const subtitle = entry.target && entry.target !== entry.title
     ? entry.target
-    : entry.kind === 'launcher' ? 'Choose a host' : entry.kind === 'browser' ? 'Web' : '';
+    : entry.kind === 'launcher' ? 'Choose a host' : entry.kind === 'browser' ? 'Web' : entry.kind === 'mixed' ? 'Terminal + browser' : '';
   return `<div class="tab-overview-card" role="option" tabindex="${selected ? '0' : '-1'}" data-tab-overview-id="${escapeHTML(entry.id)}" data-index="${index}" aria-selected="${selected}" aria-current="${entry.active ? 'true' : 'false'}">
     <div class="tab-overview-thumb">
       ${preview}
@@ -3271,30 +3648,42 @@ function openTabOverview(): void {
   });
 }
 
-/** Split the focused Restty pane. */
+/** Split the focused Restty pane, or add a browser leaf in mixed tabs. */
 function splitActivePane(direction: 'vertical' | 'horizontal'): boolean {
   const session = activeSession();
-  if (session?.terminal) {
-    session.terminal.split(direction);
+  if (session?.kind === 'terminal') {
+    session.terminal?.split(direction);
     return true;
   }
   return false;
 }
 
-/** Close the focused Restty pane; returns false when there's nothing to close. */
+/** Close the focused pane; mixed tabs close the active Gosh leaf. */
 function closeActivePane(): boolean {
   const session = activeSession();
+  if (session?.kind === 'mixed') {
+    const pane = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active);
+    if (!pane) return false;
+    return closeMixedPaneById(session.id, pane.paneId);
+  }
   return session?.terminal?.closeActivePane() ?? false;
 }
 
 /** Move pane focus spatially (left/right/up/down). */
 function focusPaneInDirection(dir: PaneDirection): boolean {
+  if (focusMixedPaneInDirection(dir)) return true;
   return activeSession()?.terminal?.focusPaneInDirection(dir) ?? false;
 }
 
 /** Grow/shrink the focused pane toward a direction. */
 function resizeActivePane(dir: PaneDirection): boolean {
-  return activeSession()?.terminal?.resizeActivePane(dir) ?? false;
+  const session = activeSession();
+  if (session?.kind === 'mixed') {
+    const pane = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active);
+    if (!pane) return false;
+    return resizeMixedPaneById(session.id, pane.paneId, dir, 6);
+  }
+  return session?.terminal?.resizeActivePane(dir) ?? false;
 }
 
 /** Toggle maximize for the focused pane. */
@@ -3674,6 +4063,18 @@ function buildPaletteCommands(): PaletteCommand[] {
   const commands: PaletteCommand[] = [
     { label: 'New tab', group: 'Tabs', key: '⌃T', run: () => setActiveSession(createLauncherTab().id) },
     { label: 'New browser tab', group: 'Tabs', run: () => setActiveSession(createBrowserTab().id) },
+    {
+      label: 'New mixed tab',
+      group: 'Tabs',
+      disabled: !activeSpec,
+      run: () => activeSpec && void openMixedTab(activeSpec),
+    },
+    {
+      label: 'Split browser beside terminal',
+      group: 'Panes',
+      disabled: session?.kind !== 'terminal' || !session.terminal,
+      run: () => void splitBrowserBesideActiveTerminal('vertical'),
+    },
     { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: openTabOverview },
     { label: 'Duplicate session', group: 'Tabs', disabled: !activeSpec, run: duplicateSession },
     { label: 'Close tab', group: 'Tabs', key: '⌃W', disabled: !session, run: () => { if (session) confirmCloseSession(session, () => closeSession(session)); } },

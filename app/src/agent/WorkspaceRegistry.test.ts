@@ -5,8 +5,8 @@ describe('WorkspaceRegistry', () => {
   it('creates a tab, registers panes, and lists opaque ids', () => {
     const reg = new WorkspaceRegistry({ windowId: 'win_test' });
     const tabId = reg.openTab({ kind: 'terminal', title: 'echo@local' });
-    const paneA = reg.openPane({ tabId, resttyPaneId: 1 });
-    const paneB = reg.openPane({ tabId, resttyPaneId: 2 });
+    const paneA = reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 1 });
+    const paneB = reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 2 });
 
     expect(paneA).not.toBe(paneB);
     expect(paneA.startsWith('pane_')).toBe(true);
@@ -23,8 +23,8 @@ describe('WorkspaceRegistry', () => {
   it('keeps pane ids stable while alive and emits one close event', () => {
     const reg = new WorkspaceRegistry({ windowId: 'win_test' });
     const tabId = reg.openTab({ kind: 'terminal', title: 't' });
-    const paneId = reg.openPane({ tabId, resttyPaneId: 7 });
-    expect(reg.openPane({ tabId, resttyPaneId: 7 })).toBe(paneId);
+    const paneId = reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 7 });
+    expect(reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 7 })).toBe(paneId);
 
     const closed: string[] = [];
     reg.events.subscribe((e) => {
@@ -36,11 +36,26 @@ describe('WorkspaceRegistry', () => {
     expect(reg.listPanes({ tabId })).toEqual([]);
   });
 
+  it('registers mixed terminal and browser panes with surface kind', () => {
+    const reg = new WorkspaceRegistry({ windowId: 'win_mixed' });
+    const tabId = reg.openTab({ kind: 'mixed', title: 'ssh + web' });
+    const termPane = reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 1 });
+    const browserPane = reg.openPane({ tabId, surface: 'browser', leafId: 'leaf_browser' });
+
+    expect(reg.paneIdForLeaf(tabId, 'leaf_browser')).toBe(browserPane);
+    expect(reg.listPanes({ tabId })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ paneId: termPane, surface: 'terminal' }),
+        expect.objectContaining({ paneId: browserPane, surface: 'browser' }),
+      ]),
+    );
+  });
+
   it('closing a tab removes its panes and emits tab.closed', () => {
     const reg = new WorkspaceRegistry();
     const tabId = reg.openTab({ kind: 'terminal', title: 't' });
-    reg.openPane({ tabId, resttyPaneId: 1 });
-    reg.openPane({ tabId, resttyPaneId: 2 });
+    reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 1 });
+    reg.openPane({ tabId, surface: 'terminal', resttyPaneId: 2 });
 
     const types: string[] = [];
     reg.events.subscribe((e) => types.push(e.type));

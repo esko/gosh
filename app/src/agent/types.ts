@@ -15,7 +15,9 @@ export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: AgentE
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 export type SplitDirection = 'vertical' | 'horizontal';
 
-export type TabKind = 'launcher' | 'terminal' | 'browser';
+export type TabKind = 'launcher' | 'terminal' | 'browser' | 'mixed';
+
+export type PaneSurfaceKind = 'terminal' | 'browser';
 
 export type WindowInfo = {
   windowId: string;
@@ -35,6 +37,7 @@ export type PaneInfo = {
   paneId: string;
   tabId: string;
   windowId: string;
+  surface: PaneSurfaceKind;
   active: boolean;
   zoomed: boolean;
 };

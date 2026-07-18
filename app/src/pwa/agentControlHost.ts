@@ -14,20 +14,33 @@ import {
   type TerminalPosition,
 } from '../agent';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
+import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import type { ResttyTerminalAdapter } from './resttyAdapter';
 import type { TerminalSubscription } from '../terminal/TerminalAdapter';
 
-export type AgentSessionRef = {
-  id: string;
-  kind: 'launcher' | 'terminal' | 'browser';
+export type MixedLeafRef = {
+  leafId: string;
+  surface: 'terminal' | 'browser';
   terminal?: ResttyTerminalAdapter | null;
   browser?: ControlledFrameController | null;
+};
+
+export type AgentSessionRef = {
+  id: string;
+  kind: 'launcher' | 'terminal' | 'browser' | 'mixed';
+  terminal?: ResttyTerminalAdapter | null;
+  browser?: ControlledFrameController | null;
+  mixedLeaves?: Map<string, MixedLeafRef>;
+  mixedMount?: MixedLayoutDomMount | null;
   panes: Map<number, { sink: { insertText(data: string): void } }>;
 };
 
 export type AgentSessionLookup = {
   findByTabId(tabId: string): AgentSessionRef | undefined;
   sleep(ms: number): Promise<void>;
+  closeMixedPane?: (tabId: string, paneId: string) => boolean;
+  focusMixedPane?: (tabId: string, paneId: string) => void;
+  resizeMixedPane?: (tabId: string, paneId: string, direction: PaneDirection, amount: number) => boolean;
 };
 
 let registry: WorkspaceRegistry | null = null;
@@ -67,21 +80,35 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
     return session;
   };
 
-  const requireTerminal = (tabId: string): ResttyTerminalAdapter => {
-    const session = requireSession(tabId);
-    if (!session.terminal) throw new Error(`Tab has no terminal: ${tabId}`);
-    return session.terminal;
-  };
-
   const requirePane = (paneId: string) => {
     const pane = reg.getPane(paneId);
     if (!pane) throw new Error(`Unknown pane: ${paneId}`);
     return pane;
   };
 
+  const terminalForPane = (session: AgentSessionRef, pane: ReturnType<typeof requirePane>): ResttyTerminalAdapter => {
+    if (pane.surface !== 'terminal' || pane.resttyPaneId === undefined) {
+      throw new Error(`Pane is not a terminal surface: ${pane.paneId}`);
+    }
+    if (session.kind === 'mixed') {
+      for (const leaf of session.mixedLeaves?.values() ?? []) {
+        if (leaf.surface === 'terminal' && leaf.terminal) return leaf.terminal;
+      }
+      throw new Error(`Mixed tab has no terminal leaf: ${session.id}`);
+    }
+    if (!session.terminal) throw new Error(`Tab has no terminal: ${session.id}`);
+    return session.terminal;
+  };
+
+
   return {
     async split(tabId: string, direction: SplitDirection) {
-      const terminal = requireTerminal(tabId);
+      const session = requireSession(tabId);
+      if (session.kind === 'mixed') {
+        throw new Error('Mixed tabs do not support Restty pane.split yet');
+      }
+      const terminal = session.terminal;
+      if (!terminal) throw new Error(`Tab has no terminal: ${tabId}`);
       const before = new Set(reg.listPanes({ tabId }).map((p) => p.paneId));
       terminal.split(direction);
       const deadline = Date.now() + 5000;
@@ -95,87 +122,124 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
 
     focus(paneId: string) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      terminal.focusPane(pane.resttyPaneId);
+      const session = requireSession(pane.tabId);
+      if (session.kind === 'mixed') {
+        lookup.focusMixedPane?.(pane.tabId, paneId);
+        reg.setActivePane(paneId);
+        return;
+      }
+      const terminal = terminalForPane(session, pane);
+      terminal.focusPane(pane.resttyPaneId!);
       reg.setActivePane(paneId);
     },
 
     resize(paneId: string, direction: PaneDirection, amount: number) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      terminal.focusPane(pane.resttyPaneId);
-      return terminal.resizePaneToward(pane.resttyPaneId, direction, amount);
+      const session = requireSession(pane.tabId);
+      if (session.kind === 'mixed') {
+        return lookup.resizeMixedPane?.(pane.tabId, paneId, direction, amount) ?? false;
+      }
+      const terminal = terminalForPane(session, pane);
+      terminal.focusPane(pane.resttyPaneId!);
+      return terminal.resizePaneToward(pane.resttyPaneId!, direction, amount);
     },
 
     zoom(paneId: string, zoomed?: boolean) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      terminal.focusPane(pane.resttyPaneId);
-      const currently = terminal.isPaneZoomed(pane.resttyPaneId);
+      const session = requireSession(pane.tabId);
+      if (session.kind === 'mixed') {
+        return false;
+      }
+      const terminal = terminalForPane(session, pane);
+      terminal.focusPane(pane.resttyPaneId!);
+      const currently = terminal.isPaneZoomed(pane.resttyPaneId!);
       if (zoomed === undefined) {
-        const ok = terminal.setPaneZoomed(pane.resttyPaneId, !currently);
-        reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId));
+        const ok = terminal.setPaneZoomed(pane.resttyPaneId!, !currently);
+        reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId!));
         return ok;
       }
-      const ok = terminal.setPaneZoomed(pane.resttyPaneId, zoomed);
-      reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId));
+      const ok = terminal.setPaneZoomed(pane.resttyPaneId!, zoomed);
+      reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId!));
       return ok;
     },
 
     close(paneId: string) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      return terminal.closePaneById(pane.resttyPaneId);
+      const session = requireSession(pane.tabId);
+      if (session.kind === 'mixed') {
+        return lookup.closeMixedPane?.(pane.tabId, paneId) ?? false;
+      }
+      const terminal = terminalForPane(session, pane);
+      return terminal.closePaneById(pane.resttyPaneId!);
     },
 
     send(paneId: string, data: string) {
       const pane = requirePane(paneId);
       const session = requireSession(pane.tabId);
-      const conn = session.panes.get(pane.resttyPaneId);
+      const conn = session.panes.get(pane.resttyPaneId!);
       if (!conn) throw new Error(`Pane transport missing: ${paneId}`);
       conn.sink.insertText(data);
     },
 
     paneDiagnostics(paneId: string) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      const osc = terminal.getOsc133State(pane.resttyPaneId);
+      const session = requireSession(pane.tabId);
+      if (pane.surface !== 'terminal') return null;
+      const terminal = terminalForPane(session, pane);
+      const osc = terminal.getOsc133State(pane.resttyPaneId!);
       if (!osc) return null;
       return buildPaneDiagnostics(osc);
     },
 
     readViewport(paneId: string) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      return terminal.captureViewportText(pane.resttyPaneId);
+      const session = requireSession(pane.tabId);
+      const terminal = terminalForPane(session, pane);
+      return terminal.captureViewportText(pane.resttyPaneId!);
     },
 
     readHistory(paneId: string, opts: { lastLines: number }) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      return terminal.captureHistoryText(pane.resttyPaneId, opts);
+      const session = requireSession(pane.tabId);
+      const terminal = terminalForPane(session, pane);
+      return terminal.captureHistoryText(pane.resttyPaneId!, opts);
     },
 
     readRange(paneId: string, opts: { start: TerminalPosition; end: TerminalPosition }) {
       const pane = requirePane(paneId);
-      const terminal = requireTerminal(pane.tabId);
-      return terminal.captureTextRange(pane.resttyPaneId, opts);
+      const session = requireSession(pane.tabId);
+      const terminal = terminalForPane(session, pane);
+      return terminal.captureTextRange(pane.resttyPaneId!, opts);
     },
 
     isZoomed(paneId: string) {
       const pane = requirePane(paneId);
       const session = lookup.findByTabId(pane.tabId);
-      return session?.terminal?.isPaneZoomed(pane.resttyPaneId) ?? reg.getPane(paneId)?.zoomed ?? false;
+      if (session?.kind === 'mixed') return false;
+      return session?.terminal?.isPaneZoomed(pane.resttyPaneId!) ?? reg.getPane(paneId)?.zoomed ?? false;
     },
   };
+}
+
+function browserControllerForTab(session: AgentSessionRef): ControlledFrameController {
+  if (session.kind === 'browser') {
+    if (!session.browser) throw new Error(`Browser tab is not ready: ${session.id}`);
+    return session.browser;
+  }
+  if (session.kind === 'mixed') {
+    for (const leaf of session.mixedLeaves?.values() ?? []) {
+      if (leaf.surface === 'browser' && leaf.browser) return leaf.browser;
+    }
+    throw new Error(`Mixed tab has no browser leaf: ${session.id}`);
+  }
+  throw new Error(`Tab is not a browser surface: ${session.id}`);
 }
 
 export function createBrowserHost(lookup: AgentSessionLookup): BrowserHost {
   const requireBrowserTab = (tabId: string): ControlledFrameController => {
     const session = lookup.findByTabId(tabId);
-    if (!session || session.kind !== 'browser') throw new Error(`Unknown browser tab: ${tabId}`);
-    if (!session.browser) throw new Error(`Browser tab is not ready: ${tabId}`);
-    return session.browser;
+    if (!session) throw new Error(`Unknown tab: ${tabId}`);
+    return browserControllerForTab(session);
   };
 
   const requireAutomation = (tabId: string) => {
