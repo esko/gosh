@@ -19,7 +19,12 @@ export type RemoteImagePasteUploader = {
 
 export type RemoteImagePasteUploaderDeps = {
   connect?: (spec: ConnectionIntent, signal?: AbortSignal) => ReturnType<typeof connectNasshSftpSidecar>;
-  fallback?: typeof uploadViaNasshExec;
+  fallback?: (
+    blob: Blob,
+    signal?: AbortSignal,
+    onProgress?: (progress: RemoteUploadProgress) => void,
+    directory?: string,
+  ) => Promise<string>;
   isSubsystemUnavailable?: typeof isSftpSubsystemUnavailable;
   resolveImagePasteDirectory?: (settingsProfileId?: string) => string;
 };
@@ -31,7 +36,8 @@ export function createRemoteImagePasteUploader(
   const connect =
     deps.connect ?? ((intent, signal) => connectNasshSftpSidecar(intent, signal));
   const fallback =
-    deps.fallback ?? ((file, signal, progress, dir) => uploadViaNasshExec(spec, file, signal, progress, dir));
+    deps.fallback
+    ?? ((file, signal, progress, dir) => uploadViaNasshExec(spec, file, signal, progress, dir));
   const isSubsystemUnavailable = deps.isSubsystemUnavailable ?? isSftpSubsystemUnavailable;
   const resolveImagePasteDirectory =
     deps.resolveImagePasteDirectory
@@ -44,7 +50,7 @@ export function createRemoteImagePasteUploader(
       const directory = resolveImagePasteDirectory(spec.settingsProfileId);
       uploader ??= new RemoteImageUploader({
         connect: (signal) => connect(spec, signal),
-        fallback: (file, signal, progress, dir) => fallback(spec, file, signal, progress, dir),
+        fallback,
         isSubsystemUnavailable,
       });
       return uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);

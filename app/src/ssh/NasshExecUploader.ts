@@ -71,7 +71,7 @@ export async function uploadViaNasshExec(
       let output = '';
       const onAbort = () => rejectResult(signal?.reason);
       const timeout = window.setTimeout(() => rejectResult(new Error('SSH upload timed out.')), 120_000);
-      const offOutput = session!.sink.onOutput((chunk) => {
+      const offOutput = session!.sink.onOutput((chunk: string) => {
         output = (output + chunk).slice(-16_384);
         const match = /IWA_UPLOAD_OK:([A-Za-z0-9+/=]+)/.exec(output);
         if (!match) return;

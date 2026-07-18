@@ -1,5 +1,8 @@
 node_modules/
 dist/
+# Vendored Restty ships only a prebuilt dist (file: dependency); keep it for CI.
+!vendor/restty/dist/
+!vendor/restty/dist/**
 pages/
 *.swbn
 *.pem

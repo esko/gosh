@@ -65,7 +65,7 @@ describe('createRemoteImagePasteUploader', () => {
     });
 
     await expect(uploader.uploadFile(new Blob(['x'], { type: 'image/png' }))).resolves.toBe('/fallback/image.png');
-    expect(fallback).toHaveBeenCalledWith(spec, expect.any(Blob), undefined, undefined, '.cache/gosh/pastes');
+    expect(fallback).toHaveBeenCalledWith(expect.any(Blob), undefined, undefined, '.cache/gosh/pastes');
   });
 
   it('disposes the underlying uploader channel', async () => {
