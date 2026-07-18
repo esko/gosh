@@ -2,6 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { WorkspaceRegistry } from './WorkspaceRegistry';
 
 describe('WorkspaceRegistry', () => {
+  it('emits window.opened on construction and window.closed on closeWindow', () => {
+    const reg = new WorkspaceRegistry({ windowId: 'win_lifecycle' });
+    expect(reg.events.lastSeq).toBe(1);
+    const types: string[] = [];
+    reg.events.subscribe((event) => types.push(event.type));
+    reg.closeWindow();
+    expect(types).toEqual(['window.closed']);
+    reg.closeWindow();
+    expect(types).toEqual(['window.closed']);
+    expect(reg.events.lastSeq).toBe(2);
+  });
+
   it('creates a tab, registers panes, and lists opaque ids', () => {
     const reg = new WorkspaceRegistry({ windowId: 'win_test' });
     const tabId = reg.openTab({ kind: 'terminal', title: 'echo@local' });

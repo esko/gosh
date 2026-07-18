@@ -13,7 +13,7 @@ import {
   type SplitDirection,
   type TerminalPosition,
 } from '../agent';
-import type { ControlledFrameController } from '../browser/ControlledFrameController';
+import type { ControlledFrameController, ControlledFrameNavState } from '../browser/ControlledFrameController';
 import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import type { ResttyTerminalAdapter } from './resttyAdapter';
 import type { TerminalSubscription } from '../terminal/TerminalAdapter';
@@ -60,10 +60,13 @@ export function getAgentControlService(): AgentControlService {
 
 /** Reset singletons (unit tests / terminal route remount). */
 export function resetAgentControl(): void {
+  registry?.closeWindow();
   registry = null;
   service = null;
-  const win = window as unknown as { __goshAgent?: AgentControlService };
-  delete win.__goshAgent;
+  if (typeof window !== 'undefined') {
+    const win = window as unknown as { __goshAgent?: AgentControlService };
+    delete win.__goshAgent;
+  }
 }
 
 /** @deprecated Use {@link resetAgentControl}. */
@@ -297,6 +300,9 @@ export function installAgentControl(lookup: AgentSessionLookup): AgentControlSer
   agent.setBrowserHost(createBrowserHost(lookup));
   const win = window as unknown as { __goshAgent?: AgentControlService };
   win.__goshAgent = agent;
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pagehide', () => registry?.closeWindow());
+  }
   return agent;
 }
 
@@ -329,4 +335,15 @@ export function wireTerminalOsc133(tabId: string, terminal: ResttyTerminalAdapte
 export function notifyPaneDisconnected(tabId: string, resttyPaneId: number): void {
   const paneId = getWorkspaceRegistry().paneIdForRestty(tabId, resttyPaneId);
   if (paneId) getAgentControlService().notePaneDisconnected(paneId);
+}
+
+/** Forward Controlled Frame navigation failures into the agent event bus. */
+export function createBrowserAgentStateHook(tabId: string): (state: ControlledFrameNavState) => void {
+  let wasFailed = false;
+  return (state) => {
+    if (state.failed && !wasFailed && state.failureReason) {
+      getAgentControlService().noteBrowserLoadFailed(tabId, state.url, state.failureReason);
+    }
+    wasFailed = state.failed;
+  };
 }

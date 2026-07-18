@@ -4,6 +4,7 @@
 
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
 import { mountBrowserSession } from '../browser/BrowserSession';
+import { createBrowserAgentStateHook } from './agentControlHost';
 import {
   createTwoPaneLayout,
   removeLeaf,
@@ -62,7 +63,11 @@ export function attachMixedBrowserLeaf(
   const leafContainer = document.createElement('div');
   leafContainer.className = 'term-browser mixed-browser-leaf';
   hostEl.append(leafContainer);
-  const handle = mountBrowserSession({ tabId, container: leafContainer });
+  const handle = mountBrowserSession({
+    tabId,
+    container: leafContainer,
+    onAgentNavState: createBrowserAgentStateHook(tabId),
+  });
   leaves.set(leafId, {
     leafId,
     surface: 'browser',

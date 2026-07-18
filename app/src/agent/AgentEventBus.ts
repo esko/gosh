@@ -23,6 +23,7 @@ export class AgentEventBus {
       commandId?: string;
       exitCode?: number | null;
       url?: string;
+      failureReason?: string;
     },
   ): AgentEvent {
     const event: AgentEvent = {
@@ -35,6 +36,7 @@ export class AgentEventBus {
       commandId: payload.commandId,
       exitCode: payload.exitCode,
       url: payload.url,
+      failureReason: payload.failureReason,
     };
     for (const listener of this.listeners) {
       try {

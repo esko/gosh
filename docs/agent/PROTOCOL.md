@@ -88,6 +88,28 @@ Success result shape:
 
 Push events `terminal.command.started` and `terminal.command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`. `browser.navigated` fires after agent-driven `browser.navigate`, successful `browser.back` / `browser.forward`, or `browser.reload`.
 
+### Event stream (`events.push`)
+
+All events share `{ seq, type, at, windowId }` with monotonic `seq`. Optional fields are opaque ids and primitives only (no DOM or transport handles).
+
+| Event | Extra fields |
+|-------|----------------|
+| `window.opened` | — |
+| `window.closed` | — |
+| `tab.opened` | `tabId` |
+| `tab.closed` | `tabId` |
+| `pane.opened` | `tabId`, `paneId` |
+| `pane.closed` | `tabId`, `paneId` |
+| `pane.focused` | `tabId`, `paneId` |
+| `pane.resized` | `tabId`, `paneId` |
+| `terminal.command.started` | `tabId`, `paneId`, `commandId` |
+| `terminal.command.completed` | `tabId`, `paneId`, `commandId`, `exitCode` |
+| `terminal.disconnected` | `tabId`, `paneId` |
+| `browser.navigated` | `tabId`, `url` |
+| `browser.load.failed` | `tabId`, `url`, `failureReason` |
+
+`window.opened` is emitted when the workspace registry boots (one IWA terminal window). `window.closed` is emitted on teardown (`resetAgentControl` / `pagehide`). `terminal.disconnected` fires when a pane transport disconnects. `browser.load.failed` fires on Controlled Frame `loadabort` or navigation failure.
+
 ### `browser.snapshot`
 
 Returns a bounded semantic representation of the active browser tab (Controlled Frame). Nodes include temporary `ref` ids (`e1`, `e2`, …), implicit/explicit `role`, accessible `name`, visible `text`, link `href`, and form control state. Password and secret autocomplete fields redact `value` as `[redacted]`. Refs invalidate after navigation; reuse after `browser.back`, `browser.navigate`, or reload yields `invalid-argument`.
