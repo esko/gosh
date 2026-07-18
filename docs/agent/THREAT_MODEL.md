@@ -160,7 +160,7 @@ Clients should **re-list panes** after layout changes and include `tabId` + `pan
 | **Client cap** | Max 4 simultaneous connections |
 | **Slow subscriber** | Event push paused if client backlog > 64 KiB |
 
-**Gaps:** Audit is in-memory only (lost on reload). No per-method owner approval prompts. No UI to view audit log yet (entries available via `getAgentControlAuditLog()` for future Settings/debug).
+**Gaps:** Audit is in-memory only (lost on reload). No per-method owner approval prompts. Settings → Security shows the recent ring; authenticated clients may also call read-only `agent.audit.list`.
 
 ### Stored credential handling (pairing token, IndexedDB)
 

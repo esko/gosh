@@ -74,4 +74,5 @@ export type AgentRpcResult = {
   'terminal.read': { data: string; truncated?: boolean };
   'terminal.run': { exitCode: number; stdout: string; stderr: string };
   'events.subscribe': EventsSubscribeResult;
+  'agent.audit.list': { entries: import('../security/AuditLog').AuditEntry[] };
 };

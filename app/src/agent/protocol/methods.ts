@@ -32,6 +32,7 @@ export const AGENT_METHODS = [
   'browser.getUrl',
   'browser.getTitle',
   'events.subscribe',
+  'agent.audit.list',
 ] as const;
 
 export type AgentMethodName = (typeof AGENT_METHODS)[number];
@@ -80,4 +81,5 @@ export type AgentRpcParams = {
   'browser.getUrl': { tabId?: string; paneId?: string };
   'browser.getTitle': { tabId?: string; paneId?: string };
   'events.subscribe': { types?: string[] };
+  'agent.audit.list': Record<string, never>;
 };
