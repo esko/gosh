@@ -100,6 +100,15 @@ export async function dispatchAgentRpc(
           types: (params as AgentRpcParams['events.subscribe']).types,
         },
       };
+    case 'agent.audit.list':
+      return {
+        ok: false,
+        response: {
+          jsonrpc: '2.0',
+          error: makeRpcError(-32603, 'agent.audit.list must be handled by ControlServer'),
+          id: requestId,
+        },
+      };
     default: {
       const _exhaustive: never = method;
       return {

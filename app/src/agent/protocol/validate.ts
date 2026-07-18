@@ -390,6 +390,13 @@ function validateMethodParams(
       }
       return { ok: true, params: { types: types as string[] | undefined } };
     }
+    case 'agent.audit.list': {
+      if (params === undefined) return { ok: true, params: empty };
+      if (!isPlainObject(params) || Object.keys(params).length > 0) {
+        return invalidParams(id, 'params must be an empty object or omitted');
+      }
+      return { ok: true, params: empty };
+    }
     default: {
       const _exhaustive: never = method;
       return invalidParams(id, `Unhandled method: ${String(_exhaustive)}`);

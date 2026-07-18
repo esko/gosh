@@ -121,6 +121,30 @@ describe('ControlServer', () => {
     await close();
   });
 
+  it('returns audit entries via agent.audit.list without logging the read', async () => {
+    const audit = new AuditRing();
+    const server = createServer(createService(), 'pair-token', audit);
+    const { transport, clientWrite, clientRead, close } = createDuplex();
+    server.attachConnection(transport);
+
+    await clientWrite({ jsonrpc: JSONRPC_VERSION, method: AUTH_METHOD, params: { token: 'pair-token' }, id: 1 });
+    await clientRead();
+
+    await clientWrite({ jsonrpc: JSONRPC_VERSION, method: 'workspace.listTabs', id: 2 });
+    await clientRead();
+
+    await clientWrite({ jsonrpc: JSONRPC_VERSION, method: 'agent.audit.list', id: 3 });
+    const response = JSON.parse((await clientRead()).trim());
+    expect(response.result.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ method: 'gosh.authenticate', ok: true }),
+        expect.objectContaining({ method: 'workspace.listTabs', ok: true }),
+      ]),
+    );
+    expect(audit.list().some((entry) => entry.method === 'agent.audit.list')).toBe(false);
+    await close();
+  });
+
   it('rejects wrong pairing tokens', async () => {
     const server = createServer(createService(), 'expected');
     const { transport, clientWrite, clientRead, close } = createDuplex();

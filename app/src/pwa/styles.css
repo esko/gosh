@@ -2849,6 +2849,73 @@ html.app-chrome .term-shell {
   word-break: break-all;
 }
 
+.agent-audit-log {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
+  max-height: 220px;
+  overflow: auto;
+}
+
+.agent-audit-entry {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1.1fr) minmax(8rem, 1.4fr) minmax(4rem, 0.7fr) minmax(4rem, 0.8fr);
+  gap: 8px 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.agent-audit-entry:last-child {
+  border-bottom: none;
+}
+
+.agent-audit-time {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.agent-audit-method {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-audit-status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.agent-audit-status.is-ok {
+  color: var(--status-ok);
+}
+
+.agent-audit-status.is-err {
+  color: var(--status-warn, #c97);
+}
+
+.agent-audit-client {
+  color: var(--muted);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-audit-empty {
+  margin: 0 0 12px;
+}
+
 .term-debug-btn {
   position: fixed;
   top: 10px;

@@ -292,6 +292,16 @@ export class ControlServer {
       return [validated.response];
     }
 
+    if (validated.request.method === 'agent.audit.list') {
+      return [
+        {
+          jsonrpc: '2.0',
+          result: { entries: this.audit.list() },
+          id: validated.request.id,
+        },
+      ];
+    }
+
     const dispatched = await dispatchAgentRpc(
       this.service,
       validated.request.method as AgentMethodName,

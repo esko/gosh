@@ -22,6 +22,10 @@ export function getAgentControlAuditLog(): AuditRing {
   return audit;
 }
 
+export function clearAgentControlAuditLog(): void {
+  getAgentControlAuditLog().clear();
+}
+
 export function getAgentControlServerStatus(): ControlServerStatus & { enabled: boolean } {
   const base = server?.getStatus() ?? {
     listening: false,

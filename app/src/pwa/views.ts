@@ -111,6 +111,8 @@ import {
 import { loadPairingState } from '../agent/security/Pairing';
 import { isControlTransportAvailable } from '../agent/server/ControlServer';
 import {
+  clearAgentControlAuditLog,
+  getAgentControlAuditLog,
   getAgentControlServerStatus,
   mountAgentControlIndicator,
   rotateAgentControlToken,
@@ -118,6 +120,7 @@ import {
   stopAgentControlServer,
   syncAgentControlServer,
 } from './agentControlServerHost';
+import { renderAgentAuditLogMarkup } from './agentAuditLogUi';
 import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
@@ -1864,6 +1867,9 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
     ? `<code class="pairing-token" data-token>${escapeHTML(pairing.token)}</code>`
     : '<span class="set-state">Not generated</span>';
   const portDisplay = controlStatus.port ? `127.0.0.1:${controlStatus.port}` : '—';
+  const auditEntries = getAgentControlAuditLog().list();
+  const showAuditLog = pairing.enabled || auditEntries.length > 0;
+  const auditMarkup = showAuditLog ? renderAgentAuditLogMarkup(auditEntries) : '';
 
   body.innerHTML =
     `<div class="group-title">Saved passwords</div>` +
@@ -1881,6 +1887,12 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
       ? setRow('Pairing token', `${tokenDisplay} <button type="button" class="btn-ghost" data-copy-token>Copy</button>`, 'Shown once here — copy it for your CLI or MCP client. Reset if leaked.') +
         setRow('Listen address', `<span class="set-state">${escapeHTML(portDisplay)}</span>`, controlStatus.connectedClients > 0 ? `${controlStatus.connectedClients} client connected` : 'Waiting for a client') +
         `<div class="actions" style="justify-content:flex-start;margin-bottom:28px"><button type="button" class="btn-ghost" data-reset-token>Reset pairing token…</button></div>`
+      : '') +
+    (showAuditLog
+      ? `<div class="group-title">Recent control actions</div>` +
+        `<p class="set-hint" style="margin:0 0 12px">Last 100 loopback RPC calls (method, time, result, client). Tokens and terminal/browser payloads are never logged.</p>` +
+        auditMarkup +
+        `<div class="actions" style="justify-content:flex-start;margin:0 0 28px"><button type="button" class="btn-ghost"${auditEntries.length === 0 ? ' disabled' : ''} data-clear-audit>Clear audit log</button></div>`
       : '') +
     `<div class="group-title">Eternal Terminal</div>` +
     `<p class="set-hint" style="margin:0 0 12px">${escapeHTML(etSummary)}. Clearing removes resumable ET sessions, recovery journals, wrapped passkeys, and the local device encryption key. Saved SSH passwords and the master-password vault are cleared too because they use the same key. ET connection profiles stay; remote shells may keep running on the server.</p>` +
@@ -1936,6 +1948,18 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
       confirmLabel: 'Reset token',
       danger: true,
       onConfirm: () => void rotateAgentControlToken(getAgentControlService()).then(() => rerender()),
+    }),
+  );
+  body.querySelector<HTMLButtonElement>('[data-clear-audit]')?.addEventListener('click', () =>
+    openConfirmModal({
+      title: 'Clear audit log',
+      body: 'Remove all recorded external control actions from this session. This cannot be undone.',
+      confirmLabel: 'Clear log',
+      danger: true,
+      onConfirm: () => {
+        clearAgentControlAuditLog();
+        rerender();
+      },
     }),
   );
 }
