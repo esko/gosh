@@ -99,6 +99,7 @@ import {
   sleep,
 } from './sessionLifecycle';
 import {
+  createBrowserAgentStateHook,
   getWorkspaceRegistry,
   getAgentControlService,
   installAgentControl,
@@ -2652,6 +2653,7 @@ function createBrowserTab(initialUrl?: string): TermSession {
       if (session.id === activeSessionId) document.title = title;
       scheduleTabRender();
     },
+    onAgentNavState: createBrowserAgentStateHook(tabId),
   });
   session.browser = handle.controller;
   session.browserDispose = handle.dispose;

@@ -123,7 +123,27 @@ export class AgentControlService {
   }
 
   notePaneDisconnected(paneId: string): void {
+    const pane = this.registry.getPane(paneId);
+    if (pane) {
+      this.events.emit('terminal.disconnected', {
+        windowId: this.registry.windowId,
+        tabId: pane.tabId,
+        paneId,
+      });
+    }
     this.notePaneInvalidated(paneId, 'disconnected');
+  }
+
+  /** Controlled Frame loadabort / navigation failure (opaque tab id). */
+  noteBrowserLoadFailed(tabId: string, url: string, failureReason: string): void {
+    const tab = this.registry.getTab(tabId);
+    if (!tab || (tab.kind !== 'browser' && tab.kind !== 'mixed')) return;
+    this.events.emit('browser.load.failed', {
+      windowId: this.registry.windowId,
+      tabId,
+      url,
+      failureReason,
+    });
   }
 
   getCurrentCommand(paneId: string): CommandRecord | null {

@@ -33,6 +33,7 @@ export class WorkspaceRegistry {
   readonly events: AgentEventBus;
   readonly windowId: string;
 
+  private windowClosed = false;
   private activeTabId: string | null = null;
   private readonly tabs = new Map<string, TabRecord>();
   private readonly panes = new Map<string, PaneRecord>();
@@ -45,6 +46,14 @@ export class WorkspaceRegistry {
   constructor(options?: { windowId?: string; events?: AgentEventBus }) {
     this.windowId = options?.windowId ?? newId('win');
     this.events = options?.events ?? new AgentEventBus();
+    this.events.emit('window.opened', { windowId: this.windowId });
+  }
+
+  /** Idempotent teardown hook for the single IWA workspace window. */
+  closeWindow(): void {
+    if (this.windowClosed) return;
+    this.windowClosed = true;
+    this.events.emit('window.closed', { windowId: this.windowId });
   }
 
   listWindows(): WindowInfo[] {

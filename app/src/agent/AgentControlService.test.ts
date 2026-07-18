@@ -266,4 +266,21 @@ describe('AgentControlService.terminalRun', () => {
     if (!run.ok) return;
     expect(run.value.completion).toBe('pane-closed');
   });
+
+  it('emits terminal.disconnected when a pane transport disconnects', () => {
+    const { service, paneId, tabId } = setup();
+    const events: Array<{ type: string; seq: number; paneId?: string; tabId?: string }> = [];
+    service.subscribe((event) => {
+      events.push({
+        type: event.type,
+        seq: event.seq,
+        paneId: event.paneId,
+        tabId: event.tabId,
+      });
+    });
+    service.notePaneDisconnected(paneId);
+    expect(events).toEqual([
+      { type: 'terminal.disconnected', seq: 4, paneId, tabId },
+    ]);
+  });
 });

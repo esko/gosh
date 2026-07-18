@@ -67,6 +67,8 @@ export type TerminalReadResult = {
 };
 
 export type AgentEventType =
+  | 'window.opened'
+  | 'window.closed'
   | 'tab.opened'
   | 'tab.closed'
   | 'pane.opened'
@@ -75,7 +77,9 @@ export type AgentEventType =
   | 'pane.resized'
   | 'terminal.command.started'
   | 'terminal.command.completed'
-  | 'browser.navigated';
+  | 'terminal.disconnected'
+  | 'browser.navigated'
+  | 'browser.load.failed';
 
 export type AgentEvent = {
   seq: number;
@@ -87,6 +91,7 @@ export type AgentEvent = {
   commandId?: string;
   exitCode?: number | null;
   url?: string;
+  failureReason?: string;
 };
 
 export type TerminalRunCompletion =

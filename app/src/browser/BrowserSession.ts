@@ -1,4 +1,5 @@
 import { ControlledFrameController, normalizeBrowserUrl } from './ControlledFrameController';
+import type { ControlledFrameNavState } from './ControlledFrameController';
 import {
   createControlledFrameElement,
   isControlledFrameAvailable,
@@ -11,6 +12,7 @@ export type BrowserSessionOptions = {
   container: HTMLElement;
   initialUrl?: string;
   onTitleChange?: (title: string) => void;
+  onAgentNavState?: (state: ControlledFrameNavState) => void;
   createElement?: (partition: string) => ControlledFrameElementLike;
 };
 
@@ -25,7 +27,7 @@ const RELOAD_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="curr
 const STOP_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 6h12v12H6z"/></svg>';
 
 export function mountBrowserSession(options: BrowserSessionOptions): BrowserSessionHandle {
-  const { tabId, container, initialUrl, onTitleChange, createElement = createControlledFrameElement } = options;
+  const { tabId, container, initialUrl, onTitleChange, onAgentNavState, createElement = createControlledFrameElement } = options;
   container.className = 'term-session term-browser';
   container.replaceChildren();
 
@@ -109,6 +111,7 @@ export function mountBrowserSession(options: BrowserSessionOptions): BrowserSess
         status.textContent = '';
       }
       onTitleChange?.(state.title);
+      onAgentNavState?.(state);
     },
   });
 
