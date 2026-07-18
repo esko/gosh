@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  canCaptureHistoryWithoutScroll,
+  captureHistory,
   captureTextRange,
   cellTextAt,
   extractLinesFromRenderState,
@@ -120,5 +122,150 @@ describe('resttyTextCapture cell extractor', () => {
     );
     expect(merged.lines).toEqual(['two', 'three', 'four']);
     expect(merged.coordinates).toEqual({ origin: 'absolute', startLine: 4, endLine: 6 });
+  });
+});
+
+function lineGrid(lines: string[]): CellGridInput {
+  const rows = lines.length;
+  const cols = Math.max(1, ...lines.map((line) => line.length));
+  const codepoints = new Uint32Array(rows * cols);
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const ch = lines[row]![col];
+      codepoints[row * cols + col] = ch ? ch.codePointAt(0)! : 0;
+    }
+  }
+  return grid({ rows, cols, codepoints });
+}
+
+function scrollbarExports(total: number, len: number, offset = 0) {
+  return {
+    restty_scrollbar_total: () => total,
+    restty_scrollbar_offset: () => offset,
+    restty_scrollbar_len: () => len,
+    restty_debug_scroll_left: () => 0,
+    restty_debug_scroll_right: () => total - 1,
+  };
+}
+
+describe('captureHistory', () => {
+  it('prefers non-scroll capture when the cell grid already covers lastLines', () => {
+    const scrollViewport = vi.fn();
+    const state = lineGrid(['alpha', 'beta', 'gamma', 'delta']);
+    const capture = captureHistory(
+      {
+        wasm: {
+          renderUpdate: vi.fn(),
+          getRenderState: () => state as never,
+          scrollViewport,
+        } as never,
+        handle: 1,
+        exports: scrollbarExports(100, 24, 76) as never,
+      },
+      { lastLines: 3 },
+    );
+    expect(scrollViewport).not.toHaveBeenCalled();
+    expect(capture.lines).toEqual(['beta', 'gamma', 'delta']);
+    expect(capture.truncated).toBe(true);
+  });
+
+  it('prefers non-scroll capture when state.rows covers scrollbar.total', () => {
+    const scrollViewport = vi.fn();
+    const state = lineGrid(['one', 'two', 'three']);
+    const capture = captureHistory(
+      {
+        wasm: {
+          renderUpdate: vi.fn(),
+          getRenderState: () => state as never,
+          scrollViewport,
+        } as never,
+        handle: 1,
+        exports: scrollbarExports(3, 1, 2) as never,
+      },
+      { lastLines: 10 },
+    );
+    expect(scrollViewport).not.toHaveBeenCalled();
+    expect(capture.lines).toEqual(['one', 'two', 'three']);
+    expect(capture.truncated).toBe(false);
+  });
+
+  it('falls back to scroll-windowing when the buffer is viewport-sized', () => {
+    const scrollViewport = vi.fn();
+    let offset = 0;
+    const viewportLines = ['scroll-a', 'scroll-b'];
+    const state = lineGrid(viewportLines);
+    const capture = captureHistory(
+      {
+        wasm: {
+          renderUpdate: vi.fn(),
+          getRenderState: () => state as never,
+          scrollViewport: (_handle: number, delta: number) => {
+            scrollViewport(delta);
+            offset += delta;
+          },
+        } as never,
+        handle: 1,
+        exports: {
+          ...scrollbarExports(6, 2, 0),
+          restty_scrollbar_offset: () => offset,
+        } as never,
+      },
+      { lastLines: 4 },
+    );
+    expect(scrollViewport).toHaveBeenCalled();
+    expect(capture.lines.length).toBeGreaterThan(0);
+  });
+
+  it('invokes suppressCanvasDuringScroll only for scroll fallback', () => {
+    const suppressCanvasDuringScroll = vi.fn(() => vi.fn());
+    const scrollViewport = vi.fn();
+    const fullState = lineGrid(['a', 'b', 'c', 'd']);
+    captureHistory(
+      {
+        wasm: {
+          renderUpdate: vi.fn(),
+          getRenderState: () => fullState as never,
+          scrollViewport,
+        } as never,
+        handle: 1,
+        exports: scrollbarExports(100, 24) as never,
+        suppressCanvasDuringScroll,
+      },
+      { lastLines: 2 },
+    );
+    expect(suppressCanvasDuringScroll).not.toHaveBeenCalled();
+    expect(scrollViewport).not.toHaveBeenCalled();
+
+    let offset = 0;
+    const viewportState = lineGrid(['x', 'y']);
+    captureHistory(
+      {
+        wasm: {
+          renderUpdate: vi.fn(),
+          getRenderState: () => viewportState as never,
+          scrollViewport: (_handle: number, delta: number) => {
+            scrollViewport(delta);
+            offset += delta;
+          },
+        } as never,
+        handle: 1,
+        exports: {
+          ...scrollbarExports(8, 2, 0),
+          restty_scrollbar_offset: () => offset,
+        } as never,
+        suppressCanvasDuringScroll,
+      },
+      { lastLines: 5 },
+    );
+    expect(suppressCanvasDuringScroll).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('canCaptureHistoryWithoutScroll', () => {
+  it('requires scrolling only when history exceeds a viewport-sized buffer', () => {
+    const scrollbar = { total: 100, offset: 76, len: 24 };
+    expect(canCaptureHistoryWithoutScroll({ rows: 50 }, scrollbar, 40)).toBe(true);
+    expect(canCaptureHistoryWithoutScroll({ rows: 100 }, scrollbar, 80)).toBe(true);
+    expect(canCaptureHistoryWithoutScroll({ rows: 24 }, scrollbar, 80)).toBe(false);
   });
 });

@@ -165,9 +165,13 @@ WASM cell grids Restty uses for rendering:
   `restty_scroll_viewport` with explicit `truncated` metadata when the request
   exceeds available scrollback. Absolute line hints come from
   `restty_debug_scroll_left` / `restty_debug_scroll_right` when present.
+- `captureHistory` prefers a single `getRenderState` read via the cell ABI
+  (`restty_rows` / `restty_cell_*`) when the returned grid already covers the
+  requested `lastLines` or full `scrollbar.total`, avoiding viewport scroll and
+  live-terminal flicker. Scroll-windowing is only used when the buffer is
+  viewport-sized (`state.rows` ≈ `scrollbar.len`) and older history is required.
 
 **Not used:** `termDebugEl` `<pre>` scraping, PTY logs, OCR, or a second VT.
 
 **Follow-up gaps:** public Restty text API; wrap-line metadata; alternate-screen
-detection; non-disruptive scrollback read without temporarily scrolling the user
-viewport.
+detection.
