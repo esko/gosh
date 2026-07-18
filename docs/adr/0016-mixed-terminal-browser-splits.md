@@ -35,9 +35,10 @@ Alternatives considered:
 
 ### UI (first slice)
 
-- **New mixed tab:** new-tab menu or command palette → **New mixed tab** (requires an active connection spec) — vertical split, terminal left, browser right.
-- **Convert:** command palette → **Split browser beside terminal** on an active terminal tab.
+- **New mixed tab:** new-tab menu or command palette → **New mixed tab (side by side)** (vertical split: terminal left, browser right) or **New mixed tab (stacked)** (horizontal split: terminal above browser). Requires an active connection spec.
+- **Convert:** command palette → **Split browser beside terminal** (vertical) or **Split browser below terminal** (horizontal) on an active terminal tab.
 - Divider drag and `Ctrl+Alt+Arrow` resize adjust the Gosh split ratio; `Ctrl+Shift+Arrow` moves focus between leaves; `Ctrl+Shift+W` closes the focused mixed leaf (promotes surviving leaf to a single-kind tab when one remains).
+- **Zoom:** `Ctrl+Shift+Z` toggles maximize for the focused mixed leaf (same binding as Restty pane zoom on terminal-only tabs). Restores prior split ratios on toggle.
 
 ### Serialization and restore
 
@@ -61,11 +62,10 @@ Alternatives considered:
 - Nested mixed trees deeper than the bootstrap two-leaf split (API supports split expansion; UI shortcuts still target the active leaf only)
 - App relaunch / cross-window tab restore (sessionStorage is per-window and cleared on relaunch)
 - Per-browser-leaf `browser.*` targeting when multiple browser leaves exist (single browser leaf assumed)
-- Zoom/maximize for mixed leaves
 
 ## Follow-up
 
-- Horizontal bootstrap option in UI; drag-reorder leaves
+- Drag-reorder leaves
 - Multi-browser-leaf tabs with pane-scoped `browser.*` params
 - Keyboard/UI shortcuts for mixed `pane.split` (agent RPC is implemented)
 - Pure browser-only tab restore (mixed and terminal tabs restore today)

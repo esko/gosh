@@ -4,8 +4,8 @@ Gosh browser tabs embed third-party web content with the Chromium **Controlled F
 
 ## Opening a browser tab
 
-- **Tab strip:** click the **⌄** menu on the new-tab control → **New browser tab** or **New mixed tab** (terminal + browser split; requires a connected spec on an existing terminal tab)
-- **Command palette:** `Ctrl+Shift+P` → **New browser tab**, **New mixed tab**, or **Split browser beside terminal** (convert active terminal tab)
+- **Tab strip:** click the **⌄** menu on the new-tab control → **New browser tab**, **New mixed tab (side by side)**, or **New mixed tab (stacked)** (terminal + browser split; requires a connected spec on an existing terminal tab)
+- **Command palette:** `Ctrl+Shift+P` → **New browser tab**, **New mixed tab (side by side)**, **New mixed tab (stacked)**, **Split browser beside terminal**, or **Split browser below terminal** (convert active terminal tab)
 
 The address bar supports back, forward, reload, and stop. Enter a URL or hostname to navigate.
 
@@ -104,7 +104,7 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 ## Known limitations
 
 - No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
-- Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; UI keyboard shortcuts still split Restty panes only on terminal-only tabs (ADR 0016)
+- Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; `pane.zoom` toggles maximize for the focused mixed leaf (`Ctrl+Shift+Z` in the UI, same as Restty pane zoom on terminal-only tabs)
 - Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
 - Browser tabs are not restored from `sessionStorage` tab layout
 - No `newwindow` / `dialog` automation yet
