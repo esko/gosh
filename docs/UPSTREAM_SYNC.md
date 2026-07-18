@@ -85,23 +85,43 @@ removed when the next pinned Restty release includes the upstream corrections.
 
 ## Restty Pane DOM Dependency
 
-Restty exposes no public pane resize or maximize API. The keyboard pane
-**resize** (`Ctrl+Alt+Arrow`) and **zoom** (`Ctrl+Shift+Z`) features in
-`app/src/pwa/resttyAdapter.ts` therefore reach into Restty's internal split DOM:
+Restty exposes no public pane resize or maximize API. Keyboard pane **resize**
+(`Ctrl+Alt+Arrow`) and **zoom** (`Ctrl+Shift+Z`) therefore depend on Restty's
+internal split DOM, but that access is confined to
+`app/src/pwa/resttyLayout.ts`. Agent code and the rest of the adapter call the
+stable layout surface instead of querying `.pane-split` / flex styles directly.
 
-- Resize reads and writes the inline `flex: 0 0 <pct>%` sizing that Restty puts
-  on the two children of each `.pane-split` node (`.is-vertical` /
-  `.is-horizontal`), mirroring Restty's own divider-drag math.
-- Zoom overlays the active `.pane[data-pane-id]` container with
-  `position:absolute; inset:0`, which assumes `.pane-split` ancestors are
-  unpositioned so the overlay anchors to the terminal root.
+### Public layout API (`resttyLayout.ts` + `ResttyTerminalAdapter`)
 
-Unlike the renderer patch above there is **no build-time drift check** for this —
-it is runtime adapter code. When bumping `vendor/restty/`, re-verify that the
-`.pane` / `.pane-split` / `.pane-divider` class names and the `flex: 0 0 <pct>%`
-sizing scheme still hold, and smoke-test directional focus, resize, and zoom with
-at least three split panes. Pane focus/navigation uses Restty's public
-`setActivePane(id, { focus })` and is not at risk.
+| Method | Purpose |
+| --- | --- |
+| `getLayoutTree()` | JSON-serializable split/pane tree (ids, orientation, flex %) |
+| `resizePaneToward(paneId, direction, amount)` | Nudge the nearest matching split divider |
+| `setPaneZoomed(paneId, zoomed)` | Maximize or restore a pane overlay |
+| `isPaneZoomed(paneId)` | Whether a specific pane is maximized |
+
+`ResttyTerminalAdapter` still exposes `resizeActivePane` /
+`toggleZoomActivePane` for keyboard and context-menu bindings; those delegate to
+the methods above.
+
+### Private DOM contract (layout module only)
+
+- Resize reads and writes inline `flex: 0 0 <pct>%` on the two children of each
+  `.pane-split` node (`.is-vertical` / `.is-horizontal`), mirroring Restty's
+  divider-drag math.
+- Zoom overlays `.pane[data-pane-id]` with `position:absolute; inset:0`, which
+  assumes `.pane-split` ancestors are unpositioned so the overlay anchors to
+  the terminal root.
+
+Pane focus/navigation uses Restty's public `setActivePane(id, { focus })` and is
+not at risk.
+
+### Drift check
+
+`app/src/pwa/resttyLayout.drift.test.ts` reads `vendor/restty/dist/restty.esm.js`
+and fails the build if the pane DOM markers above disappear. When bumping
+`vendor/restty/`, also smoke-test directional focus, resize, and zoom with at
+least three split panes.
 
 ## Refresh Procedure
 
@@ -126,4 +146,4 @@ Keep this ledger current as generated patches are added:
 | nassh locale/bootstrap adaptation | `scripts/fetch-upstream-assets.mjs` and `app/src/ssh/` | Runtime messages without extension packaging | typecheck and SSH smoke |
 | nassh Trusted Types policy skip | `scripts/fetch-upstream-assets.mjs` | CSP allowlists only `default`; upstream `createPolicy('nassh')` blocks SSH Worker startup | exact upstream `sanitizeScriptUrl` body must match before replacement |
 | nassh Mosh COLORTERM export | `scripts/fetch-upstream-assets.mjs` | sshd often rejects `SendEnv COLORTERM`; export before `mosh-server` so truecolor apps work | exact mosh `remoteCommand` printf/exec lines must match before replacement |
-| Restty pane resize/zoom DOM access | `app/src/pwa/resttyAdapter.ts` | No public Restty resize/maximize API; drives `.pane-split` inline `flex` and a `.pane` overlay | manual: focus/resize/zoom with 3+ split panes after a Restty bump (no automated check) |
+| Restty pane resize/zoom DOM access | `app/src/pwa/resttyLayout.ts` | No public Restty resize/maximize API; drives `.pane-split` inline `flex` and a `.pane` overlay | `app/src/pwa/resttyLayout.drift.test.ts` + manual resize/zoom smoke with 3+ panes |
