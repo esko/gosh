@@ -37,6 +37,7 @@ Alternatives considered:
 
 - **New mixed tab:** new-tab menu or command palette → **New mixed tab (side by side)** (vertical split: terminal left, browser right) or **New mixed tab (stacked)** (horizontal split: terminal above browser). Requires an active connection spec.
 - **Convert:** command palette → **Split browser beside terminal** (vertical) or **Split browser below terminal** (horizontal) on an active terminal tab.
+- **Reorder:** drag the thin grip at the top of a mixed leaf onto another leaf to swap their positions. Split ratios are preserved.
 - Divider drag and `Ctrl+Alt+Arrow` resize adjust the Gosh split ratio; `Ctrl+Shift+Arrow` moves focus between leaves; `Ctrl+Shift+W` closes the focused mixed leaf (promotes surviving leaf to a single-kind tab when one remains).
 - **Zoom:** `Ctrl+Shift+Z` toggles maximize for the focused mixed leaf (same binding as Restty pane zoom on terminal-only tabs). Restores prior split ratios on toggle.
 - **Split:** command palette or terminal context menu → **Split terminal right/down** or **Split browser right/down** on an active mixed tab. `Ctrl+Shift+E` / `Ctrl+Shift+D` split a new **terminal** leaf when a terminal leaf is focused (same keys as Restty on terminal-only tabs).
@@ -64,10 +65,6 @@ Alternatives considered:
 - Restty custom-pane factory for browser surfaces
 - Nested mixed trees deeper than the bootstrap two-leaf split (API supports split expansion; UI shortcuts still target the active leaf only)
 - App relaunch / cross-window tab restore (sessionStorage is per-window and cleared on relaunch)
-
-## Follow-up
-
-- Drag-reorder leaves
 
 ## References
 
