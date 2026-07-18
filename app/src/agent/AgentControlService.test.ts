@@ -7,10 +7,10 @@ function setup(options?: { sleep?: (ms: number) => Promise<void>; now?: () => nu
   let now = 1000;
   const registry = new WorkspaceRegistry({ windowId: 'win_unit' });
   const tabId = registry.openTab({ kind: 'terminal', title: 'echo' });
-  const paneId = registry.openPane({ tabId, resttyPaneId: 1 });
+  const paneId = registry.openPane({ tabId, surface: 'terminal', resttyPaneId: 1 });
   const host: PaneHost = {
     split: vi.fn(async () => {
-      const created = registry.openPane({ tabId, resttyPaneId: 2 });
+      const created = registry.openPane({ tabId, surface: 'terminal', resttyPaneId: 2 });
       return { paneId: created };
     }),
     focus: vi.fn(),

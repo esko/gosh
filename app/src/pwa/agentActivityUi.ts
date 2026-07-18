@@ -27,12 +27,19 @@ export function mountAgentPaneActivity(options: {
     const pane = reg.getPane(opaquePaneId);
     if (!pane) return null;
     const session = options.lookup.findByTabId(pane.tabId);
-    return session?.terminal ?? null;
+    if (!session) return null;
+    if (session.terminal) return session.terminal;
+    if (session.kind === 'mixed' && pane.surface === 'terminal') {
+      for (const leaf of session.mixedLeaves?.values() ?? []) {
+        if (leaf.surface === 'terminal' && leaf.terminal) return leaf.terminal;
+      }
+    }
+    return null;
   };
 
   const applyPaneDom = (opaquePaneId: string, active: boolean): void => {
     const pane = reg.getPane(opaquePaneId);
-    if (!pane) return;
+    if (!pane || pane.resttyPaneId === undefined) return;
     findTerminal(opaquePaneId)?.setAgentPaneActive(pane.resttyPaneId, active);
   };
 

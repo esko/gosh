@@ -4,8 +4,8 @@ Gosh browser tabs embed third-party web content with the Chromium **Controlled F
 
 ## Opening a browser tab
 
-- **Tab strip:** click the **⌄** menu on the new-tab control → **New browser tab**
-- **Command palette:** `Ctrl+Shift+P` → **New browser tab**
+- **Tab strip:** click the **⌄** menu on the new-tab control → **New browser tab** or **New mixed tab** (terminal + browser split; requires a connected spec on an existing terminal tab)
+- **Command palette:** `Ctrl+Shift+P` → **New browser tab**, **New mixed tab**, or **Split browser beside terminal** (convert active terminal tab)
 
 The address bar supports back, forward, reload, and stop. Enter a URL or hostname to navigate.
 
@@ -31,7 +31,7 @@ Embedded pages may request powerful capabilities (geolocation, camera, notificat
 
 ## Agent control
 
-`workspace.listTabs` reports `kind: "browser"` for these tabs. When the browser host is wired, agents can drive navigation and structured page interaction through JSON-RPC (`browser.*` methods) or the in-process `AgentControlService` API.
+`workspace.listTabs` reports `kind: "browser"` for browser-only tabs and `kind: "mixed"` for terminal+browser split tabs. `workspace.listPanes` includes `surface: "terminal" | "browser"` per pane. Agents drive browser tabs through JSON-RPC (`browser.*` methods) or the in-process `AgentControlService` API.
 
 ### Navigation
 
@@ -90,7 +90,8 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 ## Known limitations
 
 - No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
-- No mixed terminal/browser splits (D4)
+- Mixed tabs support a **two-leaf** terminal+browser split only in UI; deeper trees and relaunch restore are follow-ups (ADR 0016)
+- Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
 - Browser tabs are not restored from `sessionStorage` tab layout
 - No `newwindow` / `dialog` automation yet
 - Dev vite server lacks a real `<controlledframe>` element
@@ -98,4 +99,4 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 - Some sites may still block automation or embedding at the network layer
 - Query `selector` uses standard DOM selectors only (no shadow-piercing)
 
-See [ADR 0014](../adr/0014-controlled-frame-browser-tabs.md) and [PROTOCOL.md](./PROTOCOL.md).
+See [ADR 0014](../adr/0014-controlled-frame-browser-tabs.md), [ADR 0016](../adr/0016-mixed-terminal-browser-splits.md), and [PROTOCOL.md](./PROTOCOL.md).

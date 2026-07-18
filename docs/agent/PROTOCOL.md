@@ -23,7 +23,7 @@ If the client requests an unsupported major version, the server responds with `i
 | `gosh.capabilities` | `{ protocolVersion?: number }` |
 | `workspace.listWindows` | `{}` |
 | `workspace.listTabs` | `{}` |
-| `workspace.listPanes` | `{ tabId?: string }` |
+| `workspace.listPanes` | `{ tabId?: string }` — each pane includes `surface: "terminal" \| "browser"` |
 | `pane.split` | `{ tabId?, direction }` |
 | `pane.focus` | `{ paneId }` |
 | `pane.resize` | `{ paneId, direction, amount? }` |
@@ -57,6 +57,12 @@ Server push uses the notification `events.push` with `{ subscriptionId, event }`
 
 ```json
 {"jsonrpc":"2.0","result":[{"tabId":"tab_abc","windowId":"win_1","kind":"terminal","title":"local","active":true,"paneCount":1}],"id":3}
+```
+
+`workspace.listPanes` example pane shape:
+
+```json
+{"paneId":"pane_1","tabId":"tab_mixed","windowId":"win_1","surface":"browser","active":false,"zoomed":false}
 ```
 
 Application failures map service codes into `error.data.code` (`not-found`, `unavailable`, `invalid-argument`, `failed`) while keeping JSON-RPC `error.code` in the standard / extension ranges.

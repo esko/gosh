@@ -2961,6 +2961,75 @@ html.app-chrome .term-shell {
   color: var(--muted);
 }
 
+.term-tab-mixed .term-tab-title {
+  color: var(--muted);
+}
+
+.term-mixed {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mixed-layout-root {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.mixed-split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.mixed-split.is-vertical {
+  flex-direction: row;
+}
+
+.mixed-split.is-horizontal {
+  flex-direction: column;
+}
+
+.mixed-split-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mixed-split-divider {
+  flex: 0 0 4px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: col-resize;
+}
+
+.mixed-split.is-horizontal > .mixed-split-divider {
+  cursor: row-resize;
+}
+
+.mixed-leaf {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.mixed-terminal-surface {
+  flex: 1;
+  min-height: 0;
+}
+
+.mixed-browser-leaf {
+  flex: 1;
+  min-height: 0;
+}
+
 .term-browser {
   display: flex;
   flex-direction: column;

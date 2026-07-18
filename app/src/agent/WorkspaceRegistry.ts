@@ -1,5 +1,5 @@
 import { AgentEventBus } from './AgentEventBus';
-import type { PaneInfo, TabInfo, TabKind, WindowInfo } from './types';
+import type { PaneInfo, PaneSurfaceKind, TabInfo, TabKind, WindowInfo } from './types';
 
 function newId(prefix: string): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -19,13 +19,15 @@ type PaneRecord = {
   paneId: string;
   tabId: string;
   windowId: string;
-  resttyPaneId: number;
+  surface: PaneSurfaceKind;
+  resttyPaneId?: number;
+  leafId?: string;
   zoomed: boolean;
 };
 
 /**
  * UI-independent window/tab/pane model with opaque stable ids.
- * Restty numeric pane ids stay internal.
+ * Restty numeric pane ids and mixed leaf ids stay internal.
  */
 export class WorkspaceRegistry {
   readonly events: AgentEventBus;
@@ -36,6 +38,8 @@ export class WorkspaceRegistry {
   private readonly panes = new Map<string, PaneRecord>();
   /** `${tabId}:${resttyPaneId}` → opaque paneId */
   private readonly resttyIndex = new Map<string, string>();
+  /** `${tabId}:${leafId}` → opaque paneId */
+  private readonly leafIndex = new Map<string, string>();
   private readonly activePaneByTab = new Map<string, string>();
 
   constructor(options?: { windowId?: string; events?: AgentEventBus }) {
@@ -66,6 +70,7 @@ export class WorkspaceRegistry {
         paneId: p.paneId,
         tabId: p.tabId,
         windowId: p.windowId,
+        surface: p.surface,
         active: p.paneId === activePaneId,
         zoomed: p.zoomed,
       }));
@@ -87,6 +92,11 @@ export class WorkspaceRegistry {
   /** Resolve Restty numeric id within a tab → opaque pane id. */
   paneIdForRestty(tabId: string, resttyPaneId: number): string | undefined {
     return this.resttyIndex.get(this.resttyKey(tabId, resttyPaneId));
+  }
+
+  /** Resolve mixed leaf id within a tab → opaque pane id. */
+  paneIdForLeaf(tabId: string, leafId: string): string | undefined {
+    return this.leafIndex.get(this.leafKey(tabId, leafId));
   }
 
   openTab(input: { kind: TabKind; title: string; tabId?: string }): string {
@@ -138,22 +148,45 @@ export class WorkspaceRegistry {
     return true;
   }
 
-  openPane(input: { tabId: string; resttyPaneId: number; paneId?: string; active?: boolean }): string {
+  openPane(input: {
+    tabId: string;
+    surface: PaneSurfaceKind;
+    resttyPaneId?: number;
+    leafId?: string;
+    paneId?: string;
+    active?: boolean;
+  }): string {
     const tab = this.tabs.get(input.tabId);
     if (!tab) throw new Error(`unknown tab: ${input.tabId}`);
-    const key = this.resttyKey(input.tabId, input.resttyPaneId);
-    const existing = this.resttyIndex.get(key);
-    if (existing) return existing;
+
+    if (input.surface === 'terminal') {
+      if (input.resttyPaneId === undefined) throw new Error('resttyPaneId required for terminal panes');
+      const key = this.resttyKey(input.tabId, input.resttyPaneId);
+      const existing = this.resttyIndex.get(key);
+      if (existing) return existing;
+    } else {
+      if (!input.leafId) throw new Error('leafId required for browser panes');
+      const key = this.leafKey(input.tabId, input.leafId);
+      const existing = this.leafIndex.get(key);
+      if (existing) return existing;
+    }
 
     const paneId = input.paneId ?? newId('pane');
     this.panes.set(paneId, {
       paneId,
       tabId: input.tabId,
       windowId: this.windowId,
+      surface: input.surface,
       resttyPaneId: input.resttyPaneId,
+      leafId: input.leafId,
       zoomed: false,
     });
-    this.resttyIndex.set(key, paneId);
+    if (input.surface === 'terminal' && input.resttyPaneId !== undefined) {
+      this.resttyIndex.set(this.resttyKey(input.tabId, input.resttyPaneId), paneId);
+    }
+    if (input.surface === 'browser' && input.leafId) {
+      this.leafIndex.set(this.leafKey(input.tabId, input.leafId), paneId);
+    }
     if (input.active !== false || !this.activePaneByTab.has(input.tabId)) {
       this.activePaneByTab.set(input.tabId, paneId);
     }
@@ -185,7 +218,12 @@ export class WorkspaceRegistry {
     const pane = this.panes.get(paneId);
     if (!pane) return false;
     this.panes.delete(paneId);
-    this.resttyIndex.delete(this.resttyKey(pane.tabId, pane.resttyPaneId));
+    if (pane.resttyPaneId !== undefined) {
+      this.resttyIndex.delete(this.resttyKey(pane.tabId, pane.resttyPaneId));
+    }
+    if (pane.leafId) {
+      this.leafIndex.delete(this.leafKey(pane.tabId, pane.leafId));
+    }
     if (this.activePaneByTab.get(pane.tabId) === paneId) {
       const next = this.paneIdsForTab(pane.tabId)[0];
       if (next) this.activePaneByTab.set(pane.tabId, next);
@@ -201,5 +239,9 @@ export class WorkspaceRegistry {
 
   private resttyKey(tabId: string, resttyPaneId: number): string {
     return `${tabId}:${resttyPaneId}`;
+  }
+
+  private leafKey(tabId: string, leafId: string): string {
+    return `${tabId}:${leafId}`;
   }
 }
