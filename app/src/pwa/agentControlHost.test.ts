@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createPaneHost, getWorkspaceRegistry, resetAgentControl } from './agentControlHost';
+import { createBrowserHost, createPaneHost, getWorkspaceRegistry, resetAgentControl } from './agentControlHost';
+import type { ControlledFrameController } from '../browser/ControlledFrameController';
 
 describe('createPaneHost mixed split', () => {
   it('routes pane.split to splitMixedPane and returns the new opaque pane id', async () => {
@@ -68,5 +69,33 @@ describe('createPaneHost mixed split', () => {
     expect(split).toHaveBeenCalledWith('horizontal');
     expect(result.paneId).toBeTruthy();
     resetAgentControl();
+  });
+});
+
+describe('createBrowserHost leaf routing', () => {
+  it('routes browser RPCs to the ControlledFrameController for the target leaf', () => {
+    const controllerA = { navigate: vi.fn(), getUrl: vi.fn(() => 'https://a'), getTitle: vi.fn(() => 'A') };
+    const controllerB = { navigate: vi.fn(), getUrl: vi.fn(() => 'https://b'), getTitle: vi.fn(() => 'B') };
+    const tabId = 'tab_mixed';
+    const host = createBrowserHost({
+      findByTabId: (id) =>
+        id === tabId
+          ? {
+              id: tabId,
+              kind: 'mixed',
+              panes: new Map(),
+              mixedLeaves: new Map([
+                ['leaf_a', { leafId: 'leaf_a', surface: 'browser', browser: controllerA as unknown as ControlledFrameController }],
+                ['leaf_b', { leafId: 'leaf_b', surface: 'browser', browser: controllerB as unknown as ControlledFrameController }],
+              ]),
+            }
+          : undefined,
+      sleep: async () => undefined,
+    });
+
+    host.navigate({ tabId, leafId: 'leaf_b' }, 'https://target.test');
+    expect(controllerB.navigate).toHaveBeenCalledWith('https://target.test');
+    expect(controllerA.navigate).not.toHaveBeenCalled();
+    expect(host.getUrl({ tabId, leafId: 'leaf_a' })).toBe('https://a');
   });
 });

@@ -5,6 +5,18 @@ const splitDirectionSchema = z.enum(['vertical', 'horizontal']);
 
 const loadStateSchema = z.enum(['load', 'idle']);
 
+const browserTargetFields = {
+  tabId: z.string().min(1).optional(),
+  paneId: z.string().min(1).optional(),
+};
+
+function browserTargetSchema<T extends z.ZodRawShape>(extra: T) {
+  return z
+    .object({ ...browserTargetFields, ...extra })
+    .strict()
+    .refine((v) => Boolean(v.tabId || v.paneId), { message: 'tabId or paneId is required' });
+}
+
 export const GOSH_MCP_PROTOCOL_METHODS = [
   'workspace.listTabs',
   'workspace.listPanes',
@@ -249,221 +261,133 @@ export const GOSH_MCP_TOOLS: GoshMcpToolDefinition[] = [
   {
     name: 'gosh_browser_navigate',
     method: 'browser.navigate',
-    description: 'Navigate a browser tab to a URL.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
-        url: z.string().min(1),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          url: z.string().min(1),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+    description: 'Navigate a browser tab or pane to a URL.',
+    paramsSchema: browserTargetSchema({ url: z.string().min(1) }),
+    toParams: (args) => browserTargetSchema({ url: z.string().min(1) }).parse(args),
   },
   {
     name: 'gosh_browser_back',
     method: 'browser.back',
-    description: 'Go back in browser tab history.',
-    paramsSchema: z.object({ tabId: z.string().min(1) }).strict(),
-    toParams: (args) => {
-      const parsed = z.object({ tabId: z.string().min(1) }).strict().parse(args);
-      return parsed;
-    },
+    description: 'Go back in browser tab or pane history.',
+    paramsSchema: browserTargetSchema({}),
+    toParams: (args) => browserTargetSchema({}).parse(args),
   },
   {
     name: 'gosh_browser_forward',
     method: 'browser.forward',
-    description: 'Go forward in browser tab history.',
-    paramsSchema: z.object({ tabId: z.string().min(1) }).strict(),
-    toParams: (args) => {
-      const parsed = z.object({ tabId: z.string().min(1) }).strict().parse(args);
-      return parsed;
-    },
+    description: 'Go forward in browser tab or pane history.',
+    paramsSchema: browserTargetSchema({}),
+    toParams: (args) => browserTargetSchema({}).parse(args),
   },
   {
     name: 'gosh_browser_reload',
     method: 'browser.reload',
-    description: 'Reload the active page in a browser tab.',
-    paramsSchema: z.object({ tabId: z.string().min(1) }).strict(),
-    toParams: (args) => {
-      const parsed = z.object({ tabId: z.string().min(1) }).strict().parse(args);
-      return parsed;
-    },
+    description: 'Reload the active page in a browser tab or pane.',
+    paramsSchema: browserTargetSchema({}),
+    toParams: (args) => browserTargetSchema({}).parse(args),
   },
   {
     name: 'gosh_browser_wait_for',
     method: 'browser.waitFor',
-    description: 'Wait for a selector, text, or load state in a browser tab.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
+    description: 'Wait for a selector, text, or load state in a browser tab or pane.',
+    paramsSchema: browserTargetSchema({
+      selector: z.string().min(1).optional(),
+      text: z.string().optional(),
+      loadState: loadStateSchema.optional(),
+      timeoutMs: z.number().int().positive().optional(),
+      pollIntervalMs: z.number().int().positive().optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
         selector: z.string().min(1).optional(),
         text: z.string().optional(),
         loadState: loadStateSchema.optional(),
         timeoutMs: z.number().int().positive().optional(),
         pollIntervalMs: z.number().int().positive().optional(),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          selector: z.string().min(1).optional(),
-          text: z.string().optional(),
-          loadState: loadStateSchema.optional(),
-          timeoutMs: z.number().int().positive().optional(),
-          pollIntervalMs: z.number().int().positive().optional(),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+      }).parse(args),
   },
   {
     name: 'gosh_browser_snapshot',
     method: 'browser.snapshot',
-    description: 'Capture a bounded semantic accessibility tree from a browser tab.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
+    description: 'Capture a bounded semantic accessibility tree from a browser tab or pane.',
+    paramsSchema: browserTargetSchema({
+      maxNodes: z.number().int().positive().optional(),
+      maxBytes: z.number().int().positive().optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
         maxNodes: z.number().int().positive().optional(),
         maxBytes: z.number().int().positive().optional(),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          maxNodes: z.number().int().positive().optional(),
-          maxBytes: z.number().int().positive().optional(),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+      }).parse(args),
   },
   {
     name: 'gosh_browser_query',
     method: 'browser.query',
-    description: 'Query browser tab nodes by role, name, text, or selector.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
+    description: 'Query browser tab or pane nodes by role, name, text, or selector.',
+    paramsSchema: browserTargetSchema({
+      role: z.string().min(1).optional(),
+      name: z.string().optional(),
+      text: z.string().optional(),
+      selector: z.string().min(1).optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
         role: z.string().min(1).optional(),
         name: z.string().optional(),
         text: z.string().optional(),
         selector: z.string().min(1).optional(),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          role: z.string().min(1).optional(),
-          name: z.string().optional(),
-          text: z.string().optional(),
-          selector: z.string().min(1).optional(),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+      }).parse(args),
   },
   {
     name: 'gosh_browser_click',
     method: 'browser.click',
     description: 'Click a browser element by snapshot ref.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
-        ref: z.string().min(1),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          ref: z.string().min(1),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+    paramsSchema: browserTargetSchema({ ref: z.string().min(1) }),
+    toParams: (args) => browserTargetSchema({ ref: z.string().min(1) }).parse(args),
   },
   {
     name: 'gosh_browser_type',
     method: 'browser.type',
     description: 'Type text into a browser input by snapshot ref.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
+    paramsSchema: browserTargetSchema({
+      ref: z.string().min(1),
+      text: z.string(),
+      clear: z.boolean().optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
         ref: z.string().min(1),
         text: z.string(),
         clear: z.boolean().optional(),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          ref: z.string().min(1),
-          text: z.string(),
-          clear: z.boolean().optional(),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+      }).parse(args),
   },
   {
     name: 'gosh_browser_press',
     method: 'browser.press',
     description: 'Press a key on a browser element by snapshot ref.',
-    paramsSchema: z
-      .object({
-        tabId: z.string().min(1),
+    paramsSchema: browserTargetSchema({
+      ref: z.string().min(1),
+      key: z.string().min(1),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
         ref: z.string().min(1),
         key: z.string().min(1),
-      })
-      .strict(),
-    toParams: (args) => {
-      const parsed = z
-        .object({
-          tabId: z.string().min(1),
-          ref: z.string().min(1),
-          key: z.string().min(1),
-        })
-        .strict()
-        .parse(args);
-      return parsed;
-    },
+      }).parse(args),
   },
   {
     name: 'gosh_browser_get_url',
     method: 'browser.getUrl',
-    description: 'Get the current URL of a browser tab.',
-    paramsSchema: z.object({ tabId: z.string().min(1) }).strict(),
-    toParams: (args) => {
-      const parsed = z.object({ tabId: z.string().min(1) }).strict().parse(args);
-      return parsed;
-    },
+    description: 'Get the current URL of a browser tab or pane.',
+    paramsSchema: browserTargetSchema({}),
+    toParams: (args) => browserTargetSchema({}).parse(args),
   },
   {
     name: 'gosh_browser_get_title',
     method: 'browser.getTitle',
-    description: 'Get the current document title of a browser tab.',
-    paramsSchema: z.object({ tabId: z.string().min(1) }).strict(),
-    toParams: (args) => {
-      const parsed = z.object({ tabId: z.string().min(1) }).strict().parse(args);
-      return parsed;
-    },
+    description: 'Get the current document title of a browser tab or pane.',
+    paramsSchema: browserTargetSchema({}),
+    toParams: (args) => browserTargetSchema({}).parse(args),
   },
 ];
 

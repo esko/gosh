@@ -116,4 +116,30 @@ describe('validateRequest', () => {
       expect(result.response.error.message).toContain('paneId');
     }
   });
+
+  it('accepts browser.navigate with paneId only', () => {
+    const result = validateRequest({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'browser.navigate',
+      params: { paneId: 'pane_browser', url: 'https://example.com' },
+      id: 2,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.params).toEqual({ paneId: 'pane_browser', url: 'https://example.com' });
+    }
+  });
+
+  it('rejects browser.navigate without tabId or paneId', () => {
+    const result = validateRequest({
+      jsonrpc: JSONRPC_VERSION,
+      method: 'browser.navigate',
+      params: { url: 'https://example.com' },
+      id: 3,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.error.message).toContain('tabId or paneId is required');
+    }
+  });
 });

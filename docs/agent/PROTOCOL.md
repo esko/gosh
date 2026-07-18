@@ -33,18 +33,18 @@ If the client requests an unsupported major version, the server responds with `i
 | `terminal.read` | `{ paneId, maxBytes?, lastLines? }` |
 | `terminal.run` | `{ paneId, command, timeoutMs?, maxOutputBytes? }` |
 | `pane.diagnostics` | `{ paneId }` |
-| `browser.navigate` | `{ tabId, url }` |
-| `browser.back` | `{ tabId }` |
-| `browser.forward` | `{ tabId }` |
-| `browser.reload` | `{ tabId }` |
-| `browser.waitFor` | `{ tabId, selector?, text?, loadState?, timeoutMs?, pollIntervalMs? }` |
-| `browser.snapshot` | `{ tabId, maxNodes?, maxBytes? }` |
-| `browser.query` | `{ tabId, role?, name?, text?, selector? }` |
-| `browser.click` | `{ tabId, ref }` |
-| `browser.type` | `{ tabId, ref, text, clear? }` |
-| `browser.press` | `{ tabId, ref, key }` |
-| `browser.getUrl` | `{ tabId }` |
-| `browser.getTitle` | `{ tabId }` |
+| `browser.navigate` | `{ tabId?, paneId?, url }` — `tabId` or `paneId` required |
+| `browser.back` | `{ tabId?, paneId? }` |
+| `browser.forward` | `{ tabId?, paneId? }` |
+| `browser.reload` | `{ tabId?, paneId? }` |
+| `browser.waitFor` | `{ tabId?, paneId?, selector?, text?, loadState?, timeoutMs?, pollIntervalMs? }` |
+| `browser.snapshot` | `{ tabId?, paneId?, maxNodes?, maxBytes? }` |
+| `browser.query` | `{ tabId?, paneId?, role?, name?, text?, selector? }` |
+| `browser.click` | `{ tabId?, paneId?, ref }` |
+| `browser.type` | `{ tabId?, paneId?, ref, text, clear? }` |
+| `browser.press` | `{ tabId?, paneId?, ref, key }` |
+| `browser.getUrl` | `{ tabId?, paneId? }` |
+| `browser.getTitle` | `{ tabId?, paneId? }` |
 | `events.subscribe` | `{ types?: string[] }` |
 
 Server push uses the notification `events.push` with `{ subscriptionId, event }`.
@@ -88,6 +88,10 @@ Success result shape:
 
 Push events `terminal.command.started` and `terminal.command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`. `browser.navigated` fires after agent-driven `browser.navigate`, successful `browser.back` / `browser.forward`, or `browser.reload`.
 
+### `browser.*` targeting
+
+Every `browser.*` method accepts **`tabId` or `paneId`** (at least one required). On mixed tabs with multiple browser leaves, pass `paneId` from `workspace.listPanes` to target a specific Controlled Frame. When `paneId` is omitted, the service uses the **focused browser pane** in that tab, or the **first browser pane** if none is focused. Browser-only tabs (`kind: "browser"`) continue to work with `tabId` alone (no registry pane required). If both ids are supplied they must refer to the same tab; mismatches return `invalid-argument`.
+
 ### Event stream (`events.push`)
 
 All events share `{ seq, type, at, windowId }` with monotonic `seq`. Optional fields are opaque ids and primitives only (no DOM or transport handles).
@@ -105,8 +109,8 @@ All events share `{ seq, type, at, windowId }` with monotonic `seq`. Optional fi
 | `terminal.command.started` | `tabId`, `paneId`, `commandId` |
 | `terminal.command.completed` | `tabId`, `paneId`, `commandId`, `exitCode` |
 | `terminal.disconnected` | `tabId`, `paneId` |
-| `browser.navigated` | `tabId`, `url` |
-| `browser.load.failed` | `tabId`, `url`, `failureReason` |
+| `browser.navigated` | `tabId`, `url`, `paneId?` |
+| `browser.load.failed` | `tabId`, `url`, `failureReason`, `paneId?` |
 
 `window.opened` is emitted when the workspace registry boots (one IWA terminal window). `window.closed` is emitted on teardown (`resetAgentControl` / `pagehide`). `terminal.disconnected` fires when a pane transport disconnects. `browser.load.failed` fires on Controlled Frame `loadabort` or navigation failure.
 

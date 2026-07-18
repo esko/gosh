@@ -189,14 +189,26 @@ import type {
   BrowserWaitForState,
 } from '../browser/browserAutomationTypes';
 
+/** Resolved browser leaf for Controlled Frame RPCs (opaque ids only). */
+export type BrowserHostTarget = {
+  tabId: string;
+  paneId?: string;
+  leafId?: string;
+};
+
+export type BrowserRpcInput = {
+  tabId?: string;
+  paneId?: string;
+};
+
 /** Imperative seam for browser tabs (Controlled Frame). */
 export type BrowserHost = {
-  navigate(tabId: string, url: string): void;
-  back(tabId: string): Promise<boolean>;
-  forward(tabId: string): Promise<boolean>;
-  reload(tabId: string): void;
+  navigate(target: BrowserHostTarget, url: string): void;
+  back(target: BrowserHostTarget): Promise<boolean>;
+  forward(target: BrowserHostTarget): Promise<boolean>;
+  reload(target: BrowserHostTarget): void;
   waitFor(
-    tabId: string,
+    target: BrowserHostTarget,
     input: {
       selector?: string;
       text?: string;
@@ -205,16 +217,16 @@ export type BrowserHost = {
       pollIntervalMs?: number;
     },
   ): Promise<BrowserWaitForResult>;
-  snapshot(tabId: string, input?: { maxNodes?: number; maxBytes?: number }): Promise<BrowserSnapshotResult>;
+  snapshot(target: BrowserHostTarget, input?: { maxNodes?: number; maxBytes?: number }): Promise<BrowserSnapshotResult>;
   query(
-    tabId: string,
+    target: BrowserHostTarget,
     input: { role?: string; name?: string; text?: string; selector?: string },
   ): Promise<BrowserQueryResult>;
-  click(tabId: string, input: { ref: string }): Promise<void>;
-  type(tabId: string, input: { ref: string; text: string; clear?: boolean }): Promise<void>;
-  press(tabId: string, input: { ref: string; key: string }): Promise<void>;
-  getUrl(tabId: string): string;
-  getTitle(tabId: string): string;
+  click(target: BrowserHostTarget, input: { ref: string }): Promise<void>;
+  type(target: BrowserHostTarget, input: { ref: string; text: string; clear?: boolean }): Promise<void>;
+  press(target: BrowserHostTarget, input: { ref: string; key: string }): Promise<void>;
+  getUrl(target: BrowserHostTarget): string;
+  getTitle(target: BrowserHostTarget): string;
 };
 
 export function agentOk<T>(value: T): AgentResult<T> {

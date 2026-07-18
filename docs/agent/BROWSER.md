@@ -33,27 +33,29 @@ Embedded pages may request powerful capabilities (geolocation, camera, notificat
 
 `workspace.listTabs` reports `kind: "browser"` for browser-only tabs and `kind: "mixed"` for terminal+browser split tabs. `workspace.listPanes` includes `surface: "terminal" | "browser"` per pane. On mixed tabs, `pane.split` accepts optional `paneId` (source leaf; defaults to active pane) and `surface` (`terminal` | `browser`; defaults to the source leaf surface) to grow the Gosh-owned layout tree.
 
+Every `browser.*` RPC accepts **`tabId` or `paneId`** (at least one). Use `paneId` to target a specific browser leaf when a mixed tab has more than one. Omit `paneId` to use the focused browser pane, or the first browser pane when none is focused. Browser-only tabs still work with `tabId` alone.
+
 ### Navigation
 
 | RPC | Service | Notes |
 |-----|---------|-------|
-| `browser.navigate` | `browserNavigate` | `{ tabId, url }` |
-| `browser.back` | `browserBack` | Returns `{ moved }` |
-| `browser.forward` | `browserForward` | Returns `{ moved }` |
-| `browser.reload` | `browserReload` | |
-| `browser.getUrl` | `browserGetUrl` | |
-| `browser.getTitle` | `browserGetTitle` | |
+| `browser.navigate` | `browserNavigate` | `{ tabId?, paneId?, url }` |
+| `browser.back` | `browserBack` | `{ tabId?, paneId? }` — returns `{ moved }` |
+| `browser.forward` | `browserForward` | `{ tabId?, paneId? }` — returns `{ moved }` |
+| `browser.reload` | `browserReload` | `{ tabId?, paneId? }` |
+| `browser.getUrl` | `browserGetUrl` | `{ tabId?, paneId? }` |
+| `browser.getTitle` | `browserGetTitle` | `{ tabId?, paneId? }` |
 
 ### Snapshot and interaction
 
 | RPC | Service | Notes |
 |-----|---------|-------|
-| `browser.snapshot` | `browserSnapshot` | Bounded semantic tree with temporary `ref` ids |
-| `browser.query` | `browserQuery` | Filter by `role`, `name`, `text`, or `selector` |
-| `browser.waitFor` | `browserWaitFor` | `selector`, `text`, or `loadState` (`load` / `idle`) |
-| `browser.click` | `browserClick` | `{ tabId, ref }` |
-| `browser.type` | `browserType` | `{ tabId, ref, text, clear? }` — clears by default |
-| `browser.press` | `browserPress` | `{ tabId, ref, key }` |
+| `browser.snapshot` | `browserSnapshot` | `{ tabId?, paneId?, maxNodes?, maxBytes? }` |
+| `browser.query` | `browserQuery` | `{ tabId?, paneId?, role?, name?, text?, selector? }` |
+| `browser.waitFor` | `browserWaitFor` | `{ tabId?, paneId?, selector?, text?, loadState? }` |
+| `browser.click` | `browserClick` | `{ tabId?, paneId?, ref }` |
+| `browser.type` | `browserType` | `{ tabId?, paneId?, ref, text, clear? }` — clears by default |
+| `browser.press` | `browserPress` | `{ tabId?, paneId?, ref, key }` |
 
 There is **no** generic `browser.evaluate` / arbitrary JavaScript RPC. Snapshot and interaction use fixed Controlled Frame `executeScript` helpers in `app/src/browser/browserSnapshotScript.ts` only.
 
@@ -80,8 +82,9 @@ Browser RPCs are also exposed through `goshctl` and `gosh-mcp` (thin protocol cl
 
 ```bash
 goshctl browser navigate --tab <tabId> https://example.com
+goshctl browser navigate --pane <paneId> https://example.com
 goshctl browser snapshot --tab <tabId>
-goshctl browser click --tab <tabId> --ref e1
+goshctl browser click --pane <paneId> --ref e1
 ```
 
 MCP tools: `gosh_browser_navigate`, `gosh_browser_snapshot`, `gosh_browser_click`, `gosh_browser_type`, `gosh_browser_get_url`, `gosh_browser_get_title`, and the other `browser.*` methods. See `tools/goshctl/README.md` and `tools/gosh-mcp/README.md`.
