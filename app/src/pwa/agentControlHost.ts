@@ -98,25 +98,21 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
       const pane = requirePane(paneId);
       const terminal = requireTerminal(pane.tabId);
       terminal.focusPane(pane.resttyPaneId);
-      return terminal.resizeActivePane(direction, amount);
+      return terminal.resizePaneToward(pane.resttyPaneId, direction, amount);
     },
 
     zoom(paneId: string, zoomed?: boolean) {
       const pane = requirePane(paneId);
       const terminal = requireTerminal(pane.tabId);
       terminal.focusPane(pane.resttyPaneId);
-      const currently = terminal.isPaneZoomed();
+      const currently = terminal.isPaneZoomed(pane.resttyPaneId);
       if (zoomed === undefined) {
-        const ok = terminal.toggleZoomActivePane();
-        reg.setPaneZoomed(paneId, terminal.isPaneZoomed());
+        const ok = terminal.setPaneZoomed(pane.resttyPaneId, !currently);
+        reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId));
         return ok;
       }
-      if (zoomed === currently) {
-        reg.setPaneZoomed(paneId, currently);
-        return true;
-      }
-      const ok = terminal.toggleZoomActivePane();
-      reg.setPaneZoomed(paneId, terminal.isPaneZoomed());
+      const ok = terminal.setPaneZoomed(pane.resttyPaneId, zoomed);
+      reg.setPaneZoomed(paneId, terminal.isPaneZoomed(pane.resttyPaneId));
       return ok;
     },
 
@@ -137,7 +133,7 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
     isZoomed(paneId: string) {
       const pane = requirePane(paneId);
       const session = lookup.findByTabId(pane.tabId);
-      return session?.terminal?.isPaneZoomed() ?? reg.getPane(paneId)?.zoomed ?? false;
+      return session?.terminal?.isPaneZoomed(pane.resttyPaneId) ?? reg.getPane(paneId)?.zoomed ?? false;
     },
   };
 }

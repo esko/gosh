@@ -17,6 +17,13 @@ import { UrlLinkifier } from '../terminal/urlLinkify';
 import type { TerminalPalette } from './types';
 import { clipboardImageToPng, encodeKittyPng } from './kittyImage';
 import { scrollbackBytesForLines } from './scrollback';
+import {
+  ResttyLayoutController,
+  type LayoutNode,
+  type PaneDirection,
+} from './resttyLayout';
+
+export type { LayoutNode, PaneDirection } from './resttyLayout';
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -474,9 +481,6 @@ type ResttySurface = ResttyHandle & {
   requestLayoutSync?: () => void;
 };
 
-/** Direction for keyboard pane focus and resize. */
-export type PaneDirection = 'left' | 'right' | 'up' | 'down';
-
 export type TerminalPreviewOptions = {
   width: number;
   height: number;
@@ -795,10 +799,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private pointerFocusCleanup: (() => void) | null = null;
   private settings: PwaTerminalSettings | null = null;
   private readonly previewCanvases = new Map<number, WebGpuPreviewState>();
-  /** Pane currently maximized over the split layout, or null when none. */
-  private zoomedPaneId: number | null = null;
-  /** Saved inline `position` of the root while a pane is zoomed (for restore). */
-  private prevRootPosition: string | null = null;
+  private layout: ResttyLayoutController | null = null;
 
   private get surface(): ResttySurface | null {
     return (this.term?.restty as ResttySurface | null) ?? null;
@@ -807,6 +808,10 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   static async create(el: HTMLElement, settings: PwaTerminalSettings): Promise<ResttyTerminalAdapter> {
     const adapter = new ResttyTerminalAdapter();
     adapter.root = el;
+    adapter.layout = new ResttyLayoutController(() => adapter.root, {
+      requestLayoutSync: () => adapter.surface?.requestLayoutSync?.(),
+      syncLayout: () => adapter.syncLayout(),
+    });
     adapter.settings = settings;
     // Resolve the selected font (bundled or user-provided) to same-origin URL /
     // buffer sources before opening; restty's default font list (Local Font
@@ -948,7 +953,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
 
   private handlePaneCreated(id: number): void {
     // A new split invalidates a maximized layout; restore before adding.
-    if (this.zoomedPaneId !== null) this.unzoomPane();
+    if (this.layout?.hasZoomedPane()) this.layout.clearZoom();
     this.registerPane(id);
     this.connectPane(id);
     this.syncLayout();
@@ -957,7 +962,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   }
 
   private handlePaneClosed(id: number): void {
-    if (this.zoomedPaneId === id) this.unzoomPane();
+    if (this.layout?.isPaneZoomed(id)) this.layout.clearZoom();
     this.releasePreviewCanvas(id);
     const state = this.panes.get(id);
     if (state) state.bridge.dispose();
@@ -994,9 +999,21 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     this.surface?.setActivePane?.(id, { focus: true });
   }
 
-  /** The DOM container restty assigns to a pane (`.pane[data-pane-id]`). */
-  private paneContainer(id: number): HTMLElement | null {
-    return this.root?.querySelector<HTMLElement>(`.pane[data-pane-id="${id}"]`) ?? null;
+  getLayoutTree(): LayoutNode | null {
+    return this.layout?.getLayoutTree() ?? null;
+  }
+
+  resizePaneToward(paneId: number, direction: PaneDirection, amount: number): boolean {
+    return this.layout?.resizePaneToward(paneId, direction, amount) ?? false;
+  }
+
+  setPaneZoomed(paneId: number, zoomed: boolean): boolean {
+    return this.layout?.setPaneZoomed(paneId, zoomed) ?? false;
+  }
+
+  isPaneZoomed(paneId?: number): boolean {
+    const id = paneId ?? this.activePaneId;
+    return this.layout?.isPaneZoomed(id) ?? false;
   }
 
   /**
@@ -1006,8 +1023,8 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
    */
   focusPaneInDirection(dir: PaneDirection): boolean {
     if (this.panes.size <= 1) return false;
-    if (this.zoomedPaneId !== null) this.unzoomPane();
-    const active = this.paneContainer(this.activePaneId);
+    if (this.layout?.hasZoomedPane()) this.layout.clearZoom();
+    const active = this.layout?.getPaneElement(this.activePaneId);
     if (!active) return false;
     const a = active.getBoundingClientRect();
     const acx = a.left + a.width / 2;
@@ -1015,7 +1032,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     let best: { id: number; dist: number; overlap: boolean } | null = null;
     for (const id of this.panes.keys()) {
       if (id === this.activePaneId) continue;
-      const el = this.paneContainer(id);
+      const el = this.layout?.getPaneElement(id);
       if (!el) continue;
       const r = el.getBoundingClientRect();
       const cx = r.left + r.width / 2;
@@ -1041,7 +1058,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   /** Cycle focus through panes in id order; `delta` is +1 (next) or -1 (prev). */
   cyclePane(delta: number): boolean {
     if (this.panes.size <= 1) return false;
-    if (this.zoomedPaneId !== null) this.unzoomPane();
+    if (this.layout?.hasZoomedPane()) this.layout.clearZoom();
     const ids = [...this.panes.keys()].sort((x, y) => x - y);
     const idx = ids.indexOf(this.activePaneId);
     const next = ids[(idx + (delta >= 0 ? 1 : -1) + ids.length) % ids.length];
@@ -1050,82 +1067,23 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     return true;
   }
 
-  /** Read the `<pct>` from an element's inline `flex: 0 0 <pct>%`, else null. */
-  private flexPct(el: HTMLElement): number | null {
-    const match = /(\d+(?:\.\d+)?)%/.exec(el.style.flex);
-    return match ? Number(match[1]) : null;
-  }
-
   /**
    * Grow/shrink the active pane toward a direction by nudging the divider of the
-   * nearest split ancestor whose orientation matches that axis. Walks up the
-   * split tree so a pane on the far side of its immediate split still resizes
-   * against the correct boundary. No-op when no matching split exists.
+   * nearest split ancestor whose orientation matches that axis.
    */
   resizeActivePane(dir: PaneDirection, stepPct = 6): boolean {
     if (this.panes.size <= 1) return false;
-    const active = this.paneContainer(this.activePaneId);
-    if (!active) return false;
-    // Horizontal moves (left/right) act on side-by-side (vertical) splits.
-    const wantClass = dir === 'left' || dir === 'right' ? 'is-vertical' : 'is-horizontal';
-    // Right/Down extend the active pane's high-side edge: it must be the FIRST
-    // child of the split. Left/Up extend the low-side edge: the SECOND child.
-    const wantFirst = dir === 'right' || dir === 'down';
-    let node: HTMLElement = active;
-    while (node.parentElement) {
-      const parent: HTMLElement = node.parentElement;
-      if (parent.classList.contains('pane-split') && parent.classList.contains(wantClass)) {
-        const branches = Array.from(parent.children).filter(
-          (c): c is HTMLElement => c instanceof HTMLElement && !c.classList.contains('pane-divider'),
-        );
-        if (branches.length === 2) {
-          const isFirst = branches[0] === node;
-          if (isFirst === wantFirst) {
-            const grow = wantFirst ? branches[0] : branches[1];
-            const other = wantFirst ? branches[1] : branches[0];
-            const gPct = this.flexPct(grow) ?? 50;
-            const oPct = this.flexPct(other) ?? 50;
-            const total = gPct + oPct;
-            const next = Math.min(total - 10, Math.max(10, gPct + stepPct));
-            grow.style.flex = `0 0 ${next.toFixed(5)}%`;
-            other.style.flex = `0 0 ${(total - next).toFixed(5)}%`;
-            this.surface?.requestLayoutSync?.();
-            this.syncLayout();
-            return true;
-          }
-        }
-      }
-      node = parent;
-    }
-    return false;
+    return this.resizePaneToward(this.activePaneId, dir, stepPct);
   }
 
   /** Toggle maximize for the active pane (overlay over the split layout). */
   toggleZoomActivePane(): boolean {
-    if (this.zoomedPaneId !== null) {
-      this.unzoomPane();
+    if (this.layout?.hasZoomedPane()) {
+      this.layout.clearZoom();
       return true;
     }
     if (this.panes.size <= 1) return false;
-    const el = this.paneContainer(this.activePaneId);
-    const root = this.root;
-    if (!el || !root) return false;
-    // Anchor the absolute overlay to the root rather than an intermediate split.
-    if (!root.style.position) {
-      this.prevRootPosition = root.style.position;
-      root.style.position = 'relative';
-    }
-    el.style.position = 'absolute';
-    el.style.inset = '0';
-    el.style.zIndex = '6';
-    this.zoomedPaneId = this.activePaneId;
-    this.surface?.requestLayoutSync?.();
-    this.syncLayout();
-    return true;
-  }
-
-  isPaneZoomed(): boolean {
-    return this.zoomedPaneId !== null;
+    return this.setPaneZoomed(this.activePaneId, true);
   }
 
   private releasePreviewCanvas(id: number): void {
@@ -1247,23 +1205,6 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     return await new Promise<Blob | null>((resolve) => target.toBlob(resolve, 'image/png'));
   }
 
-  private unzoomPane(): void {
-    if (this.zoomedPaneId === null) return;
-    const el = this.paneContainer(this.zoomedPaneId);
-    if (el) {
-      el.style.position = '';
-      el.style.inset = '';
-      el.style.zIndex = '';
-    }
-    if (this.prevRootPosition !== null && this.root) {
-      this.root.style.position = this.prevRootPosition;
-      this.prevRootPosition = null;
-    }
-    this.zoomedPaneId = null;
-    this.surface?.requestLayoutSync?.();
-    this.syncLayout();
-  }
-
   // create() does the real work; open() exists to satisfy the interface.
   open(): void {}
 
@@ -1368,7 +1309,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
       playBellTone();
       return;
     }
-    const el = this.paneContainer(paneId);
+    const el = this.layout?.getPaneElement(paneId);
     if (!el) return;
     el.classList.remove('pane-bell-flash');
     // Force reflow so re-triggering the flash on a rapid second bell restarts the animation.
@@ -1538,8 +1479,9 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     }
 
     const canvasUnder = (x: number, y: number): HTMLCanvasElement | null => {
-      if (this.zoomedPaneId !== null) {
-        return this.paneContainer(this.zoomedPaneId)?.querySelector<HTMLCanvasElement>('canvas') ?? null;
+      const zoomedId = this.layout?.zoomedPaneIdOrNull();
+      if (zoomedId !== null && zoomedId !== undefined) {
+        return this.layout?.getPaneElement(zoomedId)?.querySelector<HTMLCanvasElement>('canvas') ?? null;
       }
       for (const canvas of canvases) {
         const rect = canvas.getBoundingClientRect();
