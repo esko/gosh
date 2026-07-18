@@ -9,6 +9,7 @@ import {
   type PaneDirection,
   type PaneHost,
   type SplitDirection,
+  type TerminalPosition,
 } from '../agent';
 import type { ResttyTerminalAdapter } from './resttyAdapter';
 
@@ -128,6 +129,24 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
       const conn = session.panes.get(pane.resttyPaneId);
       if (!conn) throw new Error(`Pane transport missing: ${paneId}`);
       conn.sink.insertText(data);
+    },
+
+    readViewport(paneId: string) {
+      const pane = requirePane(paneId);
+      const terminal = requireTerminal(pane.tabId);
+      return terminal.captureViewportText(pane.resttyPaneId);
+    },
+
+    readHistory(paneId: string, opts: { lastLines: number }) {
+      const pane = requirePane(paneId);
+      const terminal = requireTerminal(pane.tabId);
+      return terminal.captureHistoryText(pane.resttyPaneId, opts);
+    },
+
+    readRange(paneId: string, opts: { start: TerminalPosition; end: TerminalPosition }) {
+      const pane = requirePane(paneId);
+      const terminal = requireTerminal(pane.tabId);
+      return terminal.captureTextRange(pane.resttyPaneId, opts);
     },
 
     isZoomed(paneId: string) {

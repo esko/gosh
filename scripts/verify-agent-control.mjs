@@ -112,7 +112,7 @@ async function main() {
     const caps = JSON.parse(
       await evaluate(client, `JSON.stringify(window.__goshAgent.capabilities())`),
     );
-    if (caps.methods?.listPanes?.available && caps.methods?.paneSplit?.available && !caps.methods?.terminalRead?.available) {
+    if (caps.methods?.listPanes?.available && caps.methods?.paneSplit?.available && caps.methods?.terminalRead?.available) {
       pass('capabilities report implemented vs unavailable methods');
     } else {
       fail('capabilities report implemented vs unavailable methods', JSON.stringify(caps));

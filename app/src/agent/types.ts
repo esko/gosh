@@ -39,6 +39,30 @@ export type PaneInfo = {
   zoomed: boolean;
 };
 
+export type TerminalPosition = { row: number; col: number };
+
+export type TerminalTextCapture = {
+  lines: string[];
+  cols: number;
+  rows: number;
+  cursor?: { row: number; col: number };
+  wrapping: boolean | 'unknown';
+  coordinates?: {
+    origin: 'viewport' | 'absolute';
+    startLine?: number;
+    endLine?: number;
+  };
+  truncated: boolean;
+  truncationReason?: string;
+};
+
+export type TerminalReadResult = {
+  paneId: string;
+  capture: TerminalTextCapture;
+  text: string;
+  truncated: boolean;
+};
+
 export type AgentEventType =
   | 'tab.opened'
   | 'tab.closed'
@@ -86,6 +110,12 @@ export type PaneHost = {
   zoom(paneId: string, zoomed?: boolean): boolean;
   close(paneId: string): boolean;
   send(paneId: string, data: string): void;
+  readViewport(paneId: string): TerminalTextCapture;
+  readHistory(paneId: string, opts: { lastLines: number }): TerminalTextCapture;
+  readRange(
+    paneId: string,
+    opts: { start: TerminalPosition; end: TerminalPosition },
+  ): TerminalTextCapture;
   isZoomed?(paneId: string): boolean;
 };
 

@@ -147,3 +147,27 @@ Keep this ledger current as generated patches are added:
 | nassh Trusted Types policy skip | `scripts/fetch-upstream-assets.mjs` | CSP allowlists only `default`; upstream `createPolicy('nassh')` blocks SSH Worker startup | exact upstream `sanitizeScriptUrl` body must match before replacement |
 | nassh Mosh COLORTERM export | `scripts/fetch-upstream-assets.mjs` | sshd often rejects `SendEnv COLORTERM`; export before `mosh-server` so truecolor apps work | exact mosh `remoteCommand` printf/exec lines must match before replacement |
 | Restty pane resize/zoom DOM access | `app/src/pwa/resttyLayout.ts` | No public Restty resize/maximize API; drives `.pane-split` inline `flex` and a `.pane` overlay | `app/src/pwa/resttyLayout.drift.test.ts` + manual resize/zoom smoke with 3+ panes |
+| Restty WASM text capture | `app/src/pwa/resttyPaneWasmRegistry.ts`, `app/src/pwa/resttyTextCapture.ts` | No public pane text API; agents read `RenderState` cell buffers via patched `ResttyWasm.create` + `restty_scrollbar_*` / `restty_debug_scroll_*` exports | `app/src/pwa/resttyTextCapture.test.ts` + agent `terminalRead` unit tests |
+
+### Restty WASM text capture (agent `terminalRead`)
+
+Restty exposes selection copy and render buffers internally, but no supported
+`getPaneText()` API. Gosh captures authoritative terminal text from the same
+WASM cell grids Restty uses for rendering:
+
+- `ResttyTerminalAdapter.captureViewportText` / `captureHistoryText` /
+  `captureTextRange` read `ResttyWasm.getRenderState(handle)` after
+  `renderUpdate`.
+- `resttyPaneWasmRegistry.ts` patches `ResttyWasm.prototype.create` once per tab
+  to record per-pane handles during pane init (set via `beginPaneInit` in
+  `appOptions`).
+- History uses `restty_scrollbar_total`, `restty_scrollbar_offset`, and
+  `restty_scroll_viewport` with explicit `truncated` metadata when the request
+  exceeds available scrollback. Absolute line hints come from
+  `restty_debug_scroll_left` / `restty_debug_scroll_right` when present.
+
+**Not used:** `termDebugEl` `<pre>` scraping, PTY logs, OCR, or a second VT.
+
+**Follow-up gaps:** public Restty text API; wrap-line metadata; alternate-screen
+detection; non-disruptive scrollback read without temporarily scrolling the user
+viewport.
