@@ -23,6 +23,18 @@ describe('gosh-mcp tools', () => {
       'gosh_pane_focus',
       'gosh_pane_zoom',
       'gosh_pane_close',
+      'gosh_browser_navigate',
+      'gosh_browser_back',
+      'gosh_browser_forward',
+      'gosh_browser_reload',
+      'gosh_browser_wait_for',
+      'gosh_browser_snapshot',
+      'gosh_browser_query',
+      'gosh_browser_click',
+      'gosh_browser_type',
+      'gosh_browser_press',
+      'gosh_browser_get_url',
+      'gosh_browser_get_title',
     ]);
   });
 
@@ -63,6 +75,38 @@ describe('gosh-mcp tools', () => {
       paneId: 'pane_1',
       command: 'echo hi',
       timeoutMs: 5000,
+    });
+  });
+
+  it('shapes protocol params for browser operations', () => {
+    const navigate = getToolByName('gosh_browser_navigate');
+    expect(navigate?.toParams({ tabId: 'tab_1', url: 'https://example.com' })).toEqual({
+      tabId: 'tab_1',
+      url: 'https://example.com',
+    });
+
+    const snapshot = getToolByName('gosh_browser_snapshot');
+    expect(snapshot?.toParams({ tabId: 'tab_1', maxNodes: 100 })).toEqual({
+      tabId: 'tab_1',
+      maxNodes: 100,
+    });
+
+    const type = getToolByName('gosh_browser_type');
+    expect(type?.toParams({ tabId: 'tab_1', ref: 'e2', text: 'hello', clear: false })).toEqual({
+      tabId: 'tab_1',
+      ref: 'e2',
+      text: 'hello',
+      clear: false,
+    });
+
+    const waitFor = getToolByName('gosh_browser_wait_for');
+    expect(
+      waitFor?.toParams({ tabId: 'tab_1', selector: '#main', loadState: 'idle', timeoutMs: 3000 }),
+    ).toEqual({
+      tabId: 'tab_1',
+      selector: '#main',
+      loadState: 'idle',
+      timeoutMs: 3000,
     });
   });
 });

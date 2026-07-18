@@ -34,6 +34,18 @@ Commands:
   pane focus --pane <id>
   pane zoom --pane <id>
   pane close --pane <id>
+  browser navigate --tab <id> <url>
+  browser back --tab <id>
+  browser forward --tab <id>
+  browser reload --tab <id>
+  browser snapshot --tab <id> [--max-nodes N] [--max-bytes N]
+  browser query --tab <id> [--role R] [--name N] [--text T] [--selector S]
+  browser wait-for --tab <id> [--selector S] [--text T] [--load-state load|idle]
+  browser click --tab <id> --ref <ref>
+  browser type --tab <id> --ref <ref> [--no-clear] [--] <text...>
+  browser press --tab <id> --ref <ref> --key <key>
+  browser get-url --tab <id>
+  browser get-title --tab <id>
   events [--json]
 
 Credentials:
@@ -249,6 +261,146 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
         action === 'focus' ? 'pane.focus' : action === 'zoom' ? 'pane.zoom' : 'pane.close';
       const result = await withClient(parsed, (client) =>
         client.call(method, { paneId } as AgentRpcParams['pane.focus']),
+      );
+      printJson(result);
+      return 0;
+    }
+  }
+
+  if (group === 'browser') {
+    const tabId = () => requireFlag(parseFlags(parsed.rest, { tab: 'string' }).flags, 'tab');
+
+    if (action === 'navigate') {
+      const { flags, positional, passthrough } = parseFlags(parsed.rest, { tab: 'string' });
+      const id = requireFlag(flags, 'tab');
+      const url = passthrough[0] ?? positional[0];
+      if (!url) throw new Error('url is required (positional or after --)');
+      const result = await withClient(parsed, (client) =>
+        client.call('browser.navigate', { tabId: id, url } satisfies AgentRpcParams['browser.navigate']),
+      );
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'back' || action === 'forward' || action === 'reload') {
+      const id = tabId();
+      const method =
+        action === 'back' ? 'browser.back' : action === 'forward' ? 'browser.forward' : 'browser.reload';
+      const result = await withClient(parsed, (client) =>
+        client.call(method, { tabId: id } satisfies AgentRpcParams['browser.back']),
+      );
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'snapshot') {
+      const { flags } = parseFlags(parsed.rest, { tab: 'string', 'max-nodes': 'number', 'max-bytes': 'number' });
+      const id = requireFlag(flags, 'tab');
+      const params: AgentRpcParams['browser.snapshot'] = { tabId: id };
+      if (typeof flags['max-nodes'] === 'number') params.maxNodes = flags['max-nodes'];
+      if (typeof flags['max-bytes'] === 'number') params.maxBytes = flags['max-bytes'];
+      const result = await withClient(parsed, (client) => client.call('browser.snapshot', params));
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'query') {
+      const { flags } = parseFlags(parsed.rest, {
+        tab: 'string',
+        role: 'string',
+        name: 'string',
+        text: 'string',
+        selector: 'string',
+      });
+      const id = requireFlag(flags, 'tab');
+      const params: AgentRpcParams['browser.query'] = { tabId: id };
+      if (typeof flags.role === 'string') params.role = flags.role;
+      if (typeof flags.name === 'string') params.name = flags.name;
+      if (typeof flags.text === 'string') params.text = flags.text;
+      if (typeof flags.selector === 'string') params.selector = flags.selector;
+      const result = await withClient(parsed, (client) => client.call('browser.query', params));
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'wait-for') {
+      const { flags } = parseFlags(parsed.rest, {
+        tab: 'string',
+        selector: 'string',
+        text: 'string',
+        'load-state': 'string',
+        'timeout-ms': 'number',
+        'poll-interval-ms': 'number',
+      });
+      const id = requireFlag(flags, 'tab');
+      const params: AgentRpcParams['browser.waitFor'] = { tabId: id };
+      if (typeof flags.selector === 'string') params.selector = flags.selector;
+      if (typeof flags.text === 'string') params.text = flags.text;
+      if (flags['load-state'] === 'load' || flags['load-state'] === 'idle') {
+        params.loadState = flags['load-state'];
+      } else if (typeof flags['load-state'] === 'string') {
+        throw new Error('--load-state must be load or idle');
+      }
+      if (typeof flags['timeout-ms'] === 'number') params.timeoutMs = flags['timeout-ms'];
+      if (typeof flags['poll-interval-ms'] === 'number') params.pollIntervalMs = flags['poll-interval-ms'];
+      const result = await withClient(parsed, (client) => client.call('browser.waitFor', params));
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'click') {
+      const { flags } = parseFlags(parsed.rest, { tab: 'string', ref: 'string' });
+      const result = await withClient(parsed, (client) =>
+        client.call('browser.click', {
+          tabId: requireFlag(flags, 'tab'),
+          ref: requireFlag(flags, 'ref'),
+        } satisfies AgentRpcParams['browser.click']),
+      );
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'type') {
+      const { flags, passthrough } = parseFlags(parsed.rest, {
+        tab: 'string',
+        ref: 'string',
+        text: 'string',
+        'no-clear': 'boolean',
+      });
+      const id = requireFlag(flags, 'tab');
+      const ref = requireFlag(flags, 'ref');
+      const text =
+        typeof flags.text === 'string'
+          ? flags.text
+          : passthrough.length > 0
+            ? passthrough.join(' ')
+            : null;
+      if (!text) throw new Error('text is required (--text or after --)');
+      const params: AgentRpcParams['browser.type'] = { tabId: id, ref, text };
+      if (flags['no-clear'] === true) params.clear = false;
+      const result = await withClient(parsed, (client) => client.call('browser.type', params));
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'press') {
+      const { flags } = parseFlags(parsed.rest, { tab: 'string', ref: 'string', key: 'string' });
+      const result = await withClient(parsed, (client) =>
+        client.call('browser.press', {
+          tabId: requireFlag(flags, 'tab'),
+          ref: requireFlag(flags, 'ref'),
+          key: requireFlag(flags, 'key'),
+        } satisfies AgentRpcParams['browser.press']),
+      );
+      printJson(result);
+      return 0;
+    }
+
+    if (action === 'get-url' || action === 'get-title') {
+      const id = tabId();
+      const method = action === 'get-url' ? 'browser.getUrl' : 'browser.getTitle';
+      const result = await withClient(parsed, (client) =>
+        client.call(method, { tabId: id } satisfies AgentRpcParams['browser.getUrl']),
       );
       printJson(result);
       return 0;
