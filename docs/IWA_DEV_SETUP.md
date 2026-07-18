@@ -291,8 +291,11 @@ npm run bundle:iwa:info      # show signed bundle integrity block
 npm run iwa:keygen   # generate Ed25519 signing key + update webBundleId
 npm run iwa:update-id  # re-derive webBundleId from existing key
 npm run smoke:e2e    # SSH fixture + CDP echo checks
+npm run verify:splits          # CDP: Restty split/focus/close (echo)
+npm run verify:agent-control   # CDP: window.__goshAgent list/split/focus/resize/close
 npm run typecheck
 ```
+
 
 ## Install steps summary (.swbn)
 

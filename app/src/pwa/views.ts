@@ -98,6 +98,11 @@ import {
   panesToResume,
   sleep,
 } from './sessionLifecycle';
+import {
+  getWorkspaceRegistry,
+  installAgentControl,
+  resetAgentControl,
+} from './agentControlHost';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -176,7 +181,6 @@ type TermSession = {
 };
 
 const sessions: TermSession[] = [];
-let sessionSeq = 0;
 let statusHideTimer = 0;
 let tabRenderFrame = 0;
 const tabPreviewCache = new TabPreviewCache();
@@ -2314,6 +2318,13 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     previousCaptionCleanup?.();
   };
 
+  // Fresh control-plane state for this terminal window mount.
+  resetAgentControl();
+  installAgentControl({
+    findByTabId: (tabId) => sessions.find((s) => s.id === tabId),
+    sleep,
+  });
+
   // Restore this window's tabs on reload/crash when they belong to the same
   // connection (sessionStorage is per-window); otherwise start a single tab.
   const layout = loadTabLayout();
@@ -2342,10 +2353,12 @@ async function createSession(spec: LaunchConnectionIntent): Promise<TermSession>
   const container = document.createElement('div');
   container.className = 'term-session';
   sessionsHost!.append(container);
+  const title = formatConnectionTarget(spec);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'terminal', title });
   const session: TermSession = {
-    id: `tab${++sessionSeq}`,
+    id: tabId,
     kind: 'terminal',
-    title: formatConnectionTarget(spec),
+    title,
     status: 'connecting',
     statusError: undefined,
     container,
@@ -2392,9 +2405,12 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   session.title = formatConnectionTarget(spec);
   session.status = 'connecting';
   session.container.classList.remove('term-launcher');
+  getWorkspaceRegistry().setTabKind(session.id, 'terminal');
+  getWorkspaceRegistry().setTabTitle(session.id, session.title);
 
   session.titleSub = terminal.onTitle((value) => {
     session.title = value.trim() || formatConnectionTarget(spec);
+    getWorkspaceRegistry().setTabTitle(session.id, session.title);
     if (session.id === activeSessionId) document.title = session.title;
     scheduleTabRender();
   });
@@ -2407,6 +2423,12 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   // Restty connects it; registering the listener flushes the initial pane.
   session.paneSubs.push(terminal.onPaneClose((id) => closePaneConn(session, id)));
   session.paneSubs.push(terminal.onPaneOpen((sink) => void openPaneConn(session, sink)));
+  session.paneSubs.push(
+    terminal.onActivePaneChange((resttyId) => {
+      const paneId = getWorkspaceRegistry().paneIdForRestty(session.id, resttyId);
+      if (paneId) getWorkspaceRegistry().setActivePane(paneId);
+    }),
+  );
   terminal.fit?.();
 }
 
@@ -2421,8 +2443,9 @@ function createLauncherTab(): TermSession {
   pickerHost.className = 'launch-host';
   container.append(pickerHost);
   sessionsHost!.append(container);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'launcher', title: 'New Tab' });
   const session: TermSession = {
-    id: `tab${++sessionSeq}`,
+    id: tabId,
     kind: 'launcher',
     title: 'New Tab',
     status: 'idle',
@@ -2458,6 +2481,11 @@ async function connectLauncherTab(session: TermSession, spec: LaunchConnectionIn
 /** Bind a fresh transport to a newly opened restty pane (split or first pane). */
 async function openPaneConn(session: TermSession, sink: ResttyPaneSink): Promise<void> {
   if (session.panes.has(sink.paneId)) return;
+  getWorkspaceRegistry().openPane({
+    tabId: session.id,
+    resttyPaneId: sink.paneId,
+    active: true,
+  });
   const conn: PaneConn = {
     paneId: sink.paneId,
     sink,
@@ -2522,6 +2550,8 @@ function closePaneConn(session: TermSession, paneId: number): void {
   const conn = session.panes.get(paneId);
   if (!conn) return;
   session.panes.delete(paneId);
+  const opaqueId = getWorkspaceRegistry().paneIdForRestty(session.id, paneId);
+  if (opaqueId) getWorkspaceRegistry().closePane(opaqueId);
   void conn.transport.disconnect().catch(() => undefined);
   conn.transport.dispose();
   session.status = paneSessionStatus(session);
@@ -2638,6 +2668,7 @@ function setActiveSession(id: string): void {
     dismissActiveAuthPrompts();
   }
   activeSessionId = id;
+  getWorkspaceRegistry().setActiveTab(id);
   // Capture the leaving terminal while it still has layout; hide it after.
   // When landing on a launcher tab, reload host screenshots only after that
   // capture persists — otherwise the cards re-render with the previous blob.
@@ -2710,6 +2741,7 @@ function closeSession(session: TermSession): void {
   session.terminal?.dispose();
   session.container.remove();
   sessions.splice(index, 1);
+  getWorkspaceRegistry().closeTab(session.id);
   if (sessions.length === 0) {
     saveTabLayout(); // clears the saved layout so the next launch starts fresh
     navigate('/');
@@ -4014,6 +4046,7 @@ export function disposeTerminal(): void {
     session.terminal?.dispose();
   }
   sessions.length = 0;
+  resetAgentControl();
   tabPreviewCache.clear();
   // Caption-hosted tab strip lives outside `root` — remove it so Back-to-menu
   // does not leave a stale strip in the chrome.

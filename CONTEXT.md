@@ -22,6 +22,17 @@ not belong in the transport boundary.
 Multiple terminal windows remain valid. Native platform tabs are not part of
 the product architecture.
 
+## Agent control plane
+
+The **agent control plane** is the in-process `AgentControlService` that
+enumerates and drives windows, tabs, and panes for automation (CDP today;
+authenticated external protocol / CLI / MCP later). Public identities are
+opaque `windowId`, `tabId`, and `paneId` values owned by `WorkspaceRegistry`.
+Restty's numeric pane ids stay an internal map and must not appear in agent
+APIs. Adapters call the same service; they do not own session business logic.
+See [ADR 0011](docs/adr/0011-agent-control-plane.md).
+_Avoid_: scraping the terminal canvas, treating raw PTY logs as screen state
+
 ## Secondary sessions and paste
 
 A **secondary session** is a short-lived SSH connection that reuses a pane

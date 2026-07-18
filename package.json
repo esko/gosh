@@ -1,6 +1,6 @@
 {
   "name": "gosh",
-  "version": "0.1.173",
+  "version": "0.1.175",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.13.0",
@@ -29,6 +29,8 @@
     "smoke:e2e": "node scripts/smoke-terminal.mjs",
     "smoke:ssh": "node scripts/smoke-ssh-interactive.mjs",
     "smoke:echo": "node scripts/smoke-echo.mjs",
+    "verify:agent-control": "node scripts/verify-agent-control.mjs",
+    "verify:splits": "node scripts/verify-splits.mjs",
     "check:regression": "node --experimental-strip-types scripts/check-storage-regression.mjs",
     "iwa:keygen": "bash scripts/generate-iwa-signing-key.sh",
     "iwa:update-id": "node --experimental-strip-types scripts/update-webbundle-id.mjs"

@@ -13,6 +13,7 @@ import { getCustomFontData } from './customFontStore';
 import { getThemePalette } from './themes';
 import { DA1_REPLY } from './deviceAttributes';
 import { TerminalQueryScanner, stripInboundTerminalProbes } from '../terminal/terminalAutoReplies';
+import { UrlLinkifier } from '../terminal/urlLinkify';
 import type { TerminalPalette } from './types';
 import { clipboardImageToPng, encodeKittyPng } from './kittyImage';
 import { scrollbackBytesForLines } from './scrollback';
@@ -315,6 +316,8 @@ export class PaneBridge implements TerminalSink {
   // Per-pane scanner that answers DA1 + Kitty graphics capability queries on the
   // raw SSH/Mosh output stream (the ET worker answers them upstream instead).
   private readonly queryScanner = new TerminalQueryScanner();
+  /** Wraps bare https/http/mailto/www. URLs in OSC 8 for Restty click/hover. */
+  private readonly urlLinkifier = new UrlLinkifier();
   private readonly decoder = new TextDecoder();
 
   constructor(
@@ -326,6 +329,7 @@ export class PaneBridge implements TerminalSink {
 
   connect(options: PaneConnectOptions): void {
     this.queryScanner.reset();
+    this.urlLinkifier.reset();
     this.callbacks = options.callbacks;
     this.updateViewport({ cols: options.cols, rows: options.rows });
     this.connected = true;
@@ -362,6 +366,7 @@ export class PaneBridge implements TerminalSink {
     this.inputListeners.clear();
     this.resizeListeners.clear();
     this.queryScanner.reset();
+    this.urlLinkifier.reset();
   }
 
   // --- TerminalAdapter sink (transport -> bridge -> pane) ---
@@ -386,13 +391,13 @@ export class PaneBridge implements TerminalSink {
     const { kittyReplies, sendDa1 } = this.queryScanner.ingest(text);
     for (const reply of kittyReplies) this.emitInput(reply);
     if (sendDa1) this.emitInput(DA1_REPLY);
-    const rendered = stripInboundTerminalProbes(text);
+    const rendered = this.urlLinkifier.ingest(stripInboundTerminalProbes(text));
     this.callbacks?.onData?.(this.owner.italicsEnabled ? rendered : stripItalicSgr(rendered));
   }
 
   /** Render trusted local output without OSC capture, DA replies, or remote input. */
   renderLocal(data: string): void {
-    this.callbacks?.onData?.(data);
+    this.callbacks?.onData?.(this.urlLinkifier.ingest(data));
   }
 
   onInput(cb: (data: string) => void): TerminalSubscription {
@@ -782,6 +787,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private readonly titleListeners = new Set<(title: string) => void>();
   private readonly paneOpenListeners = new Set<(sink: PaneBridge) => void>();
   private readonly paneCloseListeners = new Set<(paneId: number) => void>();
+  private readonly activePaneListeners = new Set<(paneId: number) => void>();
   private readonly openedPanes = new Set<number>();
   private pendingOpen: PaneBridge[] = [];
   private wheelForwardCleanup: (() => void) | null = null;
@@ -911,6 +917,11 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     return { dispose: () => this.paneCloseListeners.delete(cb) };
   }
 
+  onActivePaneChange(cb: (paneId: number) => void): TerminalSubscription {
+    this.activePaneListeners.add(cb);
+    return { dispose: () => this.activePaneListeners.delete(cb) };
+  }
+
   /** Split the focused pane; the new pane connects via onPaneSplit. */
   split(direction: 'vertical' | 'horizontal'): void {
     this.surface?.splitActivePane?.(direction);
@@ -964,6 +975,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     // (empty falls back to the connection target in the view layer).
     const title = this.panes.get(id)?.title ?? '';
     this.titleListeners.forEach((cb) => cb(title));
+    this.activePaneListeners.forEach((cb) => cb(id));
   }
 
   private connectPane(id: number): void {
@@ -1457,6 +1469,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     this.titleListeners.clear();
     this.paneOpenListeners.clear();
     this.paneCloseListeners.clear();
+    this.activePaneListeners.clear();
   }
 
   private async waitForBackend(timeoutMs = 20_000): Promise<void> {
