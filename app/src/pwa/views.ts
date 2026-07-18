@@ -121,7 +121,7 @@ import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
 import type { MixedLayoutNode } from '../layout/MixedLayout';
-import { findLeaf } from '../layout/MixedLayout';
+import { deserializeLayout, findLeaf, walkLeaves } from '../layout/MixedLayout';
 import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import {
   attachMixedBrowserLeaf,
@@ -136,6 +136,15 @@ import {
   terminalLeafId,
   type MixedLeafState,
 } from './mixedSession';
+import {
+  TAB_LAYOUT_KEY,
+  buildSavedTabLayoutFromSnapshots,
+  firstTabSpec,
+  parseSavedTabLayout,
+  serializeSavedTabLayout,
+  type RestorableSessionSnapshot,
+  type SavedMixedTab,
+} from './tabLayoutPersistence';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -271,38 +280,66 @@ function activeSession(): TermSession | null {
 }
 
 // Per-window tab persistence (sessionStorage survives reload, not relaunch).
-const TAB_LAYOUT_KEY = 'gosh-tab-layout';
-type SavedTabLayout = { specs: LaunchConnectionIntent[]; activeIndex: number };
+function collectBrowserUrls(session: TermSession): Record<string, string> | undefined {
+  if (!session.mixedLayout || !session.mixedLeaves) return undefined;
+  const urls: Record<string, string> = {};
+  for (const leaf of walkLeaves(session.mixedLayout)) {
+    if (leaf.surface !== 'browser') continue;
+    const url = session.mixedLeaves.get(leaf.leafId)?.browser?.getUrl();
+    if (url && url !== 'about:blank') urls[leaf.leafId] = url;
+  }
+  return Object.keys(urls).length > 0 ? urls : undefined;
+}
+
+function sessionToRestorableSnapshot(session: TermSession): RestorableSessionSnapshot | null {
+  if (!session.spec) return null;
+  if (session.kind === 'terminal') {
+    return { kind: 'terminal', spec: session.spec, resumeEtSessionId: session.resumeEtSessionId };
+  }
+  if (session.kind === 'mixed' && session.mixedLayout) {
+    return {
+      kind: 'mixed',
+      spec: session.spec,
+      resumeEtSessionId: session.resumeEtSessionId,
+      mixedLayout: session.mixedLayout,
+      browserUrls: collectBrowserUrls(session),
+    };
+  }
+  return null;
+}
 
 /** Identity of a connection, so a fresh launch doesn't inherit stale tabs. */
 function saveTabLayout(): void {
   try {
-    if (sessions.length === 0) {
+    const snapshots: RestorableSessionSnapshot[] = [];
+    const restorableIds: string[] = [];
+    for (const session of sessions) {
+      const snapshot = sessionToRestorableSnapshot(session);
+      if (!snapshot) continue;
+      snapshots.push(snapshot);
+      restorableIds.push(session.id);
+    }
+    if (snapshots.length === 0) {
       sessionStorage.removeItem(TAB_LAYOUT_KEY);
       return;
     }
-    // Only connected tabs are restorable; launcher tabs carry no spec.
-    const terminals = sessions.filter((s): s is TermSession & { spec: LaunchConnectionIntent } => s.kind === 'terminal' && !!s.spec);
-    if (terminals.length === 0) {
+    const activeIndex = activeSessionId
+      ? Math.max(0, restorableIds.indexOf(activeSessionId))
+      : 0;
+    const layout = buildSavedTabLayoutFromSnapshots(snapshots, activeIndex);
+    if (!layout) {
       sessionStorage.removeItem(TAB_LAYOUT_KEY);
       return;
     }
-    const activeIndex = Math.max(0, terminals.findIndex((s) => s.id === activeSessionId));
-    const layout: SavedTabLayout = {
-      specs: terminals.map((s) => ({ ...s.spec, etSessionId: s.resumeEtSessionId })),
-      activeIndex,
-    };
-    sessionStorage.setItem(TAB_LAYOUT_KEY, JSON.stringify(layout));
+    sessionStorage.setItem(TAB_LAYOUT_KEY, serializeSavedTabLayout(layout));
   } catch {
     /* sessionStorage unavailable — persistence is best-effort */
   }
 }
 
-function loadTabLayout(): SavedTabLayout | null {
+function loadTabLayout() {
   try {
-    const raw = sessionStorage.getItem(TAB_LAYOUT_KEY);
-    const parsed = raw ? (JSON.parse(raw) as SavedTabLayout) : null;
-    return parsed && Array.isArray(parsed.specs) && parsed.specs.length > 0 ? parsed : null;
+    return parseSavedTabLayout(sessionStorage.getItem(TAB_LAYOUT_KEY));
   } catch {
     return null;
   }
@@ -2486,8 +2523,11 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   // Restore this window's tabs on reload/crash when they belong to the same
   // connection (sessionStorage is per-window); otherwise start a single tab.
   const layout = loadTabLayout();
-  if (layout && layoutSpecKey(layout.specs[0]) === layoutSpecKey(spec)) {
-    for (const saved of layout.specs) await createSession(saved);
+  if (layout && layoutSpecKey(firstTabSpec(layout)) === layoutSpecKey(spec)) {
+    for (const saved of layout.tabs) {
+      if (saved.kind === 'terminal') await createSession(saved.spec);
+      else await restoreMixedTab(saved);
+    }
     const active = sessions[Math.min(layout.activeIndex, sessions.length - 1)] ?? sessions[0];
     if (active) setActiveSession(active.id);
   } else {
@@ -2737,17 +2777,43 @@ async function wireMixedTerminalLeaf(
 
 /** Open a mixed tab: terminal left, Controlled Frame browser right (ADR 0016). */
 async function createMixedTab(spec: LaunchConnectionIntent): Promise<TermSession> {
+  const connectSpec = { ...spec, etSessionId: undefined };
+  const title = formatConnectionTarget(connectSpec);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'mixed', title });
+  const { layout } = createMixedLayout(tabId, 'vertical');
+  return mountMixedTabSession({ tabId, spec, layout });
+}
+
+/** Recreate a mixed tab from sessionStorage (layout tree + terminal reconnect + browser URLs). */
+async function restoreMixedTab(saved: SavedMixedTab): Promise<TermSession> {
+  const connectSpec = { ...saved.spec, etSessionId: undefined };
+  const title = formatConnectionTarget(connectSpec);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'mixed', title });
+  const layout = deserializeLayout(saved.layout);
+  return mountMixedTabSession({
+    tabId,
+    spec: saved.spec,
+    layout,
+    browserUrls: saved.browserUrls,
+  });
+}
+
+async function mountMixedTabSession(input: {
+  tabId: string;
+  spec: LaunchConnectionIntent;
+  layout: MixedLayoutNode;
+  browserUrls?: Record<string, string>;
+}): Promise<TermSession> {
   const container = document.createElement('div');
   container.className = 'term-session term-mixed';
   sessionsHost!.append(container);
-  const title = formatConnectionTarget(spec);
-  const tabId = getWorkspaceRegistry().openTab({ kind: 'mixed', title });
-  const { layout, terminalLeafId, browserLeafId } = createMixedLayout(tabId, 'vertical');
+  const connectSpec = { ...input.spec, etSessionId: undefined };
+  const title = formatConnectionTarget(connectSpec);
   const mixedLeaves = new Map<string, MixedLeafState>();
   const session: TermSession = {
-    id: tabId,
+    id: input.tabId,
     kind: 'mixed',
-    spec,
+    spec: connectSpec,
     title,
     status: 'connecting',
     statusError: undefined,
@@ -2755,27 +2821,38 @@ async function createMixedTab(spec: LaunchConnectionIntent): Promise<TermSession
     panes: new Map(),
     paneSubs: [],
     titleSub: null,
-    mixedLayout: layout,
+    mixedLayout: input.layout,
     mixedLeaves,
     mixedMount: null,
+    resumeEtSessionId: input.spec.etSessionId,
   };
   sessions.push(session);
   session.mixedMount = mountMixedLayout(
     container,
-    layout,
+    input.layout,
     (next) => {
       session.mixedLayout = next;
     },
     (leaf) => focusMixedLeaf(session, leaf),
   );
-  await wireMixedTerminalLeaf(session, terminalLeafId, session.mixedMount.leafHosts.get(terminalLeafId)!, spec);
-  attachMixedBrowserLeaf(
-    getWorkspaceRegistry(),
-    tabId,
-    mixedLeaves,
-    browserLeafId,
-    session.mixedMount.leafHosts.get(browserLeafId)!,
-  );
+
+  for (const leaf of walkLeaves(input.layout)) {
+    const host = session.mixedMount.leafHosts.get(leaf.leafId);
+    if (!host) continue;
+    if (leaf.surface === 'terminal') {
+      await wireMixedTerminalLeaf(session, leaf.leafId, host, input.spec);
+    } else {
+      attachMixedBrowserLeaf(
+        getWorkspaceRegistry(),
+        input.tabId,
+        mixedLeaves,
+        leaf.leafId,
+        host,
+        input.browserUrls?.[leaf.leafId],
+      );
+    }
+  }
+
   renderTabs();
   return session;
 }
