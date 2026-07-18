@@ -61,6 +61,7 @@ export async function dispatchAgentRpc(
           command: runParams.command,
           timeoutMs: runParams.timeoutMs,
           maxOutputBytes: runParams.maxOutputBytes,
+          force: runParams.force,
         }),
         requestId,
       );

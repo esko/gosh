@@ -201,7 +201,13 @@ function validateMethodParams(
       if (typeof params.data !== 'string') {
         return invalidParams(id, 'data must be a string');
       }
-      return { ok: true, params: { paneId: paneId.value, data: params.data } };
+      if (params.force !== undefined && typeof params.force !== 'boolean') {
+        return invalidParams(id, 'force must be a boolean');
+      }
+      return {
+        ok: true,
+        params: { paneId: paneId.value, data: params.data, force: params.force as boolean | undefined },
+      };
     }
     case 'terminal.read': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
@@ -227,9 +233,18 @@ function validateMethodParams(
       if (params.maxOutputBytes !== undefined && maxOutputBytes === undefined) {
         return invalidParams(id, 'maxOutputBytes must be a finite number');
       }
+      if (params.force !== undefined && typeof params.force !== 'boolean') {
+        return invalidParams(id, 'force must be a boolean');
+      }
       return {
         ok: true,
-        params: { paneId: paneId.value, command: command.value, timeoutMs, maxOutputBytes },
+        params: {
+          paneId: paneId.value,
+          command: command.value,
+          timeoutMs,
+          maxOutputBytes,
+          force: params.force as boolean | undefined,
+        },
       };
     }
     case 'pane.diagnostics': {

@@ -377,6 +377,7 @@ export class PaneBridge implements TerminalSink {
   sendInput(data: string): boolean {
     if (!data) return true;
     pushPtyLog(data);
+    this.owner.notifyHumanInput?.(this.paneId);
     this.inputListeners.forEach((cb) => cb(data));
     return true;
   }
@@ -827,6 +828,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private readonly paneOpenListeners = new Set<(sink: PaneBridge) => void>();
   private readonly paneCloseListeners = new Set<(paneId: number) => void>();
   private readonly activePaneListeners = new Set<(paneId: number) => void>();
+  private readonly humanInputListeners = new Set<(paneId: number) => void>();
   private readonly openedPanes = new Set<number>();
   private pendingOpen: PaneBridge[] = [];
   private wheelForwardCleanup: (() => void) | null = null;
@@ -981,6 +983,15 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   onOsc133Invalidated(cb: (paneId: number) => void): TerminalSubscription {
     this.osc133InvalidateListeners.add(cb);
     return { dispose: () => this.osc133InvalidateListeners.delete(cb) };
+  }
+
+  onHumanInput(cb: (paneId: number) => void): TerminalSubscription {
+    this.humanInputListeners.add(cb);
+    return { dispose: () => this.humanInputListeners.delete(cb) };
+  }
+
+  notifyHumanInput(paneId: number): void {
+    this.humanInputListeners.forEach((cb) => cb(paneId));
   }
 
   /** Split the focused pane; the new pane connects via onPaneSplit. */
@@ -1317,9 +1328,11 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
 
   paste(data: string): void {
     if (!data) return;
+    const paneId = this.activePaneId;
+    this.notifyHumanInput(paneId);
     // Context-menu paste: send to the focused pane's transport (remote echo
     // draws it). Do not also route through restty keyboard handling.
-    this.panes.get(this.activePaneId)?.bridge.emitInput(data);
+    this.panes.get(paneId)?.bridge.emitInput(data);
   }
 
   /** Convert clipboard media and inject direct Kitty packets into only the focused pane. */
@@ -1539,6 +1552,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     this.paneOpenListeners.clear();
     this.paneCloseListeners.clear();
     this.activePaneListeners.clear();
+    this.humanInputListeners.clear();
     unbindResttyPaneWasmRegistry(this.wasmRegistry);
   }
 

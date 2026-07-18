@@ -106,6 +106,7 @@ import {
   notifyPaneDisconnected,
   resetAgentControl,
   wireTerminalOsc133,
+  wireHumanInput,
 } from './agentControlHost';
 import { loadPairingState } from '../agent/security/Pairing';
 import { isControlTransportAvailable } from '../agent/server/ControlServer';
@@ -2664,6 +2665,7 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   session.paneSubs.push(terminal.onPaneClose((id) => closePaneConn(session, id)));
   session.paneSubs.push(terminal.onPaneOpen((sink) => void openPaneConn(session, sink)));
   session.paneSubs.push(wireTerminalOsc133(session.id, terminal));
+  session.paneSubs.push(wireHumanInput(session.id, terminal));
   session.paneSubs.push(
     terminal.onActivePaneChange((resttyId) => {
       const paneId = getWorkspaceRegistry().paneIdForRestty(session.id, resttyId);
@@ -2816,6 +2818,7 @@ async function wireMixedTerminalLeaf(
   session.paneSubs.push(terminal.onPaneClose((id) => closePaneConn(session, id)));
   session.paneSubs.push(terminal.onPaneOpen((sink) => void openPaneConn(session, sink, leafId)));
   session.paneSubs.push(wireTerminalOsc133(session.id, terminal));
+  session.paneSubs.push(wireHumanInput(session.id, terminal));
   session.paneSubs.push(
     terminal.onActivePaneChange((resttyId) => {
       const paneId = getWorkspaceRegistry().paneIdForRestty(session.id, resttyId);

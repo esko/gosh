@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AgentControlService } from './AgentControlService';
+import { HUMAN_INPUT_GUARD_MS } from './humanInputGuard';
 import { WorkspaceRegistry } from './WorkspaceRegistry';
 import type { PaneHost } from './types';
 
@@ -411,5 +412,68 @@ describe('AgentControlService.terminalRun', () => {
     expect(events).toEqual([
       { type: 'terminal.disconnected', seq: 4, paneId, tabId },
     ]);
+  });
+});
+
+describe('AgentControlService human-input guard', () => {
+  it('rejects terminal.send when human typed recently', () => {
+    const { service, paneId, host } = setup();
+    service.noteHumanInput(paneId);
+    const send = service.terminalSend({ paneId, data: 'hi' });
+    expect(send).toEqual({
+      ok: false,
+      error: {
+        code: 'conflict',
+        message: `Human recently typed in pane (wait ${HUMAN_INPUT_GUARD_MS}ms or pass force: true)`,
+      },
+    });
+    expect(host.send).not.toHaveBeenCalled();
+  });
+
+  it('allows terminal.send after the guard window', () => {
+    let now = 1000;
+    const { service, paneId, host } = setup({ now: () => now });
+    service.noteHumanInput(paneId);
+    now += HUMAN_INPUT_GUARD_MS;
+    expect(service.terminalSend({ paneId, data: 'hi' }).ok).toBe(true);
+    expect(host.send).toHaveBeenCalledWith(paneId, 'hi');
+  });
+
+  it('bypasses the guard when force is true', () => {
+    const { service, paneId, host } = setup();
+    service.noteHumanInput(paneId);
+    expect(service.terminalSend({ paneId, data: 'hi', force: true }).ok).toBe(true);
+    expect(host.send).toHaveBeenCalledWith(paneId, 'hi');
+  });
+
+  it('fires activity pulse only on successful send', () => {
+    const { service, paneId } = setup();
+    const activity: Array<{ paneId: string; action: string }> = [];
+    service.setActivityListener((input) => activity.push(input));
+    service.noteHumanInput(paneId);
+    service.terminalSend({ paneId, data: 'blocked' });
+    expect(activity).toEqual([]);
+    service.terminalSend({ paneId, data: 'ok', force: true });
+    expect(activity).toEqual([{ paneId, action: 'send' }]);
+  });
+
+  it('rejects terminal.run when human typed recently', async () => {
+    const { service, paneId, host } = setup();
+    service.noteHumanInput(paneId);
+    const run = await service.terminalRun({ pane: paneId, command: 'echo hi' });
+    expect(run.ok).toBe(false);
+    if (run.ok) return;
+    expect(run.error.code).toBe('conflict');
+    expect(host.send).not.toHaveBeenCalled();
+  });
+
+  it('allows terminal.run with force after human input', async () => {
+    const { service, paneId, host } = setup();
+    service.noteHumanInput(paneId);
+    const runPromise = service.terminalRun({ pane: paneId, command: 'echo hi', force: true });
+    expect(host.send).toHaveBeenCalledWith(paneId, 'echo hi\n');
+    service.noteOsc133(paneId, { phase: 'D', exitCode: 0 });
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
   });
 });

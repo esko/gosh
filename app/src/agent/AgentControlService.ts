@@ -2,6 +2,7 @@ import { buildCapabilities } from './capabilities';
 import { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
 import type { AgentActivityAction } from './agentActivityPulse';
 import type { AgentEventBus, AgentEventListener, AgentSubscription } from './AgentEventBus';
+import { HUMAN_INPUT_GUARD_MS, HumanInputTracker } from './humanInputGuard';
 import type { WorkspaceRegistry } from './WorkspaceRegistry';
 import {
   agentErr,
@@ -61,6 +62,7 @@ export class AgentControlService {
   private browserHost: BrowserHost | null;
   private readonly activeRuns = new Set<string>();
   private activityListener: AgentActivityListener | null = null;
+  private readonly humanInput = new HumanInputTracker();
 
   constructor(options: AgentControlServiceOptions) {
     this.registry = options.registry;
@@ -123,7 +125,14 @@ export class AgentControlService {
 
   notePaneInvalidated(paneId: string, reason: 'pane-closed' | 'disconnected' | 'reconnect'): void {
     this.activeRuns.delete(paneId);
+    this.humanInput.clearPane(paneId);
     this.commandTracker.invalidatePane(paneId, reason);
+  }
+
+  /** Local keyboard/paste into a pane (not agent-originated sends). */
+  noteHumanInput(paneId: string): void {
+    if (!this.registry.getPane(paneId)) return;
+    this.humanInput.noteHumanInput(paneId, this.now());
   }
 
   notePaneDisconnected(paneId: string): void {
@@ -533,7 +542,7 @@ export class AgentControlService {
     }
   }
 
-  terminalSend(input: { paneId: string; data: string }): AgentResult<{ paneId: string }> {
+  terminalSend(input: { paneId: string; data: string; force?: boolean }): AgentResult<{ paneId: string }> {
     const host = this.requireHost();
     if (!host.ok) return host;
     if (!this.registry.getPane(input.paneId)) {
@@ -542,6 +551,8 @@ export class AgentControlService {
     if (typeof input.data !== 'string') {
       return agentErr('invalid-argument', 'data must be a string');
     }
+    const blocked = this.humanInputGuard(input.paneId, input.force);
+    if (!blocked.ok) return blocked;
     try {
       host.value.send(input.paneId, input.data);
       this.notifyActivity(input.paneId, 'send');
@@ -590,6 +601,7 @@ export class AgentControlService {
     timeoutMs?: number;
     maxOutputBytes?: number;
     signal?: AbortSignal;
+    force?: boolean;
   }): Promise<AgentResult<TerminalRunResult>> {
     const paneId = input.pane;
     const host = this.requireHost();
@@ -600,6 +612,8 @@ export class AgentControlService {
     if (typeof input.command !== 'string' || input.command.length === 0) {
       return agentErr('invalid-argument', 'command must be a non-empty string');
     }
+    const blocked = this.humanInputGuard(paneId, input.force);
+    if (!blocked.ok) return blocked;
     if (this.activeRuns.has(paneId) || this.commandTracker.hasArmedRun(paneId)) {
       return agentErr('failed', `Concurrent terminalRun on pane: ${paneId}`);
     }
@@ -759,6 +773,17 @@ export class AgentControlService {
   private requireHost(): AgentResult<PaneHost> {
     if (!this.host) return agentErr('unavailable', 'Pane host is not wired');
     return agentOk(this.host);
+  }
+
+  private humanInputGuard(paneId: string, force?: boolean): AgentResult<void> {
+    if (force) return agentOk(undefined);
+    if (this.humanInput.isBlocked(paneId, this.now())) {
+      return agentErr(
+        'conflict',
+        `Human recently typed in pane (wait ${HUMAN_INPUT_GUARD_MS}ms or pass force: true)`,
+      );
+    }
+    return agentOk(undefined);
   }
 
   private requireBrowserHost(): AgentResult<BrowserHost> {
