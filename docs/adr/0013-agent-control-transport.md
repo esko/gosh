@@ -61,6 +61,8 @@ Re-run on a **Chromebook with the signed IWA** before treating this transport as
 
 Record results in the issue tracker and update this ADR status when complete.
 
+**Harness:** on-device operator checklist and Crostini probe scripts live in [`docs/agent/CHROMEBOOK_VALIDATION.md`](../agent/CHROMEBOOK_VALIDATION.md) (`npm run probe:agent-control-transport`, `npm run probe:agent-control-negative`).
+
 ## Consequences
 
 - `app/src/agent/server/ControlServer.ts` is the sole RPC entry point over TCP; business logic stays in `AgentControlService`.
