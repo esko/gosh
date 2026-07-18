@@ -3,7 +3,7 @@
   "name": "Gosh",
   "short_name": "Gosh",
   "description": "Gosh \u2014 ChromeOS SSH client",
-  "version": "0.1.178",
+  "version": "0.1.179",
   "update_manifest_url": "https://esko.github.io/gosh/update.json",
   "start_url": "/",
   "scope": "/",
