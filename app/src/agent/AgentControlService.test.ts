@@ -3,7 +3,8 @@ import { AgentControlService } from './AgentControlService';
 import { WorkspaceRegistry } from './WorkspaceRegistry';
 import type { PaneHost } from './types';
 
-function setup() {
+function setup(options?: { sleep?: (ms: number) => Promise<void>; now?: () => number }) {
+  let now = 1000;
   const registry = new WorkspaceRegistry({ windowId: 'win_unit' });
   const tabId = registry.openTab({ kind: 'terminal', title: 'echo' });
   const paneId = registry.openPane({ tabId, resttyPaneId: 1 });
@@ -30,7 +31,7 @@ function setup() {
       },
     })),
     readViewport: vi.fn(() => ({
-      lines: ['prompt>'],
+      lines: ['fallback'],
       cols: 80,
       rows: 24,
       wrapping: 'unknown' as const,
@@ -45,7 +46,7 @@ function setup() {
       truncationReason: 'test',
     })),
     readRange: vi.fn(() => ({
-      lines: ['x'],
+      lines: ['hello'],
       cols: 80,
       rows: 24,
       wrapping: 'unknown' as const,
@@ -53,8 +54,16 @@ function setup() {
     })),
     isZoomed: vi.fn(() => false),
   };
-  const service = new AgentControlService({ registry, host });
-  return { registry, service, tabId, paneId, host };
+  const service = new AgentControlService({
+    registry,
+    host,
+    now: options?.now ?? (() => now),
+    sleep: options?.sleep,
+  });
+  const advance = (ms: number) => {
+    now += ms;
+  };
+  return { registry, service, tabId, paneId, host, advance };
 }
 
 describe('AgentControlService', () => {
@@ -64,9 +73,8 @@ describe('AgentControlService', () => {
     expect(caps.methods.listPanes.available).toBe(true);
     expect(caps.methods.paneSplit.available).toBe(true);
     expect(caps.methods.terminalRead.available).toBe(true);
-    expect(caps.methods.terminalRun.available).toBe(false);
+    expect(caps.methods.terminalRun.available).toBe(true);
     expect(caps.methods.paneDiagnostics.available).toBe(true);
-    expect(caps.methods.terminalRun.reason).toBeTruthy();
   });
 
   it('lists windows, tabs, and panes without Restty numeric ids', () => {
@@ -103,8 +111,8 @@ describe('AgentControlService', () => {
     const read = service.terminalRead({ paneId });
     expect(read.ok).toBe(true);
     if (!read.ok) return;
-    expect(read.value.text).toBe('prompt>');
-    expect(read.value.capture.lines).toEqual(['prompt>']);
+    expect(read.value.text).toBe('fallback');
+    expect(read.value.capture.lines).toEqual(['fallback']);
     expect(host.readViewport).toHaveBeenCalledWith(paneId);
   });
 
@@ -141,7 +149,87 @@ describe('AgentControlService', () => {
     const registry = new WorkspaceRegistry();
     const service = new AgentControlService({ registry, host: null });
     expect(service.capabilities().methods.paneSplit.available).toBe(false);
+    expect(service.capabilities().methods.terminalRun.available).toBe(false);
     expect(service.paneFocus({ paneId: 'x' }).ok).toBe(false);
     expect(service.terminalRead({ paneId: 'x' }).ok).toBe(false);
+  });
+});
+
+describe('AgentControlService.terminalRun', () => {
+  it('runs a command and returns OSC 133 output', async () => {
+    const { service, paneId, host } = setup();
+    const runPromise = service.terminalRun({ pane: paneId, command: 'echo hello' });
+    expect(host.send).toHaveBeenCalledWith(paneId, 'echo hello\n');
+    service.noteOsc133(paneId, { phase: 'C', position: { row: 1, col: 0 } });
+    service.noteOsc133(paneId, { phase: 'D', exitCode: 0, position: { row: 2, col: 0 } });
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.completion).toBe('osc133');
+    expect(run.value.exitCode).toBe(0);
+    expect(run.value.output).toBe('hello');
+    expect(host.readRange).toHaveBeenCalledWith(paneId, {
+      start: { row: 1, col: 0 },
+      end: { row: 2, col: 0 },
+    });
+  });
+
+  it('returns non-zero exit codes from OSC 133 D', async () => {
+    const { service, paneId } = setup();
+    const runPromise = service.terminalRun({ pane: paneId, command: 'false' });
+    service.noteOsc133(paneId, { phase: 'D', exitCode: 1 });
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.exitCode).toBe(1);
+    expect(run.value.completion).toBe('osc133');
+  });
+
+  it('times out when no OSC 133 completion arrives', async () => {
+    let sleepResolve: (() => void) | undefined;
+    const sleep = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          sleepResolve = resolve;
+        }),
+    );
+    const { service, paneId } = setup({ sleep });
+    const runPromise = service.terminalRun({ pane: paneId, command: 'sleep 9', timeoutMs: 50 });
+    sleepResolve!();
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.completion).toBe('timeout');
+    expect(run.value.exitCode).toBeNull();
+  });
+
+  it('rejects concurrent runs on the same pane', async () => {
+    const { service, paneId } = setup();
+    void service.terminalRun({ pane: paneId, command: 'one' });
+    const second = await service.terminalRun({ pane: paneId, command: 'two' });
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.error.message).toMatch(/Concurrent terminalRun/);
+  });
+
+  it('cancels via AbortSignal', async () => {
+    const { service, paneId } = setup();
+    const controller = new AbortController();
+    const runPromise = service.terminalRun({ pane: paneId, command: 'sleep 9', signal: controller.signal });
+    controller.abort();
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.completion).toBe('cancelled');
+  });
+
+  it('resolves with pane-closed when the pane is invalidated', async () => {
+    const { service, paneId } = setup();
+    const runPromise = service.terminalRun({ pane: paneId, command: 'long' });
+    service.notePaneInvalidated(paneId, 'pane-closed');
+    const run = await runPromise;
+    expect(run.ok).toBe(true);
+    if (!run.ok) return;
+    expect(run.value.completion).toBe('pane-closed');
   });
 });

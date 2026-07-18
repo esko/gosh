@@ -1,4 +1,5 @@
 import { buildCapabilities } from './capabilities';
+import { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
 import type { AgentEventBus, AgentEventListener, AgentSubscription } from './AgentEventBus';
 import type { WorkspaceRegistry } from './WorkspaceRegistry';
 import {
@@ -14,12 +15,22 @@ import {
   type SplitDirection,
   type TabInfo,
   type TerminalReadResult,
+  type TerminalRunCompletion,
+  type TerminalRunResult,
+  type TerminalTextCapture,
   type WindowInfo,
 } from './types';
+
+export type { CommandRecord, Osc133FeedEvent };
+
+const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const DEFAULT_RUN_MAX_OUTPUT_BYTES = 256_000;
 
 export type AgentControlServiceOptions = {
   registry: WorkspaceRegistry;
   host?: PaneHost | null;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 /**
@@ -29,12 +40,24 @@ export type AgentControlServiceOptions = {
 export class AgentControlService {
   private readonly registry: WorkspaceRegistry;
   private readonly events: AgentEventBus;
+  private readonly commandTracker: CommandTracker;
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
   private host: PaneHost | null;
+  private readonly activeRuns = new Set<string>();
 
   constructor(options: AgentControlServiceOptions) {
     this.registry = options.registry;
     this.events = options.registry.events;
     this.host = options.host ?? null;
+    this.now = options.now ?? (() => Date.now());
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.commandTracker = new CommandTracker(this.events, this.registry.windowId, this.now);
+    this.events.subscribe((event) => {
+      if (event.type === 'pane.closed' && event.paneId) {
+        this.notePaneInvalidated(event.paneId, 'pane-closed');
+      }
+    });
   }
 
   setPaneHost(host: PaneHost | null): void {
@@ -42,10 +65,36 @@ export class AgentControlService {
   }
 
   capabilities(): AgentCapabilities {
+    const hasHost = this.host !== null;
+    const hasRead = hasHost && typeof this.host?.readViewport === 'function';
+    const hasRun = hasHost && hasRead;
     return buildCapabilities({
-      hasPaneHost: this.host !== null,
-      hasTerminalRead: this.host !== null && typeof this.host.readViewport === 'function',
+      hasPaneHost: hasHost,
+      hasTerminalRead: hasRead,
+      hasTerminalRun: hasRun,
     });
+  }
+
+  /** Feed OSC 133 markers from the UI/adapter layer (opaque pane ids). */
+  noteOsc133(paneId: string, event: Osc133FeedEvent): CommandRecord | null {
+    return this.commandTracker.noteOsc133(paneId, event);
+  }
+
+  notePaneInvalidated(paneId: string, reason: 'pane-closed' | 'disconnected' | 'reconnect'): void {
+    this.activeRuns.delete(paneId);
+    this.commandTracker.invalidatePane(paneId, reason);
+  }
+
+  notePaneDisconnected(paneId: string): void {
+    this.notePaneInvalidated(paneId, 'disconnected');
+  }
+
+  getCurrentCommand(paneId: string): CommandRecord | null {
+    return this.commandTracker.getCurrentCommand(paneId);
+  }
+
+  getLastCommand(paneId: string): CommandRecord | null {
+    return this.commandTracker.getLastCommand(paneId);
   }
 
   listWindows(): AgentResult<WindowInfo[]> {
@@ -206,30 +255,124 @@ export class AgentControlService {
         input.lastLines !== undefined
           ? host.value.readHistory(input.paneId, { lastLines: input.lastLines })
           : host.value.readViewport(input.paneId);
-      let text = capture.lines.join('\n');
-      let truncated = capture.truncated;
-      if (input.maxBytes !== undefined) {
-        const encoder = new TextEncoder();
-        if (encoder.encode(text).length > input.maxBytes) {
-          let lo = 0;
-          let hi = text.length;
-          while (lo < hi) {
-            const mid = Math.ceil((lo + hi) / 2);
-            if (encoder.encode(text.slice(0, mid)).length <= input.maxBytes) lo = mid;
-            else hi = mid - 1;
-          }
-          text = text.slice(0, lo);
-          truncated = true;
-        }
-      }
-      return agentOk({ paneId: input.paneId, capture, text, truncated });
+      const limited = limitCaptureText(capture, input.maxBytes);
+      return agentOk({
+        paneId: input.paneId,
+        capture: limited.capture,
+        text: limited.text,
+        truncated: limited.truncated,
+      });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }
   }
 
-  terminalRun(): AgentResult<never> {
-    return agentErr('unavailable', 'terminalRun is not implemented in this build');
+  async terminalRun(input: {
+    pane: string;
+    command: string;
+    timeoutMs?: number;
+    maxOutputBytes?: number;
+    signal?: AbortSignal;
+  }): Promise<AgentResult<TerminalRunResult>> {
+    const paneId = input.pane;
+    const host = this.requireHost();
+    if (!host.ok) return host;
+    if (!this.registry.getPane(paneId)) {
+      return agentErr('not-found', `Unknown pane: ${paneId}`);
+    }
+    if (typeof input.command !== 'string' || input.command.length === 0) {
+      return agentErr('invalid-argument', 'command must be a non-empty string');
+    }
+    if (this.activeRuns.has(paneId) || this.commandTracker.hasArmedRun(paneId)) {
+      return agentErr('failed', `Concurrent terminalRun on pane: ${paneId}`);
+    }
+
+    const timeoutMs = input.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+    const maxOutputBytes = input.maxOutputBytes ?? DEFAULT_RUN_MAX_OUTPUT_BYTES;
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return agentErr('invalid-argument', 'timeoutMs must be a positive number');
+    }
+    if (!Number.isFinite(maxOutputBytes) || maxOutputBytes <= 0) {
+      return agentErr('invalid-argument', 'maxOutputBytes must be a positive number');
+    }
+
+    const startedAt = this.now();
+    const controller = new AbortController();
+    const linked = linkAbortSignal(input.signal, controller);
+
+    let run: { completion: Promise<CommandRecord> };
+    try {
+      run = this.commandTracker.beginRun(paneId, input.command, controller.signal);
+    } catch (err) {
+      const reason = (err as { reason?: string }).reason;
+      if (reason === 'conflict') {
+        return agentErr('failed', `Concurrent terminalRun on pane: ${paneId}`);
+      }
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+
+    this.activeRuns.add(paneId);
+    try {
+      host.value.send(paneId, `${input.command}\n`);
+
+      type RunRaceResult = { kind: 'osc133'; record: CommandRecord } | { kind: 'timeout' };
+      const completion: RunRaceResult = await Promise.race([
+        run.completion.then((record) => ({ kind: 'osc133' as const, record })),
+        this.sleep(timeoutMs).then(() => ({ kind: 'timeout' as const })),
+      ]);
+
+      if (completion.kind === 'timeout') {
+        controller.abort();
+        const output = this.extractRunOutput(host.value, paneId, null, maxOutputBytes);
+        return agentOk({
+          command: input.command,
+          exitCode: null,
+          output: output.text,
+          durationMs: this.now() - startedAt,
+          completion: 'timeout',
+          truncated: output.truncated,
+        });
+      }
+
+      const output = this.extractRunOutput(host.value, paneId, completion.record, maxOutputBytes);
+      return agentOk({
+        command: input.command,
+        exitCode: completion.record.exitCode ?? null,
+        output: output.text,
+        durationMs: (completion.record.finishedAt ?? this.now()) - startedAt,
+        completion: 'osc133',
+        truncated: output.truncated,
+      });
+    } catch (err) {
+      const reason = (err as { reason?: string }).reason;
+      const output = this.extractRunOutput(host.value, paneId, null, maxOutputBytes);
+      if (reason === 'cancelled') {
+        return agentOk({
+          command: input.command,
+          exitCode: null,
+          output: output.text,
+          durationMs: this.now() - startedAt,
+          completion: 'cancelled',
+          truncated: output.truncated,
+        });
+      }
+      if (reason === 'pane-closed' || reason === 'disconnected' || reason === 'reconnect') {
+        const completion: TerminalRunCompletion =
+          reason === 'pane-closed' ? 'pane-closed' : 'disconnected';
+        return agentOk({
+          command: input.command,
+          exitCode: null,
+          output: output.text,
+          durationMs: this.now() - startedAt,
+          completion,
+          truncated: output.truncated,
+        });
+      }
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    } finally {
+      this.activeRuns.delete(paneId);
+      linked?.dispose();
+    }
   }
 
   paneDiagnostics(input: { paneId: string }): AgentResult<PaneDiagnostics> {
@@ -270,8 +413,69 @@ export class AgentControlService {
     });
   }
 
+  private extractRunOutput(
+    host: PaneHost,
+    paneId: string,
+    record: CommandRecord | null,
+    maxBytes: number,
+  ): { text: string; truncated: boolean } {
+    let capture: TerminalTextCapture;
+    let truncated = false;
+    if (record?.outputStart && record.completedAt) {
+      try {
+        capture = host.readRange(paneId, { start: record.outputStart, end: record.completedAt });
+        truncated = capture.truncated;
+      } catch {
+        capture = host.readViewport(paneId);
+        truncated = true;
+      }
+    } else {
+      capture = host.readViewport(paneId);
+      truncated = true;
+    }
+    const limited = limitCaptureText(capture, maxBytes);
+    return { text: limited.text, truncated: truncated || limited.truncated };
+  }
+
   private requireHost(): AgentResult<PaneHost> {
     if (!this.host) return agentErr('unavailable', 'Pane host is not wired');
     return agentOk(this.host);
   }
+}
+
+function limitCaptureText(
+  capture: TerminalTextCapture,
+  maxBytes?: number,
+): { capture: TerminalTextCapture; text: string; truncated: boolean } {
+  let text = capture.lines.join('\n');
+  let truncated = capture.truncated;
+  if (maxBytes !== undefined) {
+    const encoder = new TextEncoder();
+    if (encoder.encode(text).length > maxBytes) {
+      let lo = 0;
+      let hi = text.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (encoder.encode(text.slice(0, mid)).length <= maxBytes) lo = mid;
+        else hi = mid - 1;
+      }
+      text = text.slice(0, lo);
+      truncated = true;
+    }
+  }
+  return { capture, text, truncated: Boolean(truncated) };
+}
+
+function linkAbortSignal(
+  signal: AbortSignal | undefined,
+  controller: AbortController,
+): { dispose: () => void } | null {
+  if (!signal) return null;
+  if (signal.aborted) {
+    controller.abort();
+    return null;
+  }
+  const onAbort = () => controller.abort();
+  signal.addEventListener('abort', onAbort);
+  return { dispose: () => signal.removeEventListener('abort', onAbort) };
 }

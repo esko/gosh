@@ -19,6 +19,7 @@ import {
   applyOsc133Event,
   createOsc133State,
   type Osc133State,
+  type Osc133Event,
 } from '../terminal/OscParser';
 import type { TerminalPalette } from './types';
 import { clipboardImageToPng, encodeKittyPng } from './kittyImage';
@@ -37,6 +38,8 @@ import {
   captureHistory,
   captureTextRange,
   captureViewport,
+  freshRenderState,
+  resolveCursorPosition,
   type PaneCaptureRuntime,
   type TerminalPosition,
   type TerminalTextCapture,
@@ -817,6 +820,10 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private readonly panes = new Map<number, PaneState>();
   private activePaneId = -1;
   private readonly titleListeners = new Set<(title: string) => void>();
+  private readonly osc133Listeners = new Set<
+    (paneId: number, event: Osc133Event, position?: TerminalPosition) => void
+  >();
+  private readonly osc133InvalidateListeners = new Set<(paneId: number) => void>();
   private readonly paneOpenListeners = new Set<(sink: PaneBridge) => void>();
   private readonly paneCloseListeners = new Set<(paneId: number) => void>();
   private readonly activePaneListeners = new Set<(paneId: number) => void>();
@@ -962,6 +969,18 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   onActivePaneChange(cb: (paneId: number) => void): TerminalSubscription {
     this.activePaneListeners.add(cb);
     return { dispose: () => this.activePaneListeners.delete(cb) };
+  }
+
+  onOsc133(
+    cb: (paneId: number, event: Osc133Event, position?: TerminalPosition) => void,
+  ): TerminalSubscription {
+    this.osc133Listeners.add(cb);
+    return { dispose: () => this.osc133Listeners.delete(cb) };
+  }
+
+  onOsc133Invalidated(cb: (paneId: number) => void): TerminalSubscription {
+    this.osc133InvalidateListeners.add(cb);
+    return { dispose: () => this.osc133InvalidateListeners.delete(cb) };
   }
 
   /** Split the focused pane; the new pane connects via onPaneSplit. */
@@ -1340,6 +1359,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     if (!state) return;
     state.oscParser.reset();
     state.osc133 = createOsc133State();
+    for (const listener of this.osc133InvalidateListeners) listener(paneId);
   }
 
   /** Apply theme colors, cursor shape/blink, and font size to every pane. */
@@ -1438,6 +1458,16 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
       throw new Error(`Terminal grid not ready for pane ${id}`);
     }
     return { wasm, handle, exports };
+  }
+
+  private tryCursorPosition(paneId: number): TerminalPosition | undefined {
+    try {
+      const state = freshRenderState(this.paneCaptureRuntime(paneId));
+      if (!state) return undefined;
+      return resolveCursorPosition(state);
+    } catch {
+      return undefined;
+    }
   }
 
   /** Plain-text viewport from the authoritative WASM cell grid (not DOM/OCR). */
@@ -1673,6 +1703,8 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
         continue;
       }
       applyOsc133Event(state.osc133, event);
+      const position = this.tryCursorPosition(bridge.paneId);
+      for (const listener of this.osc133Listeners) listener(bridge.paneId, event, position);
     }
   }
 }

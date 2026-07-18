@@ -13,6 +13,7 @@ import {
   type TerminalPosition,
 } from '../agent';
 import type { ResttyTerminalAdapter } from './resttyAdapter';
+import type { TerminalSubscription } from '../terminal/TerminalAdapter';
 
 export type AgentSessionRef = {
   id: string;
@@ -173,4 +174,35 @@ export function installAgentControl(lookup: AgentSessionLookup): AgentControlSer
   const win = window as unknown as { __goshAgent?: AgentControlService };
   win.__goshAgent = agent;
   return agent;
+}
+
+/** Forward Restty OSC 133 markers into the agent CommandTracker (opaque pane ids). */
+export function wireTerminalOsc133(tabId: string, terminal: ResttyTerminalAdapter): TerminalSubscription {
+  const agent = getAgentControlService();
+  const reg = getWorkspaceRegistry();
+  const oscSub = terminal.onOsc133((resttyPaneId, event, position) => {
+    const paneId = reg.paneIdForRestty(tabId, resttyPaneId);
+    if (!paneId) return;
+    agent.noteOsc133(paneId, {
+      phase: event.phase,
+      exitCode: event.exitCode,
+      position,
+    });
+  });
+  const invalidateSub = terminal.onOsc133Invalidated((resttyPaneId) => {
+    const paneId = reg.paneIdForRestty(tabId, resttyPaneId);
+    if (!paneId) return;
+    agent.notePaneInvalidated(paneId, 'reconnect');
+  });
+  return {
+    dispose: () => {
+      oscSub.dispose();
+      invalidateSub.dispose();
+    },
+  };
+}
+
+export function notifyPaneDisconnected(tabId: string, resttyPaneId: number): void {
+  const paneId = getWorkspaceRegistry().paneIdForRestty(tabId, resttyPaneId);
+  if (paneId) getAgentControlService().notePaneDisconnected(paneId);
 }

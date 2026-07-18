@@ -69,7 +69,9 @@ export type AgentEventType =
   | 'pane.opened'
   | 'pane.closed'
   | 'pane.focused'
-  | 'pane.resized';
+  | 'pane.resized'
+  | 'command.started'
+  | 'command.completed';
 
 export type AgentEvent = {
   seq: number;
@@ -78,6 +80,24 @@ export type AgentEvent = {
   windowId: string;
   tabId?: string;
   paneId?: string;
+  commandId?: string;
+  exitCode?: number | null;
+};
+
+export type TerminalRunCompletion =
+  | 'osc133'
+  | 'timeout'
+  | 'pane-closed'
+  | 'disconnected'
+  | 'cancelled';
+
+export type TerminalRunResult = {
+  command: string;
+  exitCode: number | null;
+  output: string;
+  durationMs: number;
+  completion: TerminalRunCompletion;
+  truncated: boolean;
 };
 
 export type AgentCapabilityMethod =

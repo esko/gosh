@@ -1,5 +1,6 @@
 export { AgentControlService } from './AgentControlService';
 export { AgentEventBus, type AgentEventListener, type AgentSubscription } from './AgentEventBus';
+export { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
 export { AGENT_METHODS, AGENT_PROTOCOL_VERSION } from './AgentProtocol';
 export * from './protocol';
 export { buildCapabilities } from './capabilities';
@@ -21,6 +22,8 @@ export type {
   TabKind,
   TerminalPosition,
   TerminalReadResult,
+  TerminalRunCompletion,
+  TerminalRunResult,
   TerminalTextCapture,
   WindowInfo,
 } from './types';

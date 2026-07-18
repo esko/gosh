@@ -31,7 +31,7 @@ If the client requests an unsupported major version, the server responds with `i
 | `pane.close` | `{ paneId }` |
 | `terminal.send` | `{ paneId, data }` |
 | `terminal.read` | `{ paneId, maxBytes?, lastLines? }` |
-| `terminal.run` | `{ paneId, command, timeoutMs? }` (stub) |
+| `terminal.run` | `{ paneId, command, timeoutMs?, maxOutputBytes? }` |
 | `pane.diagnostics` | `{ paneId }` |
 | `events.subscribe` | `{ types?: string[] }` |
 
@@ -48,6 +48,27 @@ Server push uses the notification `events.push` with `{ subscriptionId, event }`
 ```
 
 Application failures map service codes into `error.data.code` (`not-found`, `unavailable`, `invalid-argument`, `failed`) while keeping JSON-RPC `error.code` in the standard / extension ranges.
+
+### `terminal.run`
+
+Runs a shell command in the target pane and waits for an OSC 133 `D` marker on that pane (not prompt text or silence). Requires [shell integration](shell-integration/README.md) on the remote session.
+
+Success result shape:
+
+```json
+{
+  "command": "echo hello",
+  "exitCode": 0,
+  "output": "hello",
+  "durationMs": 42,
+  "completion": "osc133",
+  "truncated": false
+}
+```
+
+`completion` is `osc133` when the matching `D` marker arrived; otherwise `timeout`, `pane-closed`, `disconnected`, or `cancelled`. Concurrent runs on the same pane are rejected with `failed` (no queue). Output is read from Restty text capture between OSC `C` and `D` positions when available; otherwise best-effort viewport capture with `truncated: true`.
+
+Push events `command.started` and `command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`.
 
 ## Cancellation
 
