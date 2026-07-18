@@ -15,7 +15,7 @@ export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: AgentE
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 export type SplitDirection = 'vertical' | 'horizontal';
 
-export type TabKind = 'launcher' | 'terminal';
+export type TabKind = 'launcher' | 'terminal' | 'browser';
 
 export type WindowInfo = {
   windowId: string;
@@ -114,6 +114,9 @@ export type AgentCapabilityMethod =
   | 'terminalRead'
   | 'terminalRun'
   | 'paneDiagnostics'
+  | 'browserNavigate'
+  | 'browserGetUrl'
+  | 'browserGetTitle'
   | 'subscribe';
 
 export type AgentCapabilities = {
@@ -151,6 +154,13 @@ export type PaneHost = {
     opts: { start: TerminalPosition; end: TerminalPosition },
   ): TerminalTextCapture;
   isZoomed?(paneId: string): boolean;
+};
+
+/** Imperative seam for browser tabs (Controlled Frame). */
+export type BrowserHost = {
+  navigate(tabId: string, url: string): void;
+  getUrl(tabId: string): string;
+  getTitle(tabId: string): string;
 };
 
 export function agentOk<T>(value: T): AgentResult<T> {

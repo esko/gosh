@@ -5,6 +5,7 @@ export function buildCapabilities(options?: {
   hasPaneHost?: boolean;
   hasTerminalRead?: boolean;
   hasTerminalRun?: boolean;
+  hasBrowserHost?: boolean;
 }): AgentCapabilities {
   const host = options?.hasPaneHost ?? true;
   const hostReason = host ? undefined : 'Pane host is not wired.';
@@ -22,6 +23,8 @@ export function buildCapabilities(options?: {
       : !terminalRead
         ? terminalReadReason
         : 'terminalRun is not wired in this build.';
+  const browser = options?.hasBrowserHost ?? false;
+  const browserReason = browser ? undefined : 'Browser host is not wired.';
   return {
     methods: {
       capabilities: { available: true },
@@ -37,6 +40,9 @@ export function buildCapabilities(options?: {
       terminalRead: { available: terminalRead, reason: terminalReadReason },
       terminalRun: { available: terminalRun, reason: terminalRunReason },
       paneDiagnostics: { available: host, reason: hostReason },
+      browserNavigate: { available: browser, reason: browserReason },
+      browserGetUrl: { available: browser, reason: browserReason },
+      browserGetTitle: { available: browser, reason: browserReason },
       subscribe: { available: true },
     },
   };

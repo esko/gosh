@@ -8,6 +8,7 @@ import {
   type AgentCapabilities,
   type AgentEvent,
   type AgentResult,
+  type BrowserHost,
   type PaneDirection,
   type PaneHost,
   type PaneInfo,
@@ -29,6 +30,7 @@ const DEFAULT_RUN_MAX_OUTPUT_BYTES = 256_000;
 export type AgentControlServiceOptions = {
   registry: WorkspaceRegistry;
   host?: PaneHost | null;
+  browserHost?: BrowserHost | null;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 };
@@ -44,12 +46,14 @@ export class AgentControlService {
   private readonly now: () => number;
   private readonly sleep: (ms: number) => Promise<void>;
   private host: PaneHost | null;
+  private browserHost: BrowserHost | null;
   private readonly activeRuns = new Set<string>();
 
   constructor(options: AgentControlServiceOptions) {
     this.registry = options.registry;
     this.events = options.registry.events;
     this.host = options.host ?? null;
+    this.browserHost = options.browserHost ?? null;
     this.now = options.now ?? (() => Date.now());
     this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     this.commandTracker = new CommandTracker(this.events, this.registry.windowId, this.now);
@@ -64,14 +68,20 @@ export class AgentControlService {
     this.host = host;
   }
 
+  setBrowserHost(host: BrowserHost | null): void {
+    this.browserHost = host;
+  }
+
   capabilities(): AgentCapabilities {
     const hasHost = this.host !== null;
     const hasRead = hasHost && typeof this.host?.readViewport === 'function';
     const hasRun = hasHost && hasRead;
+    const hasBrowser = this.browserHost !== null;
     return buildCapabilities({
       hasPaneHost: hasHost,
       hasTerminalRead: hasRead,
       hasTerminalRun: hasRun,
+      hasBrowserHost: hasBrowser,
     });
   }
 
@@ -110,6 +120,49 @@ export class AgentControlService {
       return agentErr('not-found', `Unknown tab: ${filter.tabId}`);
     }
     return agentOk(this.registry.listPanes(filter));
+  }
+
+  browserNavigate(input: { tabId: string; url: string }): AgentResult<{ tabId: string; url: string }> {
+    const browser = this.requireBrowserHost();
+    if (!browser.ok) return browser;
+    const tab = this.registry.getTab(input.tabId);
+    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
+    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+    if (typeof input.url !== 'string' || input.url.trim().length === 0) {
+      return agentErr('invalid-argument', 'url must be a non-empty string');
+    }
+    try {
+      browser.value.navigate(input.tabId, input.url);
+      return agentOk({ tabId: input.tabId, url: browser.value.getUrl(input.tabId) });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  browserGetUrl(input: { tabId: string }): AgentResult<{ tabId: string; url: string }> {
+    const browser = this.requireBrowserHost();
+    if (!browser.ok) return browser;
+    const tab = this.registry.getTab(input.tabId);
+    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
+    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+    try {
+      return agentOk({ tabId: input.tabId, url: browser.value.getUrl(input.tabId) });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  browserGetTitle(input: { tabId: string }): AgentResult<{ tabId: string; title: string }> {
+    const browser = this.requireBrowserHost();
+    if (!browser.ok) return browser;
+    const tab = this.registry.getTab(input.tabId);
+    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
+    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+    try {
+      return agentOk({ tabId: input.tabId, title: browser.value.getTitle(input.tabId) });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   async paneSplit(input: {
@@ -440,6 +493,11 @@ export class AgentControlService {
   private requireHost(): AgentResult<PaneHost> {
     if (!this.host) return agentErr('unavailable', 'Pane host is not wired');
     return agentOk(this.host);
+  }
+
+  private requireBrowserHost(): AgentResult<BrowserHost> {
+    if (!this.browserHost) return agentErr('unavailable', 'Browser host is not wired');
+    return agentOk(this.browserHost);
   }
 }
 
