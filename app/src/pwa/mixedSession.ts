@@ -60,6 +60,7 @@ export function attachMixedBrowserLeaf(
   leaves: Map<string, MixedLeafState>,
   leafId: string,
   hostEl: HTMLElement,
+  initialUrl?: string,
 ): void {
   registry.openPane({ tabId, surface: 'browser', leafId });
   const leafContainer = document.createElement('div');
@@ -68,6 +69,7 @@ export function attachMixedBrowserLeaf(
   const handle = mountBrowserSession({
     tabId,
     container: leafContainer,
+    initialUrl,
     onAgentNavState: createBrowserAgentStateHook(tabId),
   });
   leaves.set(leafId, {

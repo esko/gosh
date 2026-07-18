@@ -42,7 +42,11 @@ Alternatives considered:
 ### Serialization and restore
 
 - `MixedLayout` supports `serializeLayout` / `deserializeLayout` (version **1**).
-- **Not in this slice:** persisting mixed trees to `sessionStorage` / relaunch restore — documented as follow-up below.
+- Per-window `sessionStorage` (`gosh-tab-layout`, version **2**) persists terminal and mixed tabs across **reload** (same window), not app relaunch:
+  - Terminal tabs: `LaunchConnectionIntent` (+ ET resume id when applicable).
+  - Mixed tabs: connection spec, serialized layout tree, and browser leaf URLs when navigated away from `about:blank`.
+  - Active tab index among restorable tabs (launcher and pure browser-only tabs remain ephemeral / unrestored).
+- Legacy versionless `{ specs, activeIndex }` payloads migrate to version 2 on load.
 
 ## Consequences
 
@@ -55,16 +59,16 @@ Alternatives considered:
 
 - Restty custom-pane factory for browser surfaces
 - Nested mixed trees deeper than the bootstrap two-leaf split (API supports split expansion; UI shortcuts still target the active leaf only)
-- Mixed-tab `sessionStorage` restore
+- App relaunch / cross-window tab restore (sessionStorage is per-window and cleared on relaunch)
 - Per-browser-leaf `browser.*` targeting when multiple browser leaves exist (single browser leaf assumed)
 - Zoom/maximize for mixed leaves
 
 ## Follow-up
 
-- Persist and restore mixed layout + leaf surface state across reload
 - Horizontal bootstrap option in UI; drag-reorder leaves
 - Multi-browser-leaf tabs with pane-scoped `browser.*` params
 - Keyboard/UI shortcuts for mixed `pane.split` (agent RPC is implemented)
+- Pure browser-only tab restore (mixed and terminal tabs restore today)
 
 ## References
 
