@@ -67,6 +67,30 @@ export async function dispatchAgentRpc(
     }
     case 'pane.diagnostics':
       return wrap(service.paneDiagnostics(params as AgentRpcParams['pane.diagnostics']), requestId);
+    case 'browser.navigate':
+      return wrap(service.browserNavigate(params as AgentRpcParams['browser.navigate']), requestId);
+    case 'browser.back':
+      return wrap(await service.browserBack(params as AgentRpcParams['browser.back']), requestId);
+    case 'browser.forward':
+      return wrap(await service.browserForward(params as AgentRpcParams['browser.forward']), requestId);
+    case 'browser.reload':
+      return wrap(service.browserReload(params as AgentRpcParams['browser.reload']), requestId);
+    case 'browser.waitFor':
+      return wrap(await service.browserWaitFor(params as AgentRpcParams['browser.waitFor']), requestId);
+    case 'browser.snapshot':
+      return wrap(await service.browserSnapshot(params as AgentRpcParams['browser.snapshot']), requestId);
+    case 'browser.query':
+      return wrap(await service.browserQuery(params as AgentRpcParams['browser.query']), requestId);
+    case 'browser.click':
+      return wrap(await service.browserClick(params as AgentRpcParams['browser.click']), requestId);
+    case 'browser.type':
+      return wrap(await service.browserType(params as AgentRpcParams['browser.type']), requestId);
+    case 'browser.press':
+      return wrap(await service.browserPress(params as AgentRpcParams['browser.press']), requestId);
+    case 'browser.getUrl':
+      return wrap(service.browserGetUrl(params as AgentRpcParams['browser.getUrl']), requestId);
+    case 'browser.getTitle':
+      return wrap(service.browserGetTitle(params as AgentRpcParams['browser.getTitle']), requestId);
     case 'events.subscribe':
       return {
         ok: true,

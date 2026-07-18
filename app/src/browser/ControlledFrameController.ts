@@ -1,4 +1,5 @@
 import { handleBrowserPermissionRequest } from './policies';
+import { BrowserAutomation } from './BrowserAutomation';
 import type {
   ControlledFrameElementLike,
   ControlledFrameLoadEvent,
@@ -16,8 +17,10 @@ export type ControlledFrameNavState = {
 };
 
 export type ControlledFrameControllerOptions = {
+  tabId?: string;
   initialUrl?: string;
   onStateChange?: (state: ControlledFrameNavState) => void;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 type StateListener = (state: ControlledFrameNavState) => void;
@@ -43,6 +46,7 @@ export class ControlledFrameController {
   private state: ControlledFrameNavState = { ...DEFAULT_STATE };
   private readonly listeners = new Set<StateListener>();
   private readonly onStateChange?: (state: ControlledFrameNavState) => void;
+  readonly automation: BrowserAutomation | null;
   private disposed = false;
   private readonly handlers: Record<string, EventListener>;
 
@@ -51,6 +55,13 @@ export class ControlledFrameController {
     options?: ControlledFrameControllerOptions,
   ) {
     this.onStateChange = options?.onStateChange;
+    this.automation = options?.tabId
+      ? new BrowserAutomation(element, {
+          tabId: options.tabId,
+          sleep: options.sleep,
+          isLoading: () => this.state.loading,
+        })
+      : null;
     this.handlers = {
       loadstart: (event) => this.onLoadStart(event as ControlledFrameLoadEvent),
       loadcommit: (event) => this.onLoadCommit(event as ControlledFrameLoadEvent),
@@ -87,6 +98,7 @@ export class ControlledFrameController {
 
   navigate(url: string): void {
     this.assertAlive();
+    this.automation?.invalidateRefs();
     const normalized = normalizeBrowserUrl(url);
     this.patchState({
       url: normalized,
@@ -99,6 +111,7 @@ export class ControlledFrameController {
 
   async back(): Promise<boolean> {
     this.assertAlive();
+    this.automation?.invalidateRefs();
     this.patchState({ loading: true, failed: false, failureReason: undefined });
     try {
       const success = await this.element.back();
@@ -113,6 +126,7 @@ export class ControlledFrameController {
 
   async forward(): Promise<boolean> {
     this.assertAlive();
+    this.automation?.invalidateRefs();
     this.patchState({ loading: true, failed: false, failureReason: undefined });
     try {
       const success = await this.element.forward();
@@ -128,6 +142,7 @@ export class ControlledFrameController {
   reload(): void {
     this.assertAlive();
     if (!this.state.url || this.state.url === 'about:blank') return;
+    this.automation?.invalidateRefs();
     this.patchState({ loading: true, failed: false, failureReason: undefined });
     this.element.reload();
   }
@@ -149,6 +164,7 @@ export class ControlledFrameController {
   }
 
   private onLoadStart(event: ControlledFrameLoadEvent): void {
+    this.automation?.invalidateRefs();
     const url = event.url ?? this.element.src;
     this.patchState({ url, loading: true, failed: false, failureReason: undefined });
   }

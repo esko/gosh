@@ -21,6 +21,12 @@ import {
   type TerminalTextCapture,
   type WindowInfo,
 } from './types';
+import type {
+  BrowserQueryResult,
+  BrowserSnapshotResult,
+  BrowserWaitForResult,
+  BrowserWaitForState,
+} from '../browser/browserAutomationTypes';
 
 export type { CommandRecord, Osc133FeedEvent };
 
@@ -123,43 +129,229 @@ export class AgentControlService {
   }
 
   browserNavigate(input: { tabId: string; url: string }): AgentResult<{ tabId: string; url: string }> {
-    const browser = this.requireBrowserHost();
-    if (!browser.ok) return browser;
-    const tab = this.registry.getTab(input.tabId);
-    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
-    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
     if (typeof input.url !== 'string' || input.url.trim().length === 0) {
       return agentErr('invalid-argument', 'url must be a non-empty string');
     }
     try {
-      browser.value.navigate(input.tabId, input.url);
-      return agentOk({ tabId: input.tabId, url: browser.value.getUrl(input.tabId) });
+      resolved.value.host.navigate(input.tabId, input.url);
+      return agentOk({ tabId: input.tabId, url: resolved.value.host.getUrl(input.tabId) });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }
   }
 
-  browserGetUrl(input: { tabId: string }): AgentResult<{ tabId: string; url: string }> {
-    const browser = this.requireBrowserHost();
-    if (!browser.ok) return browser;
-    const tab = this.registry.getTab(input.tabId);
-    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
-    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+  async browserBack(input: { tabId: string }): Promise<AgentResult<{ tabId: string; moved: boolean }>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
     try {
-      return agentOk({ tabId: input.tabId, url: browser.value.getUrl(input.tabId) });
+      const moved = await resolved.value.host.back(input.tabId);
+      return agentOk({ tabId: input.tabId, moved });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async browserForward(input: { tabId: string }): Promise<AgentResult<{ tabId: string; moved: boolean }>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    try {
+      const moved = await resolved.value.host.forward(input.tabId);
+      return agentOk({ tabId: input.tabId, moved });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  browserReload(input: { tabId: string }): AgentResult<{ tabId: string; reloaded: boolean }> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    try {
+      resolved.value.host.reload(input.tabId);
+      return agentOk({ tabId: input.tabId, reloaded: true });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async browserWaitFor(input: {
+    tabId: string;
+    selector?: string;
+    text?: string;
+    loadState?: BrowserWaitForState;
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  }): Promise<AgentResult<BrowserWaitForResult>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    const hasCondition =
+      input.selector !== undefined || input.text !== undefined || input.loadState !== undefined;
+    if (!hasCondition) {
+      return agentErr('invalid-argument', 'selector, text, or loadState is required');
+    }
+    if (input.timeoutMs !== undefined && (!Number.isFinite(input.timeoutMs) || input.timeoutMs <= 0)) {
+      return agentErr('invalid-argument', 'timeoutMs must be a positive number');
+    }
+    if (input.pollIntervalMs !== undefined && (!Number.isFinite(input.pollIntervalMs) || input.pollIntervalMs <= 0)) {
+      return agentErr('invalid-argument', 'pollIntervalMs must be a positive number');
+    }
+    try {
+      const result = await resolved.value.host.waitFor(input.tabId, {
+        selector: input.selector,
+        text: input.text,
+        loadState: input.loadState,
+        timeoutMs: input.timeoutMs,
+        pollIntervalMs: input.pollIntervalMs,
+      });
+      return agentOk(result);
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async browserSnapshot(input: {
+    tabId: string;
+    maxNodes?: number;
+    maxBytes?: number;
+  }): Promise<AgentResult<BrowserSnapshotResult>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    if (input.maxNodes !== undefined && (!Number.isFinite(input.maxNodes) || input.maxNodes <= 0)) {
+      return agentErr('invalid-argument', 'maxNodes must be a positive number');
+    }
+    if (input.maxBytes !== undefined && (!Number.isFinite(input.maxBytes) || input.maxBytes <= 0)) {
+      return agentErr('invalid-argument', 'maxBytes must be a positive number');
+    }
+    try {
+      const snapshot = await resolved.value.host.snapshot(input.tabId, {
+        maxNodes: input.maxNodes,
+        maxBytes: input.maxBytes,
+      });
+      return agentOk(snapshot);
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async browserQuery(input: {
+    tabId: string;
+    role?: string;
+    name?: string;
+    text?: string;
+    selector?: string;
+  }): Promise<AgentResult<BrowserQueryResult>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    const hasFilter =
+      input.role !== undefined ||
+      input.name !== undefined ||
+      input.text !== undefined ||
+      input.selector !== undefined;
+    if (!hasFilter) {
+      return agentErr('invalid-argument', 'role, name, text, or selector is required');
+    }
+    try {
+      const matches = await resolved.value.host.query(input.tabId, {
+        role: input.role,
+        name: input.name,
+        text: input.text,
+        selector: input.selector,
+      });
+      return agentOk(matches);
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async browserClick(input: { tabId: string; ref: string }): Promise<AgentResult<{ tabId: string; ref: string }>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    if (typeof input.ref !== 'string' || input.ref.length === 0) {
+      return agentErr('invalid-argument', 'ref must be a non-empty string');
+    }
+    try {
+      await resolved.value.host.click(input.tabId, { ref: input.ref });
+      return agentOk({ tabId: input.tabId, ref: input.ref });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Stale element ref')) {
+        return agentErr('invalid-argument', message);
+      }
+      return agentErr('failed', message);
+    }
+  }
+
+  async browserType(input: {
+    tabId: string;
+    ref: string;
+    text: string;
+    clear?: boolean;
+  }): Promise<AgentResult<{ tabId: string; ref: string }>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    if (typeof input.ref !== 'string' || input.ref.length === 0) {
+      return agentErr('invalid-argument', 'ref must be a non-empty string');
+    }
+    if (typeof input.text !== 'string') {
+      return agentErr('invalid-argument', 'text must be a string');
+    }
+    try {
+      await resolved.value.host.type(input.tabId, {
+        ref: input.ref,
+        text: input.text,
+        clear: input.clear,
+      });
+      return agentOk({ tabId: input.tabId, ref: input.ref });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Stale element ref')) {
+        return agentErr('invalid-argument', message);
+      }
+      return agentErr('failed', message);
+    }
+  }
+
+  async browserPress(input: {
+    tabId: string;
+    ref: string;
+    key: string;
+  }): Promise<AgentResult<{ tabId: string; ref: string; key: string }>> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    if (typeof input.ref !== 'string' || input.ref.length === 0) {
+      return agentErr('invalid-argument', 'ref must be a non-empty string');
+    }
+    if (typeof input.key !== 'string' || input.key.length === 0) {
+      return agentErr('invalid-argument', 'key must be a non-empty string');
+    }
+    try {
+      await resolved.value.host.press(input.tabId, { ref: input.ref, key: input.key });
+      return agentOk({ tabId: input.tabId, ref: input.ref, key: input.key });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('Stale element ref')) {
+        return agentErr('invalid-argument', message);
+      }
+      return agentErr('failed', message);
+    }
+  }
+
+  browserGetUrl(input: { tabId: string }): AgentResult<{ tabId: string; url: string }> {
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
+    try {
+      return agentOk({ tabId: input.tabId, url: resolved.value.host.getUrl(input.tabId) });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }
   }
 
   browserGetTitle(input: { tabId: string }): AgentResult<{ tabId: string; title: string }> {
-    const browser = this.requireBrowserHost();
-    if (!browser.ok) return browser;
-    const tab = this.registry.getTab(input.tabId);
-    if (!tab) return agentErr('not-found', `Unknown tab: ${input.tabId}`);
-    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${input.tabId}`);
+    const resolved = this.resolveBrowserTab(input.tabId);
+    if (!resolved.ok) return resolved;
     try {
-      return agentOk({ tabId: input.tabId, title: browser.value.getTitle(input.tabId) });
+      return agentOk({ tabId: input.tabId, title: resolved.value.host.getTitle(input.tabId) });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }
@@ -498,6 +690,15 @@ export class AgentControlService {
   private requireBrowserHost(): AgentResult<BrowserHost> {
     if (!this.browserHost) return agentErr('unavailable', 'Browser host is not wired');
     return agentOk(this.browserHost);
+  }
+
+  private resolveBrowserTab(tabId: string): AgentResult<{ host: BrowserHost }> {
+    const browser = this.requireBrowserHost();
+    if (!browser.ok) return browser;
+    const tab = this.registry.getTab(tabId);
+    if (!tab) return agentErr('not-found', `Unknown tab: ${tabId}`);
+    if (tab.kind !== 'browser') return agentErr('invalid-argument', `Tab is not a browser tab: ${tabId}`);
+    return agentOk({ host: browser.value });
   }
 }
 

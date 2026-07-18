@@ -23,7 +23,7 @@ Each browser tab uses a dedicated persistent partition:
 persist:gosh-browser:<opaqueTabId>
 ```
 
-Cookies, `localStorage`, and related state are isolated per tab and survive relaunch. Partitions are cleared when the tab is closed and the Controlled Frame is disposed (D2 may add explicit wipe controls).
+Cookies, `localStorage`, and related state are isolated per tab and survive relaunch. Partitions are cleared when the tab is closed and the Controlled Frame is disposed.
 
 ## Permission requests
 
@@ -31,15 +31,57 @@ Embedded pages may request powerful capabilities (geolocation, camera, notificat
 
 ## Agent control
 
-`workspace.listTabs` reports `kind: "browser"` for these tabs. When the browser host is wired:
+`workspace.listTabs` reports `kind: "browser"` for these tabs. When the browser host is wired, agents can drive navigation and structured page interaction through JSON-RPC (`browser.*` methods) or the in-process `AgentControlService` API.
 
-- `browserNavigate({ tabId, url })`
-- `browserGetUrl({ tabId })`
-- `browserGetTitle({ tabId })`
+### Navigation
 
-Full RPC exposure is follow-up work (D2); the in-process `AgentControlService` API is live when the terminal window mounts.
+| RPC | Service | Notes |
+|-----|---------|-------|
+| `browser.navigate` | `browserNavigate` | `{ tabId, url }` |
+| `browser.back` | `browserBack` | Returns `{ moved }` |
+| `browser.forward` | `browserForward` | Returns `{ moved }` |
+| `browser.reload` | `browserReload` | |
+| `browser.getUrl` | `browserGetUrl` | |
+| `browser.getTitle` | `browserGetTitle` | |
 
-## Known limitations (D1)
+### Snapshot and interaction
+
+| RPC | Service | Notes |
+|-----|---------|-------|
+| `browser.snapshot` | `browserSnapshot` | Bounded semantic tree with temporary `ref` ids |
+| `browser.query` | `browserQuery` | Filter by `role`, `name`, `text`, or `selector` |
+| `browser.waitFor` | `browserWaitFor` | `selector`, `text`, or `loadState` (`load` / `idle`) |
+| `browser.click` | `browserClick` | `{ tabId, ref }` |
+| `browser.type` | `browserType` | `{ tabId, ref, text, clear? }` — clears by default |
+| `browser.press` | `browserPress` | `{ tabId, ref, key }` |
+
+There is **no** generic `browser.evaluate` / arbitrary JavaScript RPC. Snapshot and interaction use fixed Controlled Frame `executeScript` helpers in `app/src/browser/browserSnapshotScript.ts` only.
+
+### Snapshot shape
+
+`browser.snapshot` returns:
+
+- `url`, `title`, `generation`
+- `nodes[]` with `ref`, `role`, accessible `name`, `text`, link `href`, and input state (`value`, `checked`, `disabled`, `selected`, `expanded`)
+- Password / secret field values are always `[redacted]`
+- `truncated` + `byteLength` when caps apply (default **200 nodes**, **256 KiB**)
+
+Temporary refs are stamped on elements as `data-gosh-agent-ref` / `data-gosh-agent-gen` and **invalidated on navigation** (`loadstart`, back/forward/reload). Stale refs return `invalid-argument`.
+
+Typical flow:
+
+1. `browser.snapshot` → pick a `ref`
+2. `browser.click` / `browser.type` / `browser.press`
+3. Re-snapshot after navigation or major DOM changes
+
+## Security notes
+
+- Production path uses Controlled Frame only (no CDP requirement).
+- Agents cannot inject arbitrary scripts; only whitelisted snapshot/query/wait/interaction helpers run in the guest.
+- Snapshot output is size-bounded to reduce exfiltration risk from large pages.
+- Secret inputs never leave the guest with real values in agent-visible payloads.
+
+## Known limitations
 
 - No mixed terminal/browser splits (D4)
 - Browser tabs are not restored from `sessionStorage` tab layout
@@ -47,5 +89,6 @@ Full RPC exposure is follow-up work (D2); the in-process `AgentControlService` A
 - Dev vite server lacks a real `<controlledframe>` element
 - Enterprise-managed IWA install required on ChromeOS today
 - Some sites may still block automation or embedding at the network layer
+- Query `selector` uses standard DOM selectors only (no shadow-piercing)
 
-See [ADR 0014](../adr/0014-controlled-frame-browser-tabs.md).
+See [ADR 0014](../adr/0014-controlled-frame-browser-tabs.md) and [PROTOCOL.md](./PROTOCOL.md).

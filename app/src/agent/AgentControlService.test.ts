@@ -159,6 +159,23 @@ describe('AgentControlService', () => {
     const tabId = registry.openTab({ kind: 'browser', title: 'Browser' });
     const browserHost = {
       navigate: vi.fn(),
+      back: vi.fn(async () => true),
+      forward: vi.fn(async () => false),
+      reload: vi.fn(),
+      waitFor: vi.fn(async () => ({ tabId, satisfied: true, reason: 'load' as const })),
+      snapshot: vi.fn(async () => ({
+        tabId,
+        url: 'https://example.com',
+        title: 'Example',
+        generation: 1,
+        nodes: [],
+        truncated: false,
+        byteLength: 10,
+      })),
+      query: vi.fn(async () => ({ tabId, matches: [] })),
+      click: vi.fn(async () => undefined),
+      type: vi.fn(async () => undefined),
+      press: vi.fn(async () => undefined),
       getUrl: vi.fn(() => 'https://example.com'),
       getTitle: vi.fn(() => 'Example'),
     };
@@ -168,6 +185,7 @@ describe('AgentControlService', () => {
     expect(nav.ok).toBe(true);
     expect(browserHost.navigate).toHaveBeenCalledWith(tabId, 'https://example.com');
     expect(service.browserGetTitle({ tabId })).toEqual({ ok: true, value: { tabId, title: 'Example' } });
+    expect(service.capabilities().methods.browserSnapshot.available).toBe(true);
   });
 });
 

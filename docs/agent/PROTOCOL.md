@@ -33,6 +33,18 @@ If the client requests an unsupported major version, the server responds with `i
 | `terminal.read` | `{ paneId, maxBytes?, lastLines? }` |
 | `terminal.run` | `{ paneId, command, timeoutMs?, maxOutputBytes? }` |
 | `pane.diagnostics` | `{ paneId }` |
+| `browser.navigate` | `{ tabId, url }` |
+| `browser.back` | `{ tabId }` |
+| `browser.forward` | `{ tabId }` |
+| `browser.reload` | `{ tabId }` |
+| `browser.waitFor` | `{ tabId, selector?, text?, loadState?, timeoutMs?, pollIntervalMs? }` |
+| `browser.snapshot` | `{ tabId, maxNodes?, maxBytes? }` |
+| `browser.query` | `{ tabId, role?, name?, text?, selector? }` |
+| `browser.click` | `{ tabId, ref }` |
+| `browser.type` | `{ tabId, ref, text, clear? }` |
+| `browser.press` | `{ tabId, ref, key }` |
+| `browser.getUrl` | `{ tabId }` |
+| `browser.getTitle` | `{ tabId }` |
 | `events.subscribe` | `{ types?: string[] }` |
 
 Server push uses the notification `events.push` with `{ subscriptionId, event }`.
@@ -69,6 +81,12 @@ Success result shape:
 `completion` is `osc133` when the matching `D` marker arrived; otherwise `timeout`, `pane-closed`, `disconnected`, or `cancelled`. Concurrent runs on the same pane are rejected with `failed` (no queue). Output is read from Restty text capture between OSC `C` and `D` positions when available; otherwise best-effort viewport capture with `truncated: true`.
 
 Push events `command.started` and `command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`.
+
+### `browser.snapshot`
+
+Returns a bounded semantic representation of the active browser tab (Controlled Frame). Nodes include temporary `ref` ids (`e1`, `e2`, …), implicit/explicit `role`, accessible `name`, visible `text`, link `href`, and form control state. Password and secret autocomplete fields redact `value` as `[redacted]`. Refs invalidate after navigation; reuse after `browser.back`, `browser.navigate`, or reload yields `invalid-argument`.
+
+There is no `browser.evaluate` method. Snapshot uses internal `executeScript` helpers only (see `docs/agent/BROWSER.md`).
 
 ## Cancellation
 

@@ -93,6 +93,7 @@ export function mountBrowserSession(options: BrowserSessionOptions): BrowserSess
   frameHost.append(frame as unknown as Node);
 
   const controller = new ControlledFrameController(frame, {
+    tabId,
     initialUrl,
     onStateChange: (state) => {
       urlInput.value = state.url === 'about:blank' ? '' : state.url;
