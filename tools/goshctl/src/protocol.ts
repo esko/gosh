@@ -59,6 +59,18 @@ export type AgentMethodName =
   | 'terminal.read'
   | 'terminal.run'
   | 'pane.diagnostics'
+  | 'browser.navigate'
+  | 'browser.back'
+  | 'browser.forward'
+  | 'browser.reload'
+  | 'browser.waitFor'
+  | 'browser.snapshot'
+  | 'browser.query'
+  | 'browser.click'
+  | 'browser.type'
+  | 'browser.press'
+  | 'browser.getUrl'
+  | 'browser.getTitle'
   | 'events.subscribe';
 
 export type AgentRpcParams = {
@@ -75,6 +87,25 @@ export type AgentRpcParams = {
   'terminal.read': { paneId: string; maxBytes?: number };
   'terminal.run': { paneId: string; command: string; timeoutMs?: number; maxOutputBytes?: number };
   'pane.diagnostics': { paneId: string };
+  'browser.navigate': { tabId: string; url: string };
+  'browser.back': { tabId: string };
+  'browser.forward': { tabId: string };
+  'browser.reload': { tabId: string };
+  'browser.waitFor': {
+    tabId: string;
+    selector?: string;
+    text?: string;
+    loadState?: 'load' | 'idle';
+    timeoutMs?: number;
+    pollIntervalMs?: number;
+  };
+  'browser.snapshot': { tabId: string; maxNodes?: number; maxBytes?: number };
+  'browser.query': { tabId: string; role?: string; name?: string; text?: string; selector?: string };
+  'browser.click': { tabId: string; ref: string };
+  'browser.type': { tabId: string; ref: string; text: string; clear?: boolean };
+  'browser.press': { tabId: string; ref: string; key: string };
+  'browser.getUrl': { tabId: string };
+  'browser.getTitle': { tabId: string };
   'events.subscribe': { types?: string[] };
 };
 

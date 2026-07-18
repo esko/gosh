@@ -74,6 +74,18 @@ Typical flow:
 2. `browser.click` / `browser.type` / `browser.press`
 3. Re-snapshot after navigation or major DOM changes
 
+### CLI and MCP
+
+Browser RPCs are also exposed through `goshctl` and `gosh-mcp` (thin protocol clients; no extra server logic):
+
+```bash
+goshctl browser navigate --tab <tabId> https://example.com
+goshctl browser snapshot --tab <tabId>
+goshctl browser click --tab <tabId> --ref e1
+```
+
+MCP tools: `gosh_browser_navigate`, `gosh_browser_snapshot`, `gosh_browser_click`, `gosh_browser_type`, `gosh_browser_get_url`, `gosh_browser_get_title`, and the other `browser.*` methods. See `tools/goshctl/README.md` and `tools/gosh-mcp/README.md`.
+
 ## Security notes
 
 - Production path uses Controlled Frame only (no CDP requirement).

@@ -37,6 +37,18 @@ npm run build
 | `gosh_pane_focus` | `pane.focus` |
 | `gosh_pane_zoom` | `pane.zoom` |
 | `gosh_pane_close` | `pane.close` |
+| `gosh_browser_navigate` | `browser.navigate` |
+| `gosh_browser_back` | `browser.back` |
+| `gosh_browser_forward` | `browser.forward` |
+| `gosh_browser_reload` | `browser.reload` |
+| `gosh_browser_wait_for` | `browser.waitFor` |
+| `gosh_browser_snapshot` | `browser.snapshot` |
+| `gosh_browser_query` | `browser.query` |
+| `gosh_browser_click` | `browser.click` |
+| `gosh_browser_type` | `browser.type` |
+| `gosh_browser_press` | `browser.press` |
+| `gosh_browser_get_url` | `browser.getUrl` |
+| `gosh_browser_get_title` | `browser.getTitle` |
 
 Tool results use MCP `structuredContent` with the JSON-RPC `result` payload.
 

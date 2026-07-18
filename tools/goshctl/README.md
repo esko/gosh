@@ -53,6 +53,12 @@ goshctl pane resize --pane pane_abc --right --amount 8
 goshctl pane focus --pane pane_abc
 goshctl pane zoom --pane pane_abc
 goshctl pane close --pane pane_abc
+goshctl browser navigate --tab tab_browser_1 https://example.com
+goshctl browser snapshot --tab tab_browser_1
+goshctl browser click --tab tab_browser_1 --ref e3
+goshctl browser type --tab tab_browser_1 --ref e2 -- 'search terms'
+goshctl browser get-url --tab tab_browser_1
+goshctl browser get-title --tab tab_browser_1
 goshctl events --json
 ```
 
