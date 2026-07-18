@@ -1,5 +1,6 @@
 node_modules/
 dist/
+pages/
 *.swbn
 *.pem
 iwa/keys/*.pem

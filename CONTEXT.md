@@ -21,3 +21,22 @@ not belong in the transport boundary.
 
 Multiple terminal windows remain valid. Native platform tabs are not part of
 the product architecture.
+
+## Secondary sessions and paste
+
+A **secondary session** is a short-lived SSH connection that reuses a pane
+session's connection intent for a non-PTY purpose (remote image paste upload,
+protocol bootstrap). It is not a pane session and does not own a transport.
+_Avoid_: sidecar connection, helper SSH, background SSH
+
+**Remote image paste** uploads clipboard image bytes to the remote filesystem
+and inserts a shell-quoted path into the focused pane. It is distinct from
+local Kitty paste, which renders media only in Restty and never crosses the
+transport.
+_Avoid_: image upload, path paste (ambiguous with local Kitty paste)
+
+**Auth prompt policy** is whether a connection attempt may show password or
+vault UI (`interactive`) or may only consume credentials already available
+without prompting (`silent`). Pane sessions are interactive; secondary
+sessions used for remote image paste are silent.
+_Avoid_: auth mode, headless auth

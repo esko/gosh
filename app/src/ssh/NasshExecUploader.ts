@@ -1,6 +1,9 @@
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
-import type { TerminalSink, TerminalSubscription, TerminalViewport } from '../terminal/TerminalAdapter';
-import { NasshCommandBridge } from './NasshCommandBridge';
+import {
+  connectNasshSecondarySession,
+  NasshSecondaryAuthUnavailableError,
+  secondaryOptionsFromIntent,
+} from './NasshSecondarySession';
 import {
   DEFAULT_REMOTE_PASTE_DIRECTORY,
   shellQuotePath,
@@ -17,21 +20,6 @@ function base64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(binary);
-}
-
-class ExecSink implements TerminalSink {
-  private readonly inputListeners = new Set<(data: string) => void>();
-  private readonly outputListeners = new Set<(data: string) => void>();
-  write(data: string | Uint8Array): void {
-    const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    this.outputListeners.forEach((cb) => cb(text));
-  }
-  onInput(cb: (data: string) => void): TerminalSubscription { this.inputListeners.add(cb); return { dispose: () => this.inputListeners.delete(cb) }; }
-  onResize(): TerminalSubscription { return { dispose: () => undefined }; }
-  focus(): void {}
-  getSize(): TerminalViewport { return { cols: 80, rows: 24, widthPx: 0, heightPx: 0 }; }
-  input(data: string): void { this.inputListeners.forEach((cb) => cb(data)); }
-  onOutput(cb: (data: string) => void): () => void { this.outputListeners.add(cb); return () => this.outputListeners.delete(cb); }
 }
 
 /** Shell expression for the paste directory (absolute → quoted; relative → under $HOME). */
@@ -64,52 +52,62 @@ export async function uploadViaNasshExec(
   const marker = `__IWA_UPLOAD_EOF_${token}__`;
   const filename = `gosh-paste-${token}.${extension(blob.type)}`;
   const command = buildPortableExecUploadCommand(filename, marker, directory);
-  const sink = new ExecSink();
-  let rejectResult: (reason?: unknown) => void = () => undefined;
+
+  let session;
   let cleanupResult = (): void => undefined;
-  const bridge = new NasshCommandBridge({
-    protocol: 'ssh', host: spec.hostname, port: spec.port ?? 22,
-    username: spec.username ?? '', identityId: spec.identityId,
-    connectionArgs: spec.argstr, startupCommand: command,
-    onStatus: (status, error) => {
-      if (status === 'error') rejectResult(new Error(error ?? 'SSH upload failed.'));
-      else if (status === 'disconnected') rejectResult(new Error('SSH upload ended before completion.'));
-    },
-  });
-  bridge.attachTerminal(sink);
-  const result = new Promise<string>((resolve, reject) => {
-    let output = '';
-    const onAbort = () => rejectResult(signal?.reason);
-    const timeout = window.setTimeout(() => rejectResult(new Error('SSH upload timed out.')), 120_000);
-    const offOutput = sink.onOutput((chunk) => {
-      output = (output + chunk).slice(-16_384);
-      const match = /IWA_UPLOAD_OK:([A-Za-z0-9+/=]+)/.exec(output);
-      if (!match) return;
-      cleanupResult();
-      try { resolve(atob(match[1])); } catch (error) { reject(error); }
-    });
-    cleanupResult = () => {
-      offOutput();
-      window.clearTimeout(timeout);
-      signal?.removeEventListener('abort', onAbort);
-    };
-    rejectResult = (reason) => { cleanupResult(); reject(reason); };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  let rejectResult: (reason?: unknown) => void = () => undefined;
+
   try {
-    await bridge.connect();
+    session = await connectNasshSecondarySession(
+      secondaryOptionsFromIntent(spec, {
+        purpose: { kind: 'exec', remoteCommand: command },
+        authPromptPolicy: 'silent',
+        sinkMode: 'line-pump',
+        signal,
+      }),
+    );
+
+    const result = new Promise<string>((resolve, reject) => {
+      let output = '';
+      const onAbort = () => rejectResult(signal?.reason);
+      const timeout = window.setTimeout(() => rejectResult(new Error('SSH upload timed out.')), 120_000);
+      const offOutput = session!.sink.onOutput((chunk) => {
+        output = (output + chunk).slice(-16_384);
+        const match = /IWA_UPLOAD_OK:([A-Za-z0-9+/=]+)/.exec(output);
+        if (!match) return;
+        cleanupResult();
+        try {
+          resolve(atob(match[1]!));
+        } catch (error) {
+          reject(error);
+        }
+      });
+      rejectResult = (reason) => {
+        cleanupResult();
+        reject(reason);
+      };
+      cleanupResult = () => {
+        offOutput.dispose();
+        window.clearTimeout(timeout);
+        signal?.removeEventListener('abort', onAbort);
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+
     const bytes = new Uint8Array(await blob.arrayBuffer());
     for (let offset = 0; offset < bytes.length; offset += FRAME_BYTES) {
       signal?.throwIfAborted();
       const chunk = bytes.subarray(offset, Math.min(bytes.length, offset + FRAME_BYTES));
-      sink.input(`${base64(chunk)}\n`);
+      session.sink.input(`${base64(chunk)}\n`);
       onProgress?.({ uploaded: offset + chunk.length, total: bytes.length });
     }
-    sink.input(`${marker}\n`);
+    session.sink.input(`${marker}\n`);
     return await result;
+  } catch (error) {
+    if (error instanceof NasshSecondaryAuthUnavailableError) throw error;
+    throw error;
   } finally {
     cleanupResult();
-    await bridge.disconnect().catch(() => undefined);
-    bridge.dispose();
+    session?.dispose();
   }
 }

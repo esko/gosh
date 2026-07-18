@@ -1,10 +1,7 @@
 import type { TerminalSink, TerminalSubscription } from '../terminal/TerminalAdapter';
 import type { TerminalTransport, TransportStatusHandler } from '../pwa/transport';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
-import { RemoteImageUploader } from '../ssh/RemoteImageUploader';
-import { connectNasshSftpSidecar, isSftpSubsystemUnavailable } from '../ssh/NasshSftpSidecar';
-import { uploadViaNasshExec } from '../ssh/NasshExecUploader';
-import { resolveSettings } from '../pwa/settingsProfiles';
+import { createRemoteImagePasteUploader, type RemoteImagePasteUploader } from '../ssh/remoteImagePaste';
 import { createTsshdSession } from './bootstrap';
 import { createTsshdWorkerController, type TsshdWorkerController, type TsshdWorkerEvent } from './TsshdWorkerController';
 
@@ -25,7 +22,7 @@ export class TsshdRelayTransport implements TerminalTransport {
   private resize: TerminalSubscription | null = null;
   private controller: TsshdWorkerController | null = null;
   private adapter: TerminalSink | null = null;
-  private uploader: RemoteImageUploader | null = null;
+  private imagePasteUploader: RemoteImagePasteUploader | undefined;
   private disposed = false;
   private ended = false;
   private surfacedError = false;
@@ -43,13 +40,8 @@ export class TsshdRelayTransport implements TerminalTransport {
     blob: Blob,
     options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void },
   ): Promise<string> {
-    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
-    this.uploader ??= new RemoteImageUploader({
-      connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
-      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
-      isSubsystemUnavailable: isSftpSubsystemUnavailable,
-    });
-    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
+    this.imagePasteUploader ??= createRemoteImagePasteUploader(this.spec);
+    return this.imagePasteUploader.uploadFile(blob, options);
   }
 
   async connect(adapter: TerminalSink): Promise<void> {
@@ -133,7 +125,7 @@ export class TsshdRelayTransport implements TerminalTransport {
     this.controller?.dispose();
     this.controller = null;
     this.adapter = null;
-    this.uploader?.dispose();
-    this.uploader = null;
+    this.imagePasteUploader?.dispose();
+    this.imagePasteUploader = undefined;
   }
 }

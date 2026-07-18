@@ -1,6 +1,6 @@
 {
   "name": "gosh",
-  "version": "0.1.167",
+  "version": "0.1.172",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.13.0",
@@ -25,6 +25,7 @@
     "bundle:iwa": "node --experimental-strip-types iwa/build-bundle.mjs",
     "bundle:iwa:unsigned": "node --experimental-strip-types iwa/build-bundle.mjs --unsigned-only",
     "bundle:iwa:info": "node --experimental-strip-types iwa/bundle-info.mjs",
+    "pages:site": "node scripts/build-pages-site.mjs",
     "smoke:e2e": "node scripts/smoke-terminal.mjs",
     "smoke:ssh": "node scripts/smoke-ssh-interactive.mjs",
     "smoke:echo": "node scripts/smoke-echo.mjs",

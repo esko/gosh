@@ -104,25 +104,29 @@ Dev Mode Proxy serves your **live** Vite server — you usually do **not** need 
 
 See [tests/e2e/README.md](../tests/e2e/README.md) for terminal UI smoke tests and [tests/e2e/smoke-terminal.spec.md](../tests/e2e/smoke-terminal.spec.md) for vim/tmux/fish once SSH is wired.
 
-## Local-only workflow (recommended)
+## Public install (GitHub Pages)
 
-You have two ways to run this on your Chromebook — both stay on the machine:
+End users can install the signed release without cloning the repo:
+
+1. Enable the Chrome flags listed in the root [README](../README.md)
+2. Open `chrome://web-app-internals`
+3. **Install IWA from Update Manifest** → `https://esko.github.io/gosh/update.json`
+
+Publisher steps (signing secrets, tagging, Pages) are in [RELEASE.md](RELEASE.md).
+
+## Local development workflow
+
+Daily Chromebook work usually uses one of these:
 
 | Mode | When to use | How |
 |------|-------------|-----|
 | **Dev Mode Proxy** | Daily development | `npm run dev` → install `http://127.0.0.1:5173` via Web App Internals |
-| **Signed `.swbn`** | Stable install without Vite running | `npm run bundle:iwa` → pick `dist/gosh.swbn` from disk in Web App Internals |
-
-You do **not** need:
-
-- `update_manifest_url` in the manifest (omit it for local use)
-- Hosting `update-manifest.json` anywhere
-- A public HTTPS origin for the app bundle
+| **Signed `.swbn`** | Stable local install without Vite | `npm run bundle:iwa` → pick `dist/gosh.swbn` from disk in Web App Internals |
 
 To refresh after code changes:
 
 - **Dev proxy:** save files; Vite hot-reloads (or re-open the app)
-- **Signed bundle:** `npm run bundle:iwa` again → reinstall the new `.swbn` from `dist/`
+- **Signed bundle:** `npm run bundle:iwa` again → reinstall the new `.swbn` from `dist/` (or Force update when using the public update manifest)
 
 ## Prerequisites
 
@@ -302,14 +306,10 @@ npm run typecheck
 7. Launch from app launcher; npm run bundle:iwa:info to inspect
 ```
 
-## Updates (local only)
+## Updates
 
-For personal local use, **skip remote updates entirely**. When you change the app:
-
-1. Rebuild: `npm run bundle:iwa`
-2. Reinstall the new `.swbn` from **Web App Internals** (same signing key → same app identity)
-
-`iwa/update-manifest.json` is an optional template for people who later self-host updates. This project does not use it by default.
+- **Public installs** pull from `https://esko.github.io/gosh/update.json` (see [RELEASE.md](RELEASE.md)).
+- **Local `.swbn` installs** without an update URL: rebuild with `npm run bundle:iwa` and reinstall from disk (same signing key → same app identity).
 
 ## Troubleshooting
 

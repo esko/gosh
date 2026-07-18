@@ -1,34 +1,14 @@
-import type { TerminalSink, TerminalSubscription, TerminalViewport } from '../terminal/TerminalAdapter';
+import { HeadlessTerminalSink } from '../ssh/HeadlessTerminalSink';
 import { NasshCommandBridge } from '../ssh/NasshCommandBridge';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
 import { isKnownHostReadyForConnect } from '../ssh/nasshKnownHosts';
 import { buildTsshdBootstrapCommand, parseTsshdOutput, type TsshdServerInfo } from './bootstrapCommand';
 import { TSSHD_DEFAULT_UDP_MODE, type TsshdBootstrapResult, type TsshdUdpMode } from './types';
 
-class CaptureTerminal implements TerminalSink {
-  private static readonly MAX_SCAN = 1 << 16;
-  private output = '';
-  private readonly listeners = new Set<(value: string) => void>();
-  private readonly decoder = new TextDecoder();
-
-  open(): void {}
-  write(data: string | Uint8Array): void {
-    this.output += typeof data === 'string' ? data : this.decoder.decode(data, { stream: true });
-    if (this.output.length > CaptureTerminal.MAX_SCAN) {
-      this.output = this.output.slice(-CaptureTerminal.MAX_SCAN);
-    }
-    for (const listener of this.listeners) listener(this.output);
+class CaptureTerminal extends HeadlessTerminalSink {
+  constructor() {
+    super({ mode: 'capture-tail' });
   }
-  onInput(): TerminalSubscription { return { dispose() {} }; }
-  onResize(): TerminalSubscription { return { dispose() {} }; }
-  focus(): void {}
-  dispose(): void { this.listeners.clear(); }
-  getSize(): TerminalViewport { return { cols: 80, rows: 24, widthPx: 0, heightPx: 0 }; }
-  onOutput(listener: (value: string) => void): TerminalSubscription {
-    this.listeners.add(listener);
-    return { dispose: () => this.listeners.delete(listener) };
-  }
-  getOutput(): string { return this.output; }
 }
 
 const BENIGN_SSH_NOISE =

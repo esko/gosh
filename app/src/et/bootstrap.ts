@@ -1,4 +1,4 @@
-import type { TerminalSink, TerminalSubscription, TerminalViewport } from '../terminal/TerminalAdapter';
+import { HeadlessTerminalSink } from '../ssh/HeadlessTerminalSink';
 import { NasshCommandBridge } from '../ssh/NasshCommandBridge';
 import { saveEtSession, type EtSessionRecord } from '../storage/indexedDb';
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
@@ -14,36 +14,10 @@ function randomText(length: number): string {
   return [...random].map((value) => ALPHANUMERIC[value % ALPHANUMERIC.length]).join('');
 }
 
-class CaptureTerminal implements TerminalSink {
-  // The bootstrap subscription regex-scans the captured output on every write.
-  // Keeping the full buffer makes that O(n²) over a chatty MOTD; cap it to a
-  // tail window large enough to hold any IDPASSKEY token (49 chars) or failure
-  // line so each scan is O(window) instead of O(total output so far).
-  private static readonly MAX_SCAN = 1 << 16; // 64 KiB
-  private output = '';
-  private readonly listeners = new Set<(value: string) => void>();
-  // One decoder instance so `stream: true` correctly carries a multi-byte
-  // character split across writes (a fresh decoder per write cannot).
-  private readonly decoder = new TextDecoder();
-
-  open(): void {}
-  write(data: string | Uint8Array): void {
-    this.output += typeof data === 'string' ? data : this.decoder.decode(data, { stream: true });
-    if (this.output.length > CaptureTerminal.MAX_SCAN) {
-      this.output = this.output.slice(-CaptureTerminal.MAX_SCAN);
-    }
-    for (const listener of this.listeners) listener(this.output);
+class CaptureTerminal extends HeadlessTerminalSink {
+  constructor() {
+    super({ mode: 'capture-tail' });
   }
-  onInput(): TerminalSubscription { return { dispose() {} }; }
-  onResize(): TerminalSubscription { return { dispose() {} }; }
-  focus(): void {}
-  dispose(): void { this.listeners.clear(); }
-  getSize(): TerminalViewport { return { cols: 80, rows: 24, widthPx: 0, heightPx: 0 }; }
-  onOutput(listener: (value: string) => void): TerminalSubscription {
-    this.listeners.add(listener);
-    return { dispose: () => this.listeners.delete(listener) };
-  }
-  getOutput(): string { return this.output; }
 }
 
 /**

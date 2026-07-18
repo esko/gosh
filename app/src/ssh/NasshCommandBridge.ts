@@ -19,9 +19,11 @@ import {
 } from './nasshKnownHosts';
 import { showKnownHostPrompt } from './KnownHostPrompt';
 import { deleteKnownHost, getKnownHost, saveKnownHost } from '../storage/indexedDb';
-import { showSecureInputPrompt } from './SecureInputPrompt';
-import { canSavePassword, forgetPassword, loadPassword, savePassword } from '../security/savedPasswords';
-import { ensureVaultUnlocked } from './vaultUnlock';
+import {
+  isLoginPasswordPrompt,
+} from './secureInputCredentials';
+import { createNasshAuthAttempt } from './nasshAuthAttempt';
+import { createNasshTerminalLocation, createNasshTerminalWindow } from './nasshTerminalWindow';
 import type {
   NasshCommandInstance,
   NasshCommandModule,
@@ -31,6 +33,9 @@ import type {
 import { isDirectSocketsAvailable } from './DirectSocketProbe';
 import { checkMoshPrerequisites } from './moshGate';
 import { upstreamImport } from './upstreamUrls';
+
+/** Re-exported for tests and callers that classify password prompts. */
+export { isLoginPasswordPrompt };
 
 export type NasshCommandBridgeOptions = {
   protocol?: 'ssh' | 'mosh';
@@ -44,6 +49,11 @@ export type NasshCommandBridgeOptions = {
   termType?: string;
   /** Host-key trust via secureInput only (avoids TTY yes corrupting remote commands). */
   allowHostKeyTtyResponse?: boolean;
+  /**
+   * `silent` skips password/vault modals and only auto-fills a saved login
+   * password when the vault is already unlocked (used by image-paste exec upload).
+   */
+  authPromptMode?: 'interactive' | 'silent';
   onStatus?: (status: ConnectionStatus, error?: string, meta?: SessionStatusMeta) => void;
 };
 
@@ -84,18 +94,6 @@ export function withTruecolorRemoteCommand(remoteCommand: string | undefined): s
   if (!command) return TRUECOLOR_LOGIN_SHELL;
   if (/(?:^|[;\s])(?:export\s+)?COLORTERM=/.test(command)) return command;
   return `${TRUECOLOR_EXPORT}; ${command}`;
-}
-
-/**
- * True when a masked secureInput prompt is the SSH login password (the only
- * prompt eligible for saving/auto-fill). Echoed responses are excluded, as are
- * the common one-time / 2FA prompts that also mask input — those are entered
- * fresh each connect and must never be stored.
- */
-export function isLoginPasswordPrompt(message: string, echo: boolean): boolean {
-  if (echo) return false;
-  if (!/password/i.test(message)) return false;
-  return !/verification|one[-\s]?time|\botp\b|token|authenticator|\bcode\b/i.test(message);
 }
 
 export const NASSH_ENVIRONMENT = {
@@ -218,28 +216,8 @@ export class NasshCommandBridge {
 
     await stageKnownHostsForNassh();
 
-    const noopLocation = {
-      href: globalThis.location?.href ?? '',
-      hash: '',
-      replace: () => {},
-    };
-
-    // Upstream CommandInstance registers a `beforeunload` handler that sets
-    // `event.returnValue`, which makes the browser show a native "Leave site?"
-    // quit warning. The app manages tab/session close confirmation itself with a
-    // styled modal, so give nassh a window stub that silently drops beforeunload
-    // listeners while proxying everything else to the real window.
-    const terminalWindow: Record<string, unknown> = {
-      addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
-        if (type === 'beforeunload') return;
-        globalThis.addEventListener(type, listener, options as AddEventListenerOptions);
-      },
-      removeEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
-        if (type === 'beforeunload') return;
-        globalThis.removeEventListener(type, listener, options as EventListenerOptions);
-      },
-      close: () => globalThis.close(),
-    };
+    const noopLocation = createNasshTerminalLocation();
+    const terminalWindow = createNasshTerminalWindow();
 
     const syncStorage = getSyncStorage();
     log.storage.debug('using nassh sync storage', {
@@ -258,61 +236,20 @@ export class NasshCommandBridge {
     });
 
     const credentialTarget = { username: this.options.username, host: this.options.host, port: this.options.port };
-    // Once the login password has been provided (auto-filled or typed) this guards
-    // against re-using a rejected stored password and against treating a later 2FA
-    // prompt as the password. Reset per connection (this closure is per connect()).
-    let loginPasswordProvided = false;
+    const authAttempt = createNasshAuthAttempt({
+      policy: this.options.authPromptMode ?? 'interactive',
+      target: credentialTarget,
+      hostKeyGuard: this.hostKeyGuard,
+      isInactive: () => this.disposed || this.hasExited || this.authCancelled,
+      onCancel: () => {
+        this.cancelSecureInput(instance);
+      },
+    });
 
     instance.secureInput = async (message, bufLen, echo) => {
-      // OpenSSH often re-calls readpassphrase after an empty cancel response;
-      // never show another modal once the user has dismissed auth.
       if (this.disposed || this.hasExited || this.authCancelled) return '';
-
       log.ssh.debug('secureInput requested', { echo, bufLen });
-      const hostKeyResponse = await this.hostKeyGuard?.consumePendingHostKeyResponse(message);
-      if (hostKeyResponse) return hostKeyResponse.slice(0, bufLen);
-      if (this.disposed || this.hasExited || this.authCancelled) return '';
-
-      const eligible = isLoginPasswordPrompt(message, echo) && canSavePassword(credentialTarget);
-      // Unlock the vault before touching saved passwords. Cancel must abort the
-      // connection — falling through to another "Authentication required" modal
-      // feels like the cancel was ignored.
-      let vaultReady = false;
-      if (eligible) {
-        const unlock = await ensureVaultUnlocked();
-        if (unlock === 'cancelled') return this.cancelSecureInput(instance);
-        vaultReady = unlock === 'ready';
-      }
-      if (this.disposed || this.hasExited || this.authCancelled) return '';
-
-      if (eligible && vaultReady && !loginPasswordProvided) {
-        // First login-password prompt: silently supply a stored password if present.
-        const saved = await loadPassword(credentialTarget).catch(() => null);
-        if (saved) {
-          loginPasswordProvided = true;
-          return saved.slice(0, bufLen);
-        }
-      } else if (eligible && vaultReady && loginPasswordProvided) {
-        // Re-prompted after we already supplied one → the stored password was
-        // wrong; forget it so it does not loop, then ask the user.
-        await forgetPassword(credentialTarget);
-      }
-
-      const offerSave = eligible && vaultReady;
-      const { value, save } = await showSecureInputPrompt(message, bufLen, echo, { offerSave });
-      if (value === null) return this.cancelSecureInput(instance);
-      if (offerSave) {
-        loginPasswordProvided = true;
-        if (save) {
-          await savePassword(credentialTarget, value).catch((error) =>
-            log.ssh.warn('failed to save password', { error: String(error) }),
-          );
-        } else {
-          // An unchecked box forgets any password previously stored for this target.
-          await forgetPassword(credentialTarget);
-        }
-      }
-      return value.slice(0, bufLen);
+      return authAttempt.secureInput(message, bufLen, echo);
     };
 
     instance.onPluginExit = async (code) => {

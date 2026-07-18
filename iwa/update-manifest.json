@@ -1,8 +1,8 @@
 {
-  "versions": [],
   "channels": {
     "default": {
       "name": "Stable"
     }
-  }
+  },
+  "versions": []
 }

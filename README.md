@@ -1,89 +1,114 @@
 # Gosh
 
-ChromeOS Isolated Web App terminal client. The project is being reset into a near-upstream port of Google Terminal + nassh, with upstream behavior as the default and a small set of documented local deltas.
+**Gosh** is a ChromeOS [Isolated Web App](https://developer.chrome.com/docs/iwa/introduction) terminal client for **SSH**, **Mosh**, **Eternal Terminal**, and **tsshd**. It connects over Chrome’s Direct Sockets API — no browser WebSocket proxy and no companion daemon on the Chromebook.
 
-Primary upstream references:
+![Gosh launcher](docs/images/launcher.png)
 
-- Google Terminal: https://chromium.googlesource.com/apps/libapps/+/HEAD/terminal/
-- nassh: https://chromium.googlesource.com/apps/libapps/+/HEAD/nassh/
-- wassh: `upstream/libapps/wassh/`
+## Features
 
-## Reset Direction
+- **SSH, Mosh, Eternal Terminal, and tsshd** over Direct Sockets (TCP / UDP)
+- **Saved hosts and profiles** with keys, startup commands, and per-host settings
+- **Restty terminal** with native pane splits, scrollback, themes, and font controls
+- **Custom caption tabs** in an unframed ChromeOS window (ChromeOS Terminal–inspired)
+- **QUIC or KCP** for tsshd UDP mode
+- **Image paste** to the remote host (Kitty graphics–friendly path)
+- **Optional credential vault** for saved passwords (device-locked)
+- **Light / dark / system** chrome and terminal themes
 
-The app should follow Google Terminal/nassh architecture unless IWA packaging or Direct Sockets requires an adaptation.
+![Settings](docs/images/settings.png)
 
-Allowed local deltas:
+![Launcher (light)](docs/images/launcher-light.png)
 
-- Restty terminal engine with native pane layout, splits, and custom caption tabs.
-- Arbitrary terminal font family strings, including Nerd Fonts.
-- Stronger theme, scrollback, and renderer/performance controls.
-- ET and SSH transport support over IWA Direct Sockets.
+## Requirements
 
-Everything else should be upstream-shaped by default. Custom SSH-manager flows, simulated tabs, debug-first screens, fixture-specific UX, and bespoke dashboards are not reset goals.
+- **ChromeOS or Chrome 120+** (Chromebook recommended for the full windowing experience)
+- Flags below enabled (restart Chrome after changing them)
+- A reachable SSH (and optionally Mosh / ET / tsshd) host
 
-See:
+## Install
 
-- [Reset PRD](docs/RESET_PRD.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Upstream Sync](docs/UPSTREAM_SYNC.md)
-- [Terminal Deltas](docs/TERMINAL_DELTAS.md)
-- [Mosh](docs/MOSH.md)
-- [Test Plan](docs/TEST_PLAN.md)
-- [Agent Guide](docs/AGENT_GUIDE.md)
+### 1. Enable Chrome flags
 
-## Architecture
+Open `chrome://flags` and set these to **Enabled**, then restart Chrome:
 
-```text
-IWA terminal shell
-  home, custom caption tabs, profiles, settings, pane sessions
-        │
-        ├── Restty Terminal Engine (sole product renderer)
-        │     canvas rendering, native pane layout/splits, fonts, themes
-        │
-        ├── NasshRuntime & ET adapters
-        │     upstream CommandInstance.connectTo() (SSH) and ET client
-        │
-        └── IWA adapter layer
-              Chrome polyfills, Direct Sockets (SSH/ET), asset URLs, web bundle constraints
+| Flag | Why |
+|------|-----|
+| `#enable-isolated-web-apps` | IWA runtime |
+| `#enable-isolated-web-app-dev-mode` | Required today to install from an update manifest outside enterprise policy |
+| `#enable-chromeos-isolated-web-app-set-shape` | Rounded unframed window corners |
+| `#enable-desktop-pwas-additional-windowing-controls` | Minimize / maximize in the custom caption |
 
-Copied upstream assets
-  nassh, wassh, wasi-js-bindings, OpenSSH WASM plugin files
-```
+If Direct Sockets still appear unavailable after install, also enable `#enable-direct-sockets-for-isolated-web-apps` and restart again.
+
+### 2. Install from the update manifest
+
+1. Open `chrome://web-app-internals`
+2. Find **Install IWA from Update Manifest**
+3. Paste:
+
+   ```text
+   https://esko.github.io/gosh/update.json
+   ```
+
+4. Launch **Gosh** from the app launcher (not a normal browser tab)
+
+Landing page with the same URL: [esko.github.io/gosh](https://esko.github.io/gosh/).
+
+### 3. Updates
+
+Installed copies check the update manifest periodically. You can also use **Force update check** on `chrome://web-app-internals` after a new GitHub Release is published.
+
+## Quick start after install
+
+1. Open Gosh from the launcher
+2. Add a host (user, hostname, protocol) or pick a recent connection
+3. Accept the host key prompt on first connect
+4. Authenticate with key and/or password when prompted
 
 ## Development
 
+Contributors: see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for setup, architecture, and verification.
+
+Local Chromebook install (Dev Mode Proxy or a local `.swbn`): [docs/IWA_DEV_SETUP.md](docs/IWA_DEV_SETUP.md).
+
+Publishing a release to GitHub Pages: [docs/RELEASE.md](docs/RELEASE.md).
+
 ```bash
 npm install
-npm run dev
-npm run dev:chrome
-npm run fetch-assets
+npm run dev          # http://127.0.0.1:5173 — use with Dev Mode Proxy
 npm run typecheck
+npm run test
 npm run build
 ```
 
-IWA install on ChromeOS is documented in [docs/IWA_DEV_SETUP.md](docs/IWA_DEV_SETUP.md). Upstream asset handling is documented in [docs/UPSTREAM_SYNC.md](docs/UPSTREAM_SYNC.md) and [docs/UPSTREAM_NASSH_NOTES.md](docs/UPSTREAM_NASSH_NOTES.md).
+## References
 
-Initialize upstream libapps when needed:
+### Terminal renderer
 
-```bash
-git submodule update --init --depth 1 upstream/libapps
-```
+| Project | Role |
+|---------|------|
+| [Restty](https://github.com/wiedymi/restty) ([`@eslzzyl/restty`](https://www.npmjs.com/package/@eslzzyl/restty)) | Browser terminal UI — panes, splits, WebGPU/WebGL2; vendored under `vendor/restty/` |
+| [Ghostty](https://github.com/ghostty-org/ghostty) (`libghostty-vt`) | WASM VT / terminal core used inside Restty |
 
-## Verification
+### SSH / transport WASM and clients
 
-Final reset acceptance requires:
+| Project | Role |
+|---------|------|
+| [Chromium libapps](https://chromium.googlesource.com/apps/libapps) — [nassh](https://chromium.googlesource.com/apps/libapps/+/HEAD/nassh/), [wassh](https://chromium.googlesource.com/apps/libapps/+/HEAD/wassh/), [wasi-js-bindings](https://chromium.googlesource.com/apps/libapps/+/HEAD/wasi-js-bindings/), [ssh_client](https://chromium.googlesource.com/apps/libapps/+/HEAD/ssh_client/) | Upstream client stack; assets copied into `app/upstream/` |
+| OpenSSH WASM (`ssh.wasm`, plus `scp.wasm` / `sftp.wasm` / `ssh-keygen.wasm`) | SSH client (and helpers) run via wassh; from nassh’s plugin build |
+| [Mosh](https://mosh.org/) ([mobile-shell/mosh](https://github.com/mobile-shell/mosh)) — `mosh-client.wasm` | Predictive remote shell; WASM client shipped with the nassh plugin (`app/upstream/plugin/wasm/mosh-client.wasm`) |
+| [wassh](https://chromium.googlesource.com/apps/libapps/+/HEAD/wassh/) | WASI / WASM host that runs the OpenSSH and Mosh plugins in the browser |
+| [Eternal Terminal](https://eternalterminal.dev/) ([MisterTea/EternalTerminal](https://github.com/MisterTea/EternalTerminal)) | Persistent TCP sessions; TypeScript Direct Sockets client in `app/src/et/` (protobuf schemas from upstream, not a WASM plugin) |
+| [tsshd](https://github.com/trzsz/tsshd) | UDP SSH relay (KCP/QUIC); browser client compiled to WASM under `app/src/tsshd/runtime/` |
 
-- `npm run typecheck`
-- `npm run build`
-- reset unit tests
-- installed-IWA SSH smoke to a known working host
-- installed-IWA Mosh smoke to a host with `mosh-server`
-- live font/theme application
-- kitty keyboard option propagation
-- large-output and long-scrollback smoke
+### Product / platform
 
-Device results should be recorded in [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
+| Project | Role |
+|---------|------|
+| [Google Terminal](https://chromium.googlesource.com/apps/libapps/+/HEAD/terminal/) | ChromeOS Terminal UX reference |
+| [Isolated Web Apps](https://developer.chrome.com/docs/iwa/introduction) | Packaging and install model |
+| [Direct Sockets](https://developer.chrome.com/docs/iwa/direct-sockets) | TCP/UDP from the IWA |
 
 ## License
 
-Upstream libapps is Chromium-licensed. Restty is MIT. Preserve upstream notices for copied runtime and plugin assets.
+Upstream libapps assets are Chromium-licensed. Restty is MIT. tsshd retains its upstream license. Preserve notices for copied runtime and plugin files.

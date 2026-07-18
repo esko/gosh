@@ -39,9 +39,11 @@ offers negotiated streaming, structured errors, and atomic filesystem actions.
 ## Consequences
 
 Clipboard permission errors, unsupported formats, size failures, and transfer
-failures are shown as terminal status and insert no terminal input. A separate
-SSH connection may prompt again for authentication. Remote files can remain
-for up to seven days and are readable only by their owning Unix account.
+failures are shown as terminal status and insert no terminal input. Secondary
+sessions opened for remote image paste use silent auth: they never show password
+or vault modals and fail with a saved-credentials-unavailable message instead.
+Remote files can remain for up to seven days and are readable only by their
+owning Unix account.
 
 The tested renderer remains the mechanically vendored published
 `@eslzzyl/restty@0.1.37`, upstream commit

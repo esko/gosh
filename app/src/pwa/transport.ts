@@ -8,9 +8,7 @@ import { createEtSession } from '../et/bootstrap';
 import { createEtWorkerController, type EtWorkerController } from '../et/EtWorkerController';
 import { TsshdRelayTransport } from '../tsshd/TsshdRelayTransport';
 import type { SessionStatusMeta } from '../settings/types';
-import { RemoteImageUploader } from '../ssh/RemoteImageUploader';
-import { connectNasshSftpSidecar, isSftpSubsystemUnavailable } from '../ssh/NasshSftpSidecar';
-import { uploadViaNasshExec } from '../ssh/NasshExecUploader';
+import { createRemoteImagePasteUploader, type RemoteImagePasteUploader } from '../ssh/remoteImagePaste';
 import { isTerminalAutoReplyOnly, stripInboundTerminalProbes, stripTerminalAutoReplies } from '../terminal/terminalAutoReplies';
 import { hostTargetKey } from './profileModel';
 import { HEARTBEAT_INTERVAL_MS, clearHeartbeat, recordHeartbeat } from '../storage/sessionLiveness';
@@ -66,7 +64,7 @@ export class EchoTransport implements TerminalTransport {
 
 export class SshDirectSocketsTransport implements TerminalTransport {
   private delegate: EchoTransport | NasshCommandBridge | null = null;
-  private uploader: RemoteImageUploader | null = null;
+  private imagePasteUploader: RemoteImagePasteUploader | undefined;
 
   constructor(
     private readonly spec: ConnectionIntent,
@@ -122,20 +120,15 @@ export class SshDirectSocketsTransport implements TerminalTransport {
   }
 
   uploadFile(blob: Blob, options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void }): Promise<string> {
-    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
-    this.uploader ??= new RemoteImageUploader({
-      connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
-      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
-      isSubsystemUnavailable: isSftpSubsystemUnavailable,
-    });
-    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
+    this.imagePasteUploader ??= createRemoteImagePasteUploader(this.spec);
+    return this.imagePasteUploader.uploadFile(blob, options);
   }
 
   dispose(): void {
     this.delegate?.dispose();
     this.delegate = null;
-    this.uploader?.dispose();
-    this.uploader = null;
+    this.imagePasteUploader?.dispose();
+    this.imagePasteUploader = undefined;
   }
 }
 
@@ -145,7 +138,7 @@ export class EtDirectSocketsTransport implements TerminalTransport {
   private controller: EtWorkerController | null = null;
   private sessionId: string | undefined;
   private disposed = false;
-  private uploader: RemoteImageUploader | null = null;
+  private imagePasteUploader: RemoteImagePasteUploader | undefined;
 
   constructor(
     private readonly spec: ConnectionIntent,
@@ -159,13 +152,8 @@ export class EtDirectSocketsTransport implements TerminalTransport {
   }
 
   uploadFile(blob: Blob, options?: { signal?: AbortSignal; onProgress?: (progress: { uploaded: number; total: number }) => void }): Promise<string> {
-    const directory = resolveSettings(this.spec.settingsProfileId).imagePasteDirectory;
-    this.uploader ??= new RemoteImageUploader({
-      connect: (signal) => connectNasshSftpSidecar(this.spec, signal),
-      fallback: (file, signal, progress, dir) => uploadViaNasshExec(this.spec, file, signal, progress, dir),
-      isSubsystemUnavailable: isSftpSubsystemUnavailable,
-    });
-    return this.uploader.uploadFile(blob, options?.signal, options?.onProgress, directory);
+    this.imagePasteUploader ??= createRemoteImagePasteUploader(this.spec);
+    return this.imagePasteUploader.uploadFile(blob, options);
   }
 
   async connect(adapter: TerminalSink): Promise<void> {
@@ -237,8 +225,8 @@ export class EtDirectSocketsTransport implements TerminalTransport {
     this.resize = null;
     this.controller?.dispose();
     this.controller = null;
-    this.uploader?.dispose();
-    this.uploader = null;
+    this.imagePasteUploader?.dispose();
+    this.imagePasteUploader = undefined;
   }
 }
 

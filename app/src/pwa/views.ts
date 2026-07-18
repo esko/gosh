@@ -1260,7 +1260,7 @@ function connectionFieldsHTML(existing?: Profile): string {
   const nameValue = existing && existing.name !== formatConnectionTarget(profileToSpec(existing)) ? existing.name : '';
   return `
     <label class="field"><span>name — optional</span><input name="name" maxlength="${PROFILE_NAME_MAX_LENGTH}" value="${escapeHTML(normalizeProfileName(nameValue))}" placeholder="defaults to user@host" autocomplete="off" spellcheck="false"></label>
-    <label class="field"><span>host</span><input name="host" value="${escapeHTML(existing?.host ?? '')}" placeholder="192.0.2.10" autocomplete="off" spellcheck="false" required></label>
+    <label class="field"><span>host</span><input name="host" value="${escapeHTML(existing?.host ?? '')}" placeholder="host.example" autocomplete="off" spellcheck="false" required></label>
     <div class="field-row">
       <label class="field"><span>user</span><input name="user" value="${escapeHTML(existing?.username ?? '')}" placeholder="user" autocomplete="off" spellcheck="false" required></label>
       <label class="field"><span>port</span><input name="port" type="number" min="1" max="65535" value="${existing?.port ?? 22}"></label>

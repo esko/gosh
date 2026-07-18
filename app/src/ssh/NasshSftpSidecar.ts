@@ -1,154 +1,122 @@
 import type { ConnectionIntent } from '../connections/ConnectionIntent';
-import type { TerminalSink, TerminalSubscription, TerminalViewport } from '../terminal/TerminalAdapter';
-import { HostKeyGuard } from './HostKeyGuard';
-import { NasshIoShim } from './NasshIoShim';
-import { NASSH_ENVIRONMENT, loadNasshModules } from './NasshCommandBridge';
-import { showSecureInputPrompt } from './SecureInputPrompt';
-import { stageIdentityForNassh, removeIdentityFromNassh } from './nasshIdentity';
-import { stageKnownHostsForNassh, syncKnownHostsFromNassh } from './nasshKnownHosts';
-import type { NasshCommandInstance, NasshConnectParams, NasshSftpClient } from './upstreamTypes';
+import {
+  connectNasshSecondarySession,
+  NasshSecondaryAuthUnavailableError,
+  secondaryOptionsFromIntent,
+  stripAnsiForError,
+} from './NasshSecondarySession';
+import type { NasshCommandInstance, NasshSftpClient } from './upstreamTypes';
 import type { RemoteFileChannel } from './RemoteImageUploader';
+import { NasshIoShim } from './NasshIoShim';
 
 const OPEN_WRITE_CREATE_TRUNCATE_EXCLUSIVE = 0x02 | 0x08 | 0x10 | 0x20;
 
 export class SftpSubsystemUnavailableError extends Error {
-  constructor(message: string, options?: ErrorOptions) { super(message, options); this.name = 'SftpSubsystemUnavailableError'; }
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'SftpSubsystemUnavailableError';
+  }
 }
 
 export function isSftpSubsystemUnavailable(error: unknown): boolean {
   return error instanceof SftpSubsystemUnavailableError;
 }
 
-class HeadlessSink implements TerminalSink {
-  private readonly listeners = new Set<(data: string) => void>();
-  write(): void {}
-  onInput(cb: (data: string) => void): TerminalSubscription { this.listeners.add(cb); return { dispose: () => this.listeners.delete(cb) }; }
-  onResize(): TerminalSubscription { return { dispose: () => undefined }; }
-  focus(): void {}
-  getSize(): TerminalViewport { return { cols: 80, rows: 24, widthPx: 0, heightPx: 0 }; }
-  input(data: string): void { this.listeners.forEach((cb) => cb(data)); }
-}
-
 class NasshRemoteFileChannel implements RemoteFileChannel {
-  constructor(private readonly client: NasshSftpClient, private readonly instance: NasshCommandInstance, private readonly io: NasshIoShim) {}
-  get writeChunkSize(): number { return this.client.writeChunkSize; }
+  constructor(
+    private readonly client: NasshSftpClient,
+    private readonly instance: NasshCommandInstance,
+    private readonly io: NasshIoShim,
+  ) {}
+
+  get writeChunkSize(): number {
+    return this.client.writeChunkSize;
+  }
+
   async home(): Promise<string> {
     const packet = await this.client.realPath('.');
     const path = packet.files[0]?.filename;
     if (!path?.startsWith('/')) throw new Error('SFTP server did not return an absolute home directory.');
     return path;
   }
+
   async ensureDirectory(path: string): Promise<void> {
-    try { await this.client.makeDirectory(path); }
-    catch (error) { await this.client.fileStatus(path).catch(() => { throw error; }); }
+    try {
+      await this.client.makeDirectory(path);
+    } catch (error) {
+      await this.client.fileStatus(path).catch(() => {
+        throw error;
+      });
+    }
   }
+
   async list(path: string): Promise<Array<{ name: string; modified?: number }>> {
     const handle = await this.client.openDirectory(path);
     try {
-      return (await this.client.scanDirectory(handle)).map((entry) => ({ name: entry.filename, modified: entry.lastModified === undefined ? undefined : entry.lastModified * 1000 }));
-    } finally { await this.client.closeFile(handle).catch(() => undefined); }
+      return (await this.client.scanDirectory(handle)).map((entry) => ({
+        name: entry.filename,
+        modified: entry.lastModified === undefined ? undefined : entry.lastModified * 1000,
+      }));
+    } finally {
+      await this.client.closeFile(handle).catch(() => undefined);
+    }
   }
-  async remove(path: string): Promise<void> { await this.client.removeFile(path); }
-  open(path: string): Promise<string> { return this.client.openFile(path, OPEN_WRITE_CREATE_TRUNCATE_EXCLUSIVE); }
-  async write(handle: string, offset: number, data: Uint8Array): Promise<void> { await this.client.writeChunk(handle, offset, data); }
-  async close(handle: string): Promise<void> { await this.client.closeFile(handle); }
-  async chmod(path: string, mode: number): Promise<void> { await this.client.setFileStatus(path, { permissions: mode }); }
-  async rename(from: string, to: string): Promise<void> { await this.client.renameFile(from, to); }
-  dispose(): void { this.instance.terminateProgram_(); this.io.dispose(); }
+
+  async remove(path: string): Promise<void> {
+    await this.client.removeFile(path);
+  }
+
+  open(path: string): Promise<string> {
+    return this.client.openFile(path, OPEN_WRITE_CREATE_TRUNCATE_EXCLUSIVE);
+  }
+
+  async write(handle: string, offset: number, data: Uint8Array): Promise<void> {
+    await this.client.writeChunk(handle, offset, data);
+  }
+
+  async close(handle: string): Promise<void> {
+    await this.client.closeFile(handle);
+  }
+
+  async chmod(path: string, mode: number): Promise<void> {
+    await this.client.setFileStatus(path, { permissions: mode });
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    await this.client.renameFile(from, to);
+  }
+
+  dispose(): void {
+    this.instance.terminateProgram_();
+    this.io.dispose();
+  }
 }
 
 /** Open a non-interactive SFTP subsystem using the same nassh runtime as the pane. */
 export async function connectNasshSftpSidecar(spec: ConnectionIntent, signal?: AbortSignal): Promise<RemoteFileChannel> {
   signal?.throwIfAborted();
-  const { CommandInstance, getSyncStorage } = await loadNasshModules();
-  await stageKnownHostsForNassh();
-  const sink = new HeadlessSink();
-  let io: NasshIoShim;
-  let output = '';
-  const guard = new HostKeyGuard({
-    host: spec.hostname,
-    port: spec.port ?? 22,
-    sendResponse: (data) => sink.input(data),
-  });
-  io = new NasshIoShim(sink, { onOutput: (data) => {
-    const text = typeof data === 'string' ? data : new TextDecoder().decode(data);
-    output = (output + text).slice(-8192);
-    void guard.handleOutput(data);
-  } });
-  io.bindInput();
-  const instance = new CommandInstance({
-    io: io.io,
-    syncStorage: getSyncStorage(),
-    terminalLocation: { href: globalThis.location?.href ?? '', hash: '', replace: () => undefined },
-    // Drop nassh's native `beforeunload` quit-warning handler; see NasshCommandBridge.
-    terminalWindow: {
-      addEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
-        if (type === 'beforeunload') return;
-        globalThis.addEventListener(type, listener, options as AddEventListenerOptions);
-      },
-      removeEventListener: (type: string, listener: EventListenerOrEventListenerObject, options?: unknown) => {
-        if (type === 'beforeunload') return;
-        globalThis.removeEventListener(type, listener, options as EventListenerOptions);
-      },
-      close: () => globalThis.close(),
-    },
-    environment: { ...NASSH_ENVIRONMENT },
-    isSftp: true,
-  });
-  // The upstream default launches the interactive nasftp CLI. The sidecar owns
-  // the initialized client directly, so there is deliberately no CLI loop.
-  instance.onSftpInitialised = () => undefined;
-  instance.exit = () => instance.terminateProgram_();
-  let authCancelled = false;
-  instance.secureInput = async (prompt, length, echo) => {
-    if (authCancelled) return '';
-    const hostKey = await guard.consumePendingHostKeyResponse(prompt);
-    if (hostKey) return hostKey.slice(0, length);
-    const { value } = await showSecureInputPrompt(prompt, length, echo);
-    if (value === null) {
-      // Empty cancel makes OpenSSH re-prompt; tear down instead of looping the modal.
-      authCancelled = true;
-      instance.terminateProgram_();
-      return '';
-    }
-    return value.slice(0, length);
-  };
-  let identity: string | undefined;
-  if (spec.identityId) identity = await stageIdentityForNassh(spec.identityId);
-  const params: NasshConnectParams = {
-    hostname: spec.hostname,
-    port: spec.port ?? 22,
-    username: spec.username ?? '',
-    argstr: spec.argstr ?? '',
-    nasshOptions: '--field-trial-direct-sockets',
-    identity,
-  };
-  const abort = () => instance.terminateProgram_();
-  signal?.addEventListener('abort', abort, { once: true });
+  let session;
   try {
-    try {
-      await instance.connectTo(params);
-    } finally {
-      if (spec.identityId) {
-        await removeIdentityFromNassh(spec.identityId);
-      }
-    }
-    signal?.throwIfAborted();
-    const client = instance.sftpClient;
+    session = await connectNasshSecondarySession(
+      secondaryOptionsFromIntent(spec, {
+        purpose: { kind: 'sftp' },
+        authPromptPolicy: 'silent',
+        signal,
+      }),
+    );
+    const client = session.instance.sftpClient;
+    const output = session.sink.getOutput();
     if (!client?.isInitialised) {
       if (/subsystem request failed|unknown subsystem|sftp-server[^\r\n]*(?:not found|missing)/i.test(output)) {
         throw new SftpSubsystemUnavailableError('The SSH server does not provide an SFTP subsystem.');
       }
-      const detail = output.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').trim().slice(-500);
+      const detail = stripAnsiForError(output).slice(-500);
       throw new Error(detail ? `SFTP connection failed: ${detail}` : 'SFTP connection failed before subsystem initialization.');
     }
-    await syncKnownHostsFromNassh(spec.hostname, spec.port ?? 22).catch(() => undefined);
-    return new NasshRemoteFileChannel(client, instance, io);
+    return new NasshRemoteFileChannel(client, session.instance, session.io);
   } catch (error) {
-    instance.terminateProgram_();
-    io.dispose();
+    session?.dispose();
+    if (error instanceof NasshSecondaryAuthUnavailableError) throw error;
     throw error;
-  } finally {
-    signal?.removeEventListener('abort', abort);
   }
 }

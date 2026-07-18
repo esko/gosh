@@ -16,6 +16,8 @@ type Manifest = {
   tab_strip?: unknown;
   background_color?: string;
   icons?: ManifestIcon[];
+  update_manifest_url?: string;
+  version?: string;
 };
 
 const read = (rel: string): Manifest =>
@@ -36,6 +38,13 @@ describe('IWA window manifest', () => {
 
   it('keeps the public and well-known permissions policies in sync', () => {
     expect(read(PUBLIC).permissions_policy).toEqual(read(WELL_KNOWN).permissions_policy);
+  });
+
+  it('points both manifests at the public GitHub Pages update manifest', () => {
+    const expected = 'https://esko.github.io/gosh/update.json';
+    expect(read(WELL_KNOWN).update_manifest_url).toBe(expected);
+    expect(read(PUBLIC).update_manifest_url).toBe(expected);
+    expect(read(WELL_KNOWN).version).toBe(read(PUBLIC).version);
   });
 
   it('allows clipboard and window-management APIs', () => {

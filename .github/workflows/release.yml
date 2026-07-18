@@ -1,0 +1,123 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version to publish (must match package.json / release tag without v)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Sign, release asset, and deploy Pages
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm run test
+
+      - name: Resolve version
+        id: ver
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
+          elif [ "${{ github.event_name }}" = "release" ]; then
+            TAG="${{ github.event.release.tag_name }}"
+            VERSION="${TAG#v}"
+          else
+            VERSION="$PKG_VERSION"
+          fi
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Release version ($VERSION) does not match package.json ($PKG_VERSION). Bump and tag the matching version."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing v$VERSION"
+
+      - name: Require signing secrets
+        env:
+          WEB_BUNDLE_SIGNING_KEY: ${{ secrets.WEB_BUNDLE_SIGNING_KEY }}
+          WEB_BUNDLE_SIGNING_PASSPHRASE: ${{ secrets.WEB_BUNDLE_SIGNING_PASSPHRASE }}
+        run: |
+          if [ -z "$WEB_BUNDLE_SIGNING_KEY" ] || [ -z "$WEB_BUNDLE_SIGNING_PASSPHRASE" ]; then
+            echo "::error::Missing signing secrets. Add WEB_BUNDLE_SIGNING_KEY (PEM body) and WEB_BUNDLE_SIGNING_PASSPHRASE under repository Settings → Secrets and variables → Actions. See docs/RELEASE.md."
+            exit 1
+          fi
+
+      - name: Write signing key
+        env:
+          WEB_BUNDLE_SIGNING_KEY: ${{ secrets.WEB_BUNDLE_SIGNING_KEY }}
+        run: |
+          mkdir -p iwa/keys
+          printf '%s\n' "$WEB_BUNDLE_SIGNING_KEY" > iwa/keys/encrypted_key.pem
+          chmod 600 iwa/keys/encrypted_key.pem
+
+      - name: Build and sign IWA bundle
+        env:
+          WEB_BUNDLE_SIGNING_PASSPHRASE: ${{ secrets.WEB_BUNDLE_SIGNING_PASSPHRASE }}
+        run: npm run bundle:iwa
+
+      - name: Build GitHub Pages site
+        env:
+          PREVIOUS_UPDATE_JSON_URL: https://esko.github.io/gosh/update.json
+        run: node scripts/build-pages-site.mjs --version "${{ steps.ver.outputs.version }}"
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" dist/gosh.swbn \
+            --clobber \
+            --repo "${{ github.repository }}"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Summary
+        run: |
+          {
+            echo "## Gosh ${{ steps.ver.outputs.version }} published"
+            echo ""
+            echo "- Install URL: \`https://esko.github.io/gosh/update.json\`"
+            echo "- Bundle: \`https://github.com/${{ github.repository }}/releases/download/v${{ steps.ver.outputs.version }}/gosh.swbn\`"
+            echo "- Landing: \`https://esko.github.io/gosh/\`"
+          } >> "$GITHUB_STEP_SUMMARY"
