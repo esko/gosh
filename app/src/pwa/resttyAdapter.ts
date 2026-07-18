@@ -14,6 +14,12 @@ import { getThemePalette } from './themes';
 import { DA1_REPLY } from './deviceAttributes';
 import { TerminalQueryScanner, stripInboundTerminalProbes } from '../terminal/terminalAutoReplies';
 import { UrlLinkifier } from '../terminal/urlLinkify';
+import {
+  OscParser,
+  applyOsc133Event,
+  createOsc133State,
+  type Osc133State,
+} from '../terminal/OscParser';
 import type { TerminalPalette } from './types';
 import { clipboardImageToPng, encodeKittyPng } from './kittyImage';
 import { scrollbackBytesForLines } from './scrollback';
@@ -337,6 +343,7 @@ export class PaneBridge implements TerminalSink {
   connect(options: PaneConnectOptions): void {
     this.queryScanner.reset();
     this.urlLinkifier.reset();
+    this.owner.resetPaneOsc(this.paneId);
     this.callbacks = options.callbacks;
     this.updateViewport({ cols: options.cols, rows: options.rows });
     this.connected = true;
@@ -769,7 +776,13 @@ function instrumentPreviewCanvas(canvas: HTMLCanvasElement): WebGpuPreviewState 
   return state;
 }
 
-type PaneState = { bridge: PaneBridge; title: string | null; cwd: string | null; oscBuffer: string };
+type PaneState = {
+  bridge: PaneBridge;
+  title: string | null;
+  cwd: string | null;
+  oscParser: OscParser;
+  osc133: Osc133State;
+};
 
 /**
  * Adapter backed by restty's xterm-compat shim (libghostty-vt → WASM,
@@ -892,7 +905,13 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   registerPane(id: number): PaneBridge {
     let state = this.panes.get(id);
     if (!state) {
-      state = { bridge: new PaneBridge(id, this), title: null, cwd: null, oscBuffer: '' };
+      state = {
+        bridge: new PaneBridge(id, this),
+        title: null,
+        cwd: null,
+        oscParser: new OscParser(),
+        osc133: createOsc133State(),
+      };
       this.panes.set(id, state);
     }
     return state.bridge;
@@ -1290,6 +1309,20 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     return this.panes.get(this.activePaneId)?.cwd ?? null;
   }
 
+  /** Latest OSC 133 prompt/command markers for a pane (defaults to active). */
+  getOsc133State(paneId = this.activePaneId): Osc133State | null {
+    const state = this.panes.get(paneId);
+    return state ? { ...state.osc133 } : null;
+  }
+
+  /** Clear OSC carry and 133 tracking when a pane transport (re)connects. */
+  resetPaneOsc(paneId: number): void {
+    const state = this.panes.get(paneId);
+    if (!state) return;
+    state.oscParser.reset();
+    state.osc133 = createOsc133State();
+  }
+
   /** Apply theme colors, cursor shape/blink, and font size to every pane. */
   setAppearance(settings: PwaTerminalSettings): void {
     this.settings = settings;
@@ -1557,44 +1590,32 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     this.pointerFocusCleanup = () => root.removeEventListener('pointerdown', onPointerDown);
   }
 
-  // OSC 0/2 (window title) and OSC 7 (cwd). ESC ] N ; payload (BEL | ST).
-  // Scanned per pane across writes; the buffer is bounded so old matches age out.
+  // OSC 0/2 (window title), OSC 7 (cwd), and OSC 133 (shell integration).
+  // Scanned per pane across writes via a bounded streaming parser.
   captureOsc(bridge: PaneBridge, data: string): void {
     const state = this.panes.get(bridge.paneId);
     if (!state) return;
-    if (!state.oscBuffer && !data.includes('\x1b]')) return;
-    state.oscBuffer = (state.oscBuffer + data).slice(-2048);
-    let consumed = 0;
+    if (!state.oscParser.hasPending() && !data.includes('\x1b]')) return;
 
-    const titleRe = /\x1b\]([02]);([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-    let m: RegExpExecArray | null;
-    let lastTitle: RegExpExecArray | null = null;
-    while ((m = titleRe.exec(state.oscBuffer))) lastTitle = m;
-    if (lastTitle) {
-      consumed = Math.max(consumed, lastTitle.index + lastTitle[0].length);
-      const title = lastTitle[2];
-      if (title !== state.title) {
-        state.title = title;
-        if (bridge.paneId === this.activePaneId) this.titleListeners.forEach((cb) => cb(title));
+    for (const event of state.oscParser.ingest(data)) {
+      if (event.type === 'title') {
+        if (event.value !== state.title) {
+          state.title = event.value;
+          if (bridge.paneId === this.activePaneId) {
+            this.titleListeners.forEach((cb) => cb(event.value));
+          }
+        }
+        continue;
       }
-    }
-
-    const cwdRe = /\x1b\]7;file:\/\/[^/]*([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-    let c: RegExpExecArray | null;
-    let lastCwd: RegExpExecArray | null = null;
-    while ((c = cwdRe.exec(state.oscBuffer))) lastCwd = c;
-    if (lastCwd) {
-      consumed = Math.max(consumed, lastCwd.index + lastCwd[0].length);
-      try {
-        state.cwd = decodeURIComponent(lastCwd[1]);
-      } catch {
-        state.cwd = lastCwd[1];
+      if (event.type === 'cwd') {
+        try {
+          state.cwd = decodeURIComponent(event.path);
+        } catch {
+          state.cwd = event.path;
+        }
+        continue;
       }
+      applyOsc133Event(state.osc133, event);
     }
-
-    if (consumed) state.oscBuffer = state.oscBuffer.slice(consumed);
-    // No ESC left means no partial OSC to complete on a later write — drop the
-    // tail so subsequent plain output hits the early-out instead of re-scanning.
-    if (state.oscBuffer && !state.oscBuffer.includes('\x1b')) state.oscBuffer = '';
   }
 }

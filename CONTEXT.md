@@ -33,6 +33,10 @@ APIs. Adapters call the same service; they do not own session business logic.
 See [ADR 0011](docs/adr/0011-agent-control-plane.md).
 _Avoid_: scraping the terminal canvas, treating raw PTY logs as screen state
 
+**OSC 133** shell-integration markers (prompt/command boundaries) are parsed per
+pane in `OscParser` / `ResttyTerminalAdapter.getOsc133State()` for upcoming
+`terminal.run` / `CommandTracker` work — not authoritative screen capture.
+
 ## Secondary sessions and paste
 
 A **secondary session** is a short-lived SSH connection that reuses a pane
