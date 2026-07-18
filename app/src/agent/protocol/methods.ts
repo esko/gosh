@@ -50,7 +50,7 @@ export type AgentRpcParams = {
   'workspace.listWindows': Record<string, never>;
   'workspace.listTabs': Record<string, never>;
   'workspace.listPanes': { tabId?: string };
-  'pane.split': { tabId?: string; direction: 'vertical' | 'horizontal' };
+  'pane.split': { tabId?: string; paneId?: string; direction: 'vertical' | 'horizontal'; surface?: 'terminal' | 'browser' };
   'pane.focus': { paneId: string };
   'pane.resize': { paneId: string; direction: 'left' | 'right' | 'up' | 'down'; amount?: number };
   'pane.zoom': { paneId: string; zoomed?: boolean };

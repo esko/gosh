@@ -142,7 +142,15 @@ function validateMethodParams(
       if (params.tabId !== undefined && tabId === undefined) {
         return invalidParams(id, 'tabId must be a string');
       }
-      return { ok: true, params: { direction, tabId } };
+      const paneId = optionalString(params, 'paneId');
+      if (params.paneId !== undefined && paneId === undefined) {
+        return invalidParams(id, 'paneId must be a string');
+      }
+      const surface = params.surface;
+      if (surface !== undefined && surface !== 'terminal' && surface !== 'browser') {
+        return invalidParams(id, 'surface must be terminal or browser');
+      }
+      return { ok: true, params: { direction, tabId, paneId, surface } };
     }
     case 'pane.focus':
     case 'pane.close': {

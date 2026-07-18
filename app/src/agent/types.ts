@@ -15,9 +15,16 @@ export type AgentResult<T> = { ok: true; value: T } | { ok: false; error: AgentE
 export type PaneDirection = 'left' | 'right' | 'up' | 'down';
 export type SplitDirection = 'vertical' | 'horizontal';
 
-export type TabKind = 'launcher' | 'terminal' | 'browser' | 'mixed';
-
 export type PaneSurfaceKind = 'terminal' | 'browser';
+
+export type PaneSplitOptions = {
+  /** Source pane to split; defaults to the active pane in the tab. */
+  paneId?: string;
+  /** Surface kind for the new leaf; defaults to the source leaf surface. */
+  surface?: PaneSurfaceKind;
+};
+
+export type TabKind = 'launcher' | 'terminal' | 'browser' | 'mixed';
 
 export type WindowInfo = {
   windowId: string;
@@ -159,7 +166,7 @@ export type PaneDiagnostics = {
  * AgentControlService never import views or Restty types.
  */
 export type PaneHost = {
-  split(tabId: string, direction: SplitDirection): Promise<{ paneId: string }>;
+  split(tabId: string, direction: SplitDirection, options?: PaneSplitOptions): Promise<{ paneId: string }>;
   focus(paneId: string): void;
   resize(paneId: string, direction: PaneDirection, amount: number): boolean;
   zoom(paneId: string, zoomed?: boolean): boolean;
