@@ -82,13 +82,23 @@ describe('OscParser', () => {
 
   it('applyOsc133Event tracks command lifecycle', () => {
     const state = createOsc133State();
-    applyOsc133Event(state, { type: 'osc133', phase: 'A' });
-    expect(state).toEqual({ phase: 'A', commandRunning: false, exitCode: null });
+    applyOsc133Event(state, { type: 'osc133', phase: 'A' }, 100);
+    expect(state).toEqual({
+      phase: 'A',
+      commandRunning: false,
+      exitCode: null,
+      lastMarkerAt: 100,
+    });
 
-    applyOsc133Event(state, { type: 'osc133', phase: 'C' });
+    applyOsc133Event(state, { type: 'osc133', phase: 'C' }, 200);
     expect(state.commandRunning).toBe(true);
 
-    applyOsc133Event(state, { type: 'osc133', phase: 'D', exitCode: 42 });
-    expect(state).toEqual({ phase: 'D', commandRunning: false, exitCode: 42 });
+    applyOsc133Event(state, { type: 'osc133', phase: 'D', exitCode: 42 }, 300);
+    expect(state).toEqual({
+      phase: 'D',
+      commandRunning: false,
+      exitCode: 42,
+      lastMarkerAt: 300,
+    });
   });
 });

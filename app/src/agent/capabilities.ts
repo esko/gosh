@@ -22,6 +22,7 @@ export function buildCapabilities(options?: {
       terminalSend: { available: host, reason: hostReason },
       terminalRead: { available: false, reason: UNAVAILABLE_LATER },
       terminalRun: { available: false, reason: UNAVAILABLE_LATER },
+      paneDiagnostics: { available: host, reason: hostReason },
       subscribe: { available: true },
     },
   };

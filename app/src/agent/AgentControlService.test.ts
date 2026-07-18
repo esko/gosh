@@ -20,6 +20,15 @@ function setup() {
       return true;
     }),
     send: vi.fn(),
+    paneDiagnostics: vi.fn(() => ({
+      osc133: {
+        detected: true,
+        phase: 'B' as const,
+        lastMarkerAt: 1,
+        commandRunning: false,
+        exitCode: null,
+      },
+    })),
     isZoomed: vi.fn(() => false),
   };
   const service = new AgentControlService({ registry, host });
@@ -34,6 +43,7 @@ describe('AgentControlService', () => {
     expect(caps.methods.paneSplit.available).toBe(true);
     expect(caps.methods.terminalRead.available).toBe(false);
     expect(caps.methods.terminalRun.available).toBe(false);
+    expect(caps.methods.paneDiagnostics.available).toBe(true);
     expect(caps.methods.terminalRead.reason).toBeTruthy();
   });
 
@@ -82,6 +92,13 @@ describe('AgentControlService', () => {
     expect(service.paneZoom({ paneId }).ok).toBe(true);
     expect(service.terminalSend({ paneId, data: 'hi' }).ok).toBe(true);
     expect(host.send).toHaveBeenCalledWith(paneId, 'hi');
+
+    const diag = service.paneDiagnostics({ paneId });
+    expect(diag.ok).toBe(true);
+    if (diag.ok) {
+      expect(diag.value.osc133.detected).toBe(true);
+      expect(host.paneDiagnostics).toHaveBeenCalledWith(paneId);
+    }
 
     const closed = service.paneClose({ paneId });
     expect(closed.ok).toBe(true);

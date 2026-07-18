@@ -3,6 +3,7 @@ export { AgentEventBus, type AgentEventListener, type AgentSubscription } from '
 export { AGENT_METHODS, AGENT_PROTOCOL_VERSION } from './AgentProtocol';
 export * from './protocol';
 export { buildCapabilities } from './capabilities';
+export { buildPaneDiagnostics } from './paneDiagnostics';
 export { WorkspaceRegistry } from './WorkspaceRegistry';
 export type {
   AgentCapabilities,
@@ -12,6 +13,7 @@ export type {
   AgentEventType,
   AgentResult,
   PaneDirection,
+  PaneDiagnostics,
   PaneHost,
   PaneInfo,
   SplitDirection,

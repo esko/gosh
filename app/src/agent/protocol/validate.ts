@@ -197,6 +197,12 @@ function validateMethodParams(
         params: { paneId: paneId.value, command: command.value, timeoutMs },
       };
     }
+    case 'pane.diagnostics': {
+      if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
+      const paneId = requireString(id, params, 'paneId');
+      if (!paneId.ok) return paneId;
+      return { ok: true, params: { paneId: paneId.value } };
+    }
     case 'events.subscribe': {
       if (params === undefined) return { ok: true, params: empty };
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');

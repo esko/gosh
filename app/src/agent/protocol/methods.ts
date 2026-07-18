@@ -18,6 +18,7 @@ export const AGENT_METHODS = [
   'terminal.send',
   'terminal.read',
   'terminal.run',
+  'pane.diagnostics',
   'events.subscribe',
 ] as const;
 
@@ -45,5 +46,6 @@ export type AgentRpcParams = {
   'terminal.send': { paneId: string; data: string };
   'terminal.read': { paneId: string; maxBytes?: number };
   'terminal.run': { paneId: string; command: string; timeoutMs?: number };
+  'pane.diagnostics': { paneId: string };
   'events.subscribe': { types?: string[] };
 };

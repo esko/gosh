@@ -10,6 +10,7 @@ import {
   type PaneDirection,
   type PaneHost,
   type PaneInfo,
+  type PaneDiagnostics,
   type SplitDirection,
   type TabInfo,
   type WindowInfo,
@@ -186,6 +187,24 @@ export class AgentControlService {
 
   terminalRun(): AgentResult<never> {
     return agentErr('unavailable', 'terminalRun is not implemented in this build');
+  }
+
+  paneDiagnostics(input: { paneId: string }): AgentResult<PaneDiagnostics> {
+    const host = this.requireHost();
+    if (!host.ok) return host;
+    if (!this.registry.getPane(input.paneId)) {
+      return agentErr('not-found', `Unknown pane: ${input.paneId}`);
+    }
+    if (!host.value.paneDiagnostics) {
+      return agentErr('unavailable', 'Pane diagnostics are not wired');
+    }
+    try {
+      const diag = host.value.paneDiagnostics(input.paneId);
+      if (!diag) return agentErr('failed', 'Pane diagnostics unavailable');
+      return agentOk(diag);
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   subscribe(listener: AgentEventListener): AgentSubscription {
