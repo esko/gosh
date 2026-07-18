@@ -53,10 +53,22 @@ interface GoshDb extends DBSchema {
     key: string;
     value: HostScreenshotRecord;
   };
+  agentControl: {
+    key: 'pairing';
+    value: AgentControlPairingRecord;
+  };
 }
 
 const DB_NAME = 'gosh';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
+
+/** Owner-only external agent control pairing (disabled by default). */
+export type AgentControlPairingRecord = {
+  enabled: boolean;
+  /** Random bearer token; present only while enabled. */
+  token?: string;
+  enabledAt?: number;
+};
 
 export type EtSessionPhase = 'bootstrapping' | 'active' | 'detached' | 'stale' | 'ended';
 
@@ -189,6 +201,9 @@ function getDb(): Promise<IDBPDatabase<GoshDb>> {
         }
         if (oldVersion < 5) {
           db.createObjectStore('hostScreenshots', { keyPath: 'hostKey' });
+        }
+        if (oldVersion < 6) {
+          db.createObjectStore('agentControl');
         }
       },
       blocking() {
@@ -632,4 +647,16 @@ export async function putVaultKeyRecord(record: VaultKeyRecord): Promise<void> {
 
 export async function deleteVaultKeyRecord(id: string): Promise<void> {
   await (await getDb()).delete('vaultMeta', id);
+}
+
+export async function getAgentControlPairing(): Promise<AgentControlPairingRecord | undefined> {
+  return (await getDb()).get('agentControl', 'pairing');
+}
+
+export async function putAgentControlPairing(record: AgentControlPairingRecord): Promise<void> {
+  await (await getDb()).put('agentControl', record, 'pairing');
+}
+
+export async function clearAgentControlPairing(): Promise<void> {
+  await (await getDb()).delete('agentControl', 'pairing');
 }
