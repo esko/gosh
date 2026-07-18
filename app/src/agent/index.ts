@@ -1,5 +1,13 @@
-export { AgentControlService } from './AgentControlService';
+export { AgentControlService, type AgentActivityListener } from './AgentControlService';
 export { AgentEventBus, type AgentEventListener, type AgentSubscription } from './AgentEventBus';
+export {
+  AGENT_ACTIVITY_PULSE_MS,
+  EMPTY_AGENT_PANE_ACTIVITY,
+  isAgentPaneActive,
+  reduceAgentPaneActivity,
+  type AgentActivityAction,
+  type AgentPaneActivityState,
+} from './agentActivityPulse';
 export { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
 export { AGENT_METHODS, AGENT_PROTOCOL_VERSION } from './AgentProtocol';
 export * from './protocol';

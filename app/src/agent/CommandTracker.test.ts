@@ -33,8 +33,8 @@ describe('CommandTracker', () => {
     const started: string[] = [];
     const completed: string[] = [];
     events.subscribe((event) => {
-      if (event.type === 'command.started') started.push(event.paneId ?? '');
-      if (event.type === 'command.completed') completed.push(event.paneId ?? '');
+      if (event.type === 'terminal.command.started') started.push(event.paneId ?? '');
+      if (event.type === 'terminal.command.completed') completed.push(event.paneId ?? '');
     });
 
     feed(tracker, 'pane_a', [

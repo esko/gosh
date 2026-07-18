@@ -87,7 +87,7 @@ export class CommandTracker {
           startedAt: atMs,
         });
         state.current = rec;
-        this.events.emit('command.started', {
+        this.events.emit('terminal.command.started', {
           windowId: this.windowId,
           paneId,
           commandId: rec.id,
@@ -102,7 +102,7 @@ export class CommandTracker {
         state.dCount += 1;
         state.last = rec;
         state.current = null;
-        this.events.emit('command.completed', {
+        this.events.emit('terminal.command.completed', {
           windowId: this.windowId,
           paneId,
           commandId: rec.id,

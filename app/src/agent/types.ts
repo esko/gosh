@@ -70,8 +70,9 @@ export type AgentEventType =
   | 'pane.closed'
   | 'pane.focused'
   | 'pane.resized'
-  | 'command.started'
-  | 'command.completed';
+  | 'terminal.command.started'
+  | 'terminal.command.completed'
+  | 'browser.navigated';
 
 export type AgentEvent = {
   seq: number;
@@ -82,6 +83,7 @@ export type AgentEvent = {
   paneId?: string;
   commandId?: string;
   exitCode?: number | null;
+  url?: string;
 };
 
 export type TerminalRunCompletion =

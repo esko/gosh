@@ -80,7 +80,7 @@ Success result shape:
 
 `completion` is `osc133` when the matching `D` marker arrived; otherwise `timeout`, `pane-closed`, `disconnected`, or `cancelled`. Concurrent runs on the same pane are rejected with `failed` (no queue). Output is read from Restty text capture between OSC `C` and `D` positions when available; otherwise best-effort viewport capture with `truncated: true`.
 
-Push events `command.started` and `command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`.
+Push events `terminal.command.started` and `terminal.command.completed` mirror OSC `C` / `D` per pane when subscribed via `events.subscribe`. `browser.navigated` fires after agent-driven `browser.navigate`, successful `browser.back` / `browser.forward`, or `browser.reload`.
 
 ### `browser.snapshot`
 

@@ -22,6 +22,7 @@ export class AgentEventBus {
       paneId?: string;
       commandId?: string;
       exitCode?: number | null;
+      url?: string;
     },
   ): AgentEvent {
     const event: AgentEvent = {
@@ -33,6 +34,7 @@ export class AgentEventBus {
       paneId: payload.paneId,
       commandId: payload.commandId,
       exitCode: payload.exitCode,
+      url: payload.url,
     };
     for (const listener of this.listeners) {
       try {

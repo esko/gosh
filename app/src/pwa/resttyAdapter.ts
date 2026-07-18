@@ -1389,6 +1389,15 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     el.classList.add('pane-bell-flash');
   }
 
+  /** Brief agent typing / terminal.run activity chrome on a pane. */
+  setAgentPaneActive(paneId: number, active: boolean): void {
+    const el = this.layout?.getPaneElement(paneId);
+    if (!el) return;
+    el.classList.toggle('pane-agent-activity', active);
+    if (active) el.dataset.agentActive = 'true';
+    else delete el.dataset.agentActive;
+  }
+
   private applyAppearanceToPane(id: number, settings: PwaTerminalSettings): void {
     const handle = this.surface?.pane?.(id);
     if (!handle) return;
