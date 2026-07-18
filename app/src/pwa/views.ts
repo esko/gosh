@@ -120,6 +120,7 @@ import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
 import type { MixedLayoutNode } from '../layout/MixedLayout';
+import { findLeaf } from '../layout/MixedLayout';
 import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import {
   attachMixedBrowserLeaf,
@@ -129,6 +130,7 @@ import {
   focusMixedLeafDom,
   mountMixedLayout,
   resizeMixedLeaf,
+  splitMixedLayoutLeaf,
   browserLeafId,
   terminalLeafId,
   type MixedLeafState,
@@ -2461,6 +2463,7 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     closeMixedPane: closeMixedPaneById,
     focusMixedPane: focusMixedPaneById,
     resizeMixedPane: resizeMixedPaneById,
+    splitMixedPane: splitMixedPaneById,
   });
   agentControlCleanup?.();
   const disposeControlIndicator = mountAgentControlIndicator(root);
@@ -2914,6 +2917,47 @@ function resizeMixedPaneById(
   if (!leafId) return false;
   const step = Math.max(0.01, Math.min(0.25, amount / 100));
   return resizeMixedLeaf(session.mixedMount, session.mixedLayout, leafId, direction, step);
+}
+
+async function splitMixedPaneById(
+  tabId: string,
+  sourcePaneId: string,
+  direction: 'vertical' | 'horizontal',
+  surface?: 'terminal' | 'browser',
+): Promise<string | null> {
+  const session = sessions.find((s) => s.id === tabId);
+  if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout || !session.mixedLeaves) {
+    return null;
+  }
+  const pane = getWorkspaceRegistry().getPane(sourcePaneId);
+  if (!pane || pane.tabId !== tabId) return null;
+  const leafId =
+    pane.leafId ??
+    (pane.surface === 'terminal'
+      ? terminalLeafId(session.mixedLayout)
+      : pane.surface === 'browser'
+        ? browserLeafId(session.mixedLayout)
+        : undefined);
+  if (!leafId) return null;
+  const sourceLeaf = findLeaf(session.mixedLayout, leafId);
+  if (!sourceLeaf) return null;
+  const newSurface = surface ?? sourceLeaf.surface;
+  const split = splitMixedLayoutLeaf(session.mixedLayout, leafId, direction, newSurface);
+  if (!split) return null;
+  session.mixedLayout = split.layout;
+  session.mixedMount.applyLayout(split.layout);
+  const hostEl = session.mixedMount.leafHosts.get(split.newLeafId);
+  if (!hostEl) return null;
+  if (newSurface === 'browser') {
+    attachMixedBrowserLeaf(getWorkspaceRegistry(), tabId, session.mixedLeaves, split.newLeafId, hostEl);
+    const paneId = getWorkspaceRegistry().paneIdForLeaf(tabId, split.newLeafId);
+    if (paneId) focusMixedLeaf(session, split.newLeafId);
+    return paneId ?? null;
+  }
+  if (!session.spec) return null;
+  await wireMixedTerminalLeaf(session, split.newLeafId, hostEl, session.spec);
+  focusMixedLeaf(session, split.newLeafId);
+  return null;
 }
 
 /** Upgrade a launcher tab to a live terminal once its host is chosen. */

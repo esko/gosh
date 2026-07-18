@@ -13,6 +13,7 @@ import {
   type PaneDirection,
   type PaneHost,
   type PaneInfo,
+  type PaneSurfaceKind,
   type PaneDiagnostics,
   type SplitDirection,
   type TabInfo,
@@ -389,7 +390,9 @@ export class AgentControlService {
 
   async paneSplit(input: {
     tabId?: string;
+    paneId?: string;
     direction: SplitDirection;
+    surface?: PaneSurfaceKind;
   }): Promise<AgentResult<{ paneId: string; tabId: string }>> {
     const host = this.requireHost();
     if (!host.ok) return host;
@@ -399,8 +402,17 @@ export class AgentControlService {
     if (input.direction !== 'vertical' && input.direction !== 'horizontal') {
       return agentErr('invalid-argument', 'direction must be vertical or horizontal');
     }
+    if (input.surface !== undefined && input.surface !== 'terminal' && input.surface !== 'browser') {
+      return agentErr('invalid-argument', 'surface must be terminal or browser');
+    }
+    if (input.paneId !== undefined && !this.registry.getPane(input.paneId)) {
+      return agentErr('not-found', `Unknown pane: ${input.paneId}`);
+    }
     try {
-      const { paneId } = await host.value.split(tabId, input.direction);
+      const { paneId } = await host.value.split(tabId, input.direction, {
+        paneId: input.paneId,
+        surface: input.surface,
+      });
       return agentOk({ paneId, tabId });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));

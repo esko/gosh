@@ -104,6 +104,32 @@ export function resizeLeaf(
   return replaceNode(root, parent, { ...parent, ratio: nextRatio });
 }
 
+export type SplitLeafResult = {
+  layout: MixedLayoutNode;
+  newLeafId: string;
+};
+
+/** Replace a leaf with a split containing the original leaf and a new sibling. */
+export function splitLeaf(
+  root: MixedLayoutNode,
+  leafId: string,
+  direction: MixedSplitDirection,
+  newSurface: SurfaceKind,
+  options?: { ratio?: number; newLeafId?: string },
+): SplitLeafResult | null {
+  const source = findLeaf(root, leafId);
+  if (!source) return null;
+  const siblingLeafId = options?.newLeafId ?? newLeafId();
+  const split: MixedLayoutSplit = {
+    kind: 'split',
+    direction,
+    ratio: clampRatio(options?.ratio ?? DEFAULT_RATIO),
+    first: { ...source },
+    second: createLeaf(newSurface, siblingLeafId),
+  };
+  return { layout: replaceLeaf(root, leafId, split), newLeafId: siblingLeafId };
+}
+
 export function removeLeaf(root: MixedLayoutNode, leafId: string): MixedLayoutNode | null {
   if (root.kind === 'leaf') {
     return root.leafId === leafId ? null : root;
@@ -196,5 +222,16 @@ function replaceNode(root: MixedLayoutNode, target: MixedLayoutSplit, replacemen
     ...root,
     first: replaceNode(root.first, target, replacement),
     second: replaceNode(root.second, target, replacement),
+  };
+}
+
+function replaceLeaf(root: MixedLayoutNode, leafId: string, replacement: MixedLayoutNode): MixedLayoutNode {
+  if (root.kind === 'leaf') {
+    return root.leafId === leafId ? replacement : root;
+  }
+  return {
+    ...root,
+    first: replaceLeaf(root.first, leafId, replacement),
+    second: replaceLeaf(root.second, leafId, replacement),
   };
 }

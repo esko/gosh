@@ -10,6 +10,7 @@ import {
   type BrowserHost,
   type PaneDirection,
   type PaneHost,
+  type PaneSplitOptions,
   type SplitDirection,
   type TerminalPosition,
 } from '../agent';
@@ -41,6 +42,12 @@ export type AgentSessionLookup = {
   closeMixedPane?: (tabId: string, paneId: string) => boolean;
   focusMixedPane?: (tabId: string, paneId: string) => void;
   resizeMixedPane?: (tabId: string, paneId: string, direction: PaneDirection, amount: number) => boolean;
+  splitMixedPane?: (
+    tabId: string,
+    sourcePaneId: string,
+    direction: SplitDirection,
+    surface?: 'terminal' | 'browser',
+  ) => Promise<string | null>;
 };
 
 let registry: WorkspaceRegistry | null = null;
@@ -102,10 +109,33 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
 
 
   return {
-    async split(tabId: string, direction: SplitDirection) {
+    async split(tabId: string, direction: SplitDirection, options?: PaneSplitOptions) {
       const session = requireSession(tabId);
       if (session.kind === 'mixed') {
-        throw new Error('Mixed tabs do not support Restty pane.split yet');
+        const sourcePaneId =
+          options?.paneId ??
+          reg.listPanes({ tabId }).find((pane) => pane.active)?.paneId ??
+          reg.listPanes({ tabId })[0]?.paneId;
+        if (!sourcePaneId) throw new Error(`Mixed tab has no panes: ${tabId}`);
+        if (!lookup.splitMixedPane) {
+          throw new Error('Mixed tab split is not wired');
+        }
+        const before = new Set(reg.listPanes({ tabId }).map((pane) => pane.paneId));
+        const created = await lookup.splitMixedPane(tabId, sourcePaneId, direction, options?.surface);
+        if (created) {
+          reg.setActivePane(created);
+          return { paneId: created };
+        }
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+          const added = reg.listPanes({ tabId }).find((pane) => !before.has(pane.paneId));
+          if (added) {
+            reg.setActivePane(added.paneId);
+            return { paneId: added.paneId };
+          }
+          await lookup.sleep(20);
+        }
+        throw new Error('Mixed split did not produce a new pane');
       }
       const terminal = session.terminal;
       if (!terminal) throw new Error(`Tab has no terminal: ${tabId}`);

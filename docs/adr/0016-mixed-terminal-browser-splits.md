@@ -31,7 +31,7 @@ Alternatives considered:
 - Terminal panes index by `resttyPaneId`; browser panes index by `leafId`.
 - `workspace.listPanes` returns `surface` on each `PaneInfo` (opaque ids only; no Restty numeric ids).
 - `browser.*` RPCs accept `tabId` on `kind: 'browser'` **or** `kind: 'mixed'` tabs (single browser leaf in the D4 slice).
-- `pane.focus` / `pane.close` / `pane.resize` route to Gosh layout ops for mixed tabs; `pane.split` remains Restty-only (mixed split expansion is follow-up).
+- `pane.focus` / `pane.close` / `pane.resize` / `pane.split` route to Gosh layout ops for mixed tabs (`pane.split` accepts optional `surface` for the new leaf).
 
 ### UI (first slice)
 
@@ -54,8 +54,7 @@ Alternatives considered:
 ## Non-goals (this slice)
 
 - Restty custom-pane factory for browser surfaces
-- Nested mixed trees deeper than the bootstrap two-leaf split (API supports it; UI does not expose yet)
-- `pane.split` adding new browser/terminal leaves via agent RPC
+- Nested mixed trees deeper than the bootstrap two-leaf split (API supports split expansion; UI shortcuts still target the active leaf only)
 - Mixed-tab `sessionStorage` restore
 - Per-browser-leaf `browser.*` targeting when multiple browser leaves exist (single browser leaf assumed)
 - Zoom/maximize for mixed leaves
@@ -63,9 +62,9 @@ Alternatives considered:
 ## Follow-up
 
 - Persist and restore mixed layout + leaf surface state across reload
-- Agent `pane.split` for mixed trees (new leaf of chosen `surface`)
 - Horizontal bootstrap option in UI; drag-reorder leaves
 - Multi-browser-leaf tabs with pane-scoped `browser.*` params
+- Keyboard/UI shortcuts for mixed `pane.split` (agent RPC is implemented)
 
 ## References
 

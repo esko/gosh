@@ -121,7 +121,7 @@ describe('AgentControlService', () => {
     const split = await service.paneSplit({ tabId, direction: 'vertical' });
     expect(split.ok).toBe(true);
     if (!split.ok) return;
-    expect(host.split).toHaveBeenCalledWith(tabId, 'vertical');
+    expect(host.split).toHaveBeenCalledWith(tabId, 'vertical', { paneId: undefined, surface: undefined });
 
     expect(service.paneFocus({ paneId }).ok).toBe(true);
     expect(host.focus).toHaveBeenCalledWith(paneId);
@@ -143,6 +143,18 @@ describe('AgentControlService', () => {
     const closed = service.paneClose({ paneId });
     expect(closed.ok).toBe(true);
     expect(host.close).toHaveBeenCalledWith(paneId);
+  });
+
+  it('passes optional paneId and surface to the host split call', async () => {
+    const { service, host, tabId, paneId } = setup();
+    const split = await service.paneSplit({
+      tabId,
+      paneId,
+      direction: 'horizontal',
+      surface: 'browser',
+    });
+    expect(split.ok).toBe(true);
+    expect(host.split).toHaveBeenCalledWith(tabId, 'horizontal', { paneId, surface: 'browser' });
   });
 
   it('marks host methods unavailable when PaneHost is missing', () => {

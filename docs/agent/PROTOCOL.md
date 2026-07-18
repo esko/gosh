@@ -24,7 +24,7 @@ If the client requests an unsupported major version, the server responds with `i
 | `workspace.listWindows` | `{}` |
 | `workspace.listTabs` | `{}` |
 | `workspace.listPanes` | `{ tabId?: string }` — each pane includes `surface: "terminal" \| "browser"` |
-| `pane.split` | `{ tabId?, direction }` |
+| `pane.split` | `{ tabId?, paneId?, direction, surface? }` — `surface` (`terminal` \| `browser`) selects the new mixed-tab leaf; defaults to the source leaf surface. Terminal-only tabs ignore `surface` and use Restty splits. |
 | `pane.focus` | `{ paneId }` |
 | `pane.resize` | `{ paneId, direction, amount? }` |
 | `pane.zoom` | `{ paneId, zoomed? }` |

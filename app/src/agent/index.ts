@@ -24,6 +24,7 @@ export type {
   PaneDirection,
   PaneDiagnostics,
   PaneHost,
+  PaneSplitOptions,
   BrowserHost,
   PaneInfo,
   SplitDirection,

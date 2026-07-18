@@ -31,7 +31,7 @@ Embedded pages may request powerful capabilities (geolocation, camera, notificat
 
 ## Agent control
 
-`workspace.listTabs` reports `kind: "browser"` for browser-only tabs and `kind: "mixed"` for terminal+browser split tabs. `workspace.listPanes` includes `surface: "terminal" | "browser"` per pane. Agents drive browser tabs through JSON-RPC (`browser.*` methods) or the in-process `AgentControlService` API.
+`workspace.listTabs` reports `kind: "browser"` for browser-only tabs and `kind: "mixed"` for terminal+browser split tabs. `workspace.listPanes` includes `surface: "terminal" | "browser"` per pane. On mixed tabs, `pane.split` accepts optional `paneId` (source leaf; defaults to active pane) and `surface` (`terminal` | `browser`; defaults to the source leaf surface) to grow the Gosh-owned layout tree.
 
 ### Navigation
 
@@ -104,7 +104,7 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 ## Known limitations
 
 - No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
-- Mixed tabs support a **two-leaf** terminal+browser split only in UI; deeper trees and relaunch restore are follow-ups (ADR 0016)
+- Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; UI keyboard shortcuts still split Restty panes only on terminal-only tabs (ADR 0016)
 - Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
 - Browser tabs are not restored from `sessionStorage` tab layout
 - No `newwindow` / `dialog` automation yet

@@ -7,10 +7,12 @@ import { mountBrowserSession } from '../browser/BrowserSession';
 import {
   createTwoPaneLayout,
   removeLeaf,
+  splitLeaf,
   walkLeaves,
   type MixedLayoutNode,
   type MixedResizeDirection,
   type MixedSplitDirection,
+  type SurfaceKind,
 } from '../layout/MixedLayout';
 import { mountMixedLayoutDom, type MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import type { WorkspaceRegistry } from '../agent/WorkspaceRegistry';
@@ -107,6 +109,15 @@ export function resizeMixedLeaf(
 ): boolean {
   void layout;
   return mount.resizeLeaf(leafId, direction, step);
+}
+
+export function splitMixedLayoutLeaf(
+  layout: MixedLayoutNode,
+  leafId: string,
+  direction: MixedSplitDirection,
+  newSurface: SurfaceKind,
+): { layout: MixedLayoutNode; newLeafId: string } | null {
+  return splitLeaf(layout, leafId, direction, newSurface);
 }
 
 export function focusMixedLeafDom(container: HTMLElement, leaf: MixedLeafState): void {
