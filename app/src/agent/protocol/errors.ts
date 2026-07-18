@@ -12,6 +12,7 @@ export const AGENT_TIMEOUT = -32000;
 export const AGENT_CANCELLED = -32001;
 export const AGENT_UNAUTHORIZED = -32002;
 export const AGENT_PAYLOAD_TOO_LARGE = -32003;
+export const AGENT_CONFLICT = -32004;
 
 export type AgentProtocolErrorCode =
   | typeof RPC_PARSE_ERROR
@@ -22,7 +23,8 @@ export type AgentProtocolErrorCode =
   | typeof AGENT_TIMEOUT
   | typeof AGENT_CANCELLED
   | typeof AGENT_UNAUTHORIZED
-  | typeof AGENT_PAYLOAD_TOO_LARGE;
+  | typeof AGENT_PAYLOAD_TOO_LARGE
+  | typeof AGENT_CONFLICT;
 
 export type AgentApplicationErrorCode = AgentErrorCode;
 
@@ -42,6 +44,7 @@ export const PROTOCOL_ERROR_MESSAGES: Record<AgentProtocolErrorCode, string> = {
   [AGENT_CANCELLED]: 'Request cancelled',
   [AGENT_UNAUTHORIZED]: 'Unauthorized',
   [AGENT_PAYLOAD_TOO_LARGE]: 'Payload too large',
+  [AGENT_CONFLICT]: 'Conflict with human input',
 };
 
 export function protocolErrorMessage(code: AgentProtocolErrorCode): string {
@@ -58,6 +61,8 @@ export function agentErrorToRpcCode(code: AgentErrorCode): number {
       return RPC_INTERNAL_ERROR;
     case 'failed':
       return RPC_INTERNAL_ERROR;
+    case 'conflict':
+      return AGENT_CONFLICT;
     default:
       return RPC_INTERNAL_ERROR;
   }

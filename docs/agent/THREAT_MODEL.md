@@ -143,8 +143,8 @@ Clients should **re-list panes** after layout changes and include `tabId` + `pan
 
 | Threat | Example | Mitigations | Residual risk |
 |--------|---------|-------------|---------------|
-| Keystroke interleaving | `terminal.send` during owner typing | No transport-level lock; **activity UI** pulses pane/tab on `send` and sustained on `terminal.run` | Brief overlap still possible |
-| Run vs manual command | `terminal.run` injects command while owner edits line | Concurrent `terminal.run` rejected per pane; activity chrome shows run pending | `terminal.send` has no mutex with owner input |
+| Keystroke interleaving | `terminal.send` during owner typing | **750 ms human-input guard** rejects `terminal.send` / `terminal.run` with `conflict` unless `force: true`; **activity UI** pulses pane/tab on `send` and sustained on `terminal.run` | Race inside the guard window or with `force: true` |
+| Run vs manual command | `terminal.run` injects command while owner edits line | Concurrent `terminal.run` rejected per pane; human-input guard applies at run start; activity chrome shows run pending | `force: true` bypasses the guard |
 | Focus theft | Agent `pane.focus` steals keyboard | Intentional for automation; visible focus change | Owner mid-compose disruption |
 
 **Guidance:** Pause agent control when doing sensitive manual work, or use a dedicated pane/tab for automation.

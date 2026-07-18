@@ -3,7 +3,8 @@ export type AgentErrorCode =
   | 'not-found'
   | 'unavailable'
   | 'invalid-argument'
-  | 'failed';
+  | 'failed'
+  | 'conflict';
 
 export type AgentError = {
   code: AgentErrorCode;

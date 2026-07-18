@@ -11,7 +11,7 @@ export {
 export { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
 export { AGENT_METHODS, AGENT_PROTOCOL_VERSION } from './AgentProtocol';
 export * from './protocol';
-export { buildCapabilities } from './capabilities';
+export { HUMAN_INPUT_GUARD_MS, HumanInputTracker } from './humanInputGuard';
 export { buildPaneDiagnostics } from './paneDiagnostics';
 export { WorkspaceRegistry } from './WorkspaceRegistry';
 export type {

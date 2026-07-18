@@ -29,9 +29,9 @@ If the client requests an unsupported major version, the server responds with `i
 | `pane.resize` | `{ paneId, direction, amount? }` |
 | `pane.zoom` | `{ paneId, zoomed? }` |
 | `pane.close` | `{ paneId }` |
-| `terminal.send` | `{ paneId, data }` |
+| `terminal.send` | `{ paneId, data, force? }` |
 | `terminal.read` | `{ paneId, maxBytes?, lastLines? }` |
-| `terminal.run` | `{ paneId, command, timeoutMs?, maxOutputBytes? }` |
+| `terminal.run` | `{ paneId, command, timeoutMs?, maxOutputBytes?, force? }` |
 | `pane.diagnostics` | `{ paneId }` |
 | `browser.navigate` | `{ tabId?, paneId?, url }` — `tabId` or `paneId` required |
 | `browser.back` | `{ tabId?, paneId? }` |
@@ -65,7 +65,11 @@ Server push uses the notification `events.push` with `{ subscriptionId, event }`
 {"paneId":"pane_1","tabId":"tab_mixed","windowId":"win_1","surface":"browser","active":false,"zoomed":false}
 ```
 
-Application failures map service codes into `error.data.code` (`not-found`, `unavailable`, `invalid-argument`, `failed`) while keeping JSON-RPC `error.code` in the standard / extension ranges.
+Application failures map service codes into `error.data.code` (`not-found`, `unavailable`, `invalid-argument`, `failed`, `conflict`) while keeping JSON-RPC `error.code` in the standard / extension ranges. Human-input conflicts use application code `conflict` and wire code `-32004` (`AGENT_CONFLICT`).
+
+### Human-input guard (`terminal.send` / `terminal.run`)
+
+When the owner typed or pasted into a pane within the last **750 ms** (`HUMAN_INPUT_GUARD_MS`), agent keystroke injection is rejected with `conflict` unless `force: true` is set. Local keyboard and context-menu paste mark human activity; agent-originated sends do not. This reduces keystroke interleaving with manual input; it is not a hard transport lock.
 
 ### `terminal.run`
 

@@ -55,9 +55,9 @@ export type AgentRpcParams = {
   'pane.resize': { paneId: string; direction: 'left' | 'right' | 'up' | 'down'; amount?: number };
   'pane.zoom': { paneId: string; zoomed?: boolean };
   'pane.close': { paneId: string };
-  'terminal.send': { paneId: string; data: string };
+  'terminal.send': { paneId: string; data: string; force?: boolean };
   'terminal.read': { paneId: string; maxBytes?: number; lastLines?: number };
-  'terminal.run': { paneId: string; command: string; timeoutMs?: number; maxOutputBytes?: number };
+  'terminal.run': { paneId: string; command: string; timeoutMs?: number; maxOutputBytes?: number; force?: boolean };
   'pane.diagnostics': { paneId: string };
   'browser.navigate': { tabId?: string; paneId?: string; url: string };
   'browser.back': { tabId?: string; paneId?: string };

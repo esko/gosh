@@ -376,6 +376,16 @@ export function wireTerminalOsc133(tabId: string, terminal: ResttyTerminalAdapte
   };
 }
 
+/** Forward local keyboard/paste into the human-input guard (opaque pane ids). */
+export function wireHumanInput(tabId: string, terminal: ResttyTerminalAdapter): TerminalSubscription {
+  const agent = getAgentControlService();
+  const reg = getWorkspaceRegistry();
+  return terminal.onHumanInput((resttyPaneId) => {
+    const paneId = reg.paneIdForRestty(tabId, resttyPaneId);
+    if (paneId) agent.noteHumanInput(paneId);
+  });
+}
+
 export function notifyPaneDisconnected(tabId: string, resttyPaneId: number): void {
   const paneId = getWorkspaceRegistry().paneIdForRestty(tabId, resttyPaneId);
   if (paneId) getAgentControlService().notePaneDisconnected(paneId);
