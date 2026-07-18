@@ -1166,6 +1166,8 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     if (!root) return null;
     const width = Math.max(1, Math.floor(options.width));
     const height = Math.max(1, Math.floor(options.height));
+    // Measure layout before any await: tab switches hide the previous session
+    // (`display: none` → 0×0 rects) while WebGPU readback is still in flight.
     const rootRect = root.getBoundingClientRect();
     if (rootRect.width <= 0 || rootRect.height <= 0) return null;
 
@@ -1186,29 +1188,39 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     const offsetY = (height - drawHeight) / 2;
 
     const canvases = [...root.querySelectorAll<HTMLCanvasElement>('canvas.pane-canvas, .pane canvas')];
-    const snapshots = await Promise.all(canvases.map(async (canvas) => {
+    const layouts = canvases.map((canvas) => {
       const pane = canvas.closest<HTMLElement>('.pane[data-pane-id]');
       const paneId = Number(pane?.dataset.paneId);
-      const handle = Number.isFinite(paneId) ? this.surface?.pane?.(paneId) : null;
+      const rect = canvas.getBoundingClientRect();
+      return {
+        canvas,
+        paneId,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+    const snapshots = await Promise.all(layouts.map(async (layout) => {
+      const handle = Number.isFinite(layout.paneId) ? this.surface?.pane?.(layout.paneId) : null;
       const source = handle?.getBackend() === 'webgpu'
-        ? await this.captureWebGpuPane(paneId, handle)
-        : canvas;
-      return { canvas, source };
+        ? await this.captureWebGpuPane(layout.paneId, handle)
+        : layout.canvas;
+      return { ...layout, source };
     }));
     let drawn = 0;
     ctx.save();
     ctx.beginPath();
     ctx.rect(offsetX, offsetY, drawWidth, drawHeight);
     ctx.clip();
-    for (const { canvas, source } of snapshots) {
+    for (const { canvas, source, left, top, width: cw, height: ch } of snapshots) {
       if (!source) continue;
       if (canvas.width <= 0 || canvas.height <= 0) continue;
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) continue;
-      const dx = offsetX + (rect.left - rootRect.left) * scale;
-      const dy = offsetY + (rect.top - rootRect.top) * scale;
-      const dw = rect.width * scale;
-      const dh = rect.height * scale;
+      if (cw <= 0 || ch <= 0) continue;
+      const dx = offsetX + (left - rootRect.left) * scale;
+      const dy = offsetY + (top - rootRect.top) * scale;
+      const dw = cw * scale;
+      const dh = ch * scale;
       if (dx + dw < 0 || dy + dh < 0 || dx > width || dy > height) continue;
       try {
         ctx.drawImage(source, dx, dy, dw, dh);

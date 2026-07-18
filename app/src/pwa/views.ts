@@ -171,6 +171,8 @@ type TermSession = {
   appliedFont?: string;
   titleSub: TerminalSubscription | null;
   resumeEtSessionId?: string;
+  /** Re-render an in-window launcher tab so host screenshots stay fresh. */
+  reloadLauncher?: () => void | Promise<void>;
 };
 
 const sessions: TermSession[] = [];
@@ -179,6 +181,8 @@ let statusHideTimer = 0;
 let tabRenderFrame = 0;
 const tabPreviewCache = new TabPreviewCache();
 const TAB_PREVIEW_SIZE = { width: 480, height: 270 };
+/** Coalesce overlapping GPU preview captures for the same session. */
+const previewCaptureInflight = new Map<string, Promise<void>>();
 /** True after freeze/BFCache suspend until resume reconnect finishes. */
 let terminalSuspended = false;
 let resumeTransportsPromise: Promise<void> | null = null;
@@ -2436,6 +2440,7 @@ function createLauncherTab(): TermSession {
     onLaunch: (spec) => void connectLauncherTab(session, spec),
     reload: () => renderLauncherInto(pickerHost, tabCtx),
   };
+  session.reloadLauncher = () => renderLauncherInto(pickerHost, tabCtx);
   void renderLauncherInto(pickerHost, tabCtx);
   renderTabs();
   return session;
@@ -2582,6 +2587,48 @@ function updateSharedStatus(session: TermSession, state: TerminalTransportStatus
   if (state === 'connected') statusHideTimer = window.setTimeout(() => sharedStatus && (sharedStatus.dataset.show = 'false'), 700);
 }
 
+function clearSessionPreviewChrome(session: TermSession): void {
+  session.container.style.zIndex = '';
+  session.container.style.pointerEvents = '';
+}
+
+/**
+ * Reveal `active` on top while keeping `previous` laid out underneath for
+ * thumbnail capture. `[hidden]`/`display:none` collapses layout to 0×0 and
+ * skips WebGPU presents, so the leaving tab stays in the tree until capture ends.
+ */
+function beginSessionPreviewHandoff(active: TermSession, previous: TermSession | null): void {
+  active.container.hidden = false;
+  clearSessionPreviewChrome(active);
+  active.container.style.zIndex = '1';
+  for (const s of sessions) {
+    if (s.id === active.id) continue;
+    if (previous && s.id === previous.id && previous.terminal) {
+      s.container.hidden = false;
+      s.container.style.zIndex = '0';
+      s.container.style.pointerEvents = 'none';
+      continue;
+    }
+    clearSessionPreviewChrome(s);
+    s.container.hidden = true;
+  }
+}
+
+function finishSessionPreviewHandoff(previous: TermSession, activeId: string): void {
+  clearSessionPreviewChrome(previous);
+  if (previous.id !== activeId) previous.container.hidden = true;
+  for (const s of sessions) {
+    if (s.id === activeId) {
+      clearSessionPreviewChrome(s);
+      s.container.hidden = false;
+      continue;
+    }
+    if (previewCaptureInflight.has(s.id)) continue;
+    clearSessionPreviewChrome(s);
+    s.container.hidden = true;
+  }
+}
+
 function setActiveSession(id: string): void {
   const previous = activeSession();
   const session = sessions.find((s) => s.id === id);
@@ -2589,10 +2636,24 @@ function setActiveSession(id: string): void {
   if (previous && previous.id !== id) {
     // Password / host-key modals are per-tab; leaving the tab cancels them.
     dismissActiveAuthPrompts();
-    scheduleSessionPreview(previous);
   }
   activeSessionId = id;
-  sessions.forEach((s) => (s.container.hidden = s.id !== id));
+  // Capture the leaving terminal while it still has layout; hide it after.
+  // When landing on a launcher tab, reload host screenshots only after that
+  // capture persists — otherwise the cards re-render with the previous blob.
+  const leavingTerminal = previous && previous.id !== id ? previous : null;
+  if (leavingTerminal?.terminal) {
+    beginSessionPreviewHandoff(session, leavingTerminal);
+    void refreshSessionPreview(leavingTerminal).finally(() => {
+      finishSessionPreviewHandoff(leavingTerminal, id);
+      if (activeSessionId === id && session.kind === 'launcher') void session.reloadLauncher?.();
+    });
+  } else {
+    sessions.forEach((s) => {
+      clearSessionPreviewChrome(s);
+      s.container.hidden = s.id !== id;
+    });
+  }
   activeTerminal = session.terminal ?? null;
   activeSpec = session.spec ?? null;
   appliedFontSelection = session.appliedFont ?? null;
@@ -2604,10 +2665,14 @@ function setActiveSession(id: string): void {
     clearTerminalChromeColors();
     document.title = session.title;
     if (sharedStatus) sharedStatus.dataset.show = 'false';
+    // No leaving-terminal capture in flight — refresh screenshots immediately.
+    if (session.kind === 'launcher' && !leavingTerminal?.terminal) void session.reloadLauncher?.();
     renderTabs();
     saveTabLayout();
     requestAnimationFrame(() => {
-      if (activeSessionId === id) session.container.querySelector<HTMLInputElement>('.palette-input')?.focus();
+      if (activeSessionId === id) {
+        session.container.querySelector<HTMLInputElement>('.filter-input, .palette-input')?.focus();
+      }
     });
     return;
   }
@@ -2711,37 +2776,23 @@ function paneStatusError(session: TermSession): string | undefined {
   return [...session.panes.values()].find((pane) => pane.status === 'error' && pane.error)?.error;
 }
 
-/** Debounce GPU preview captures on rapid tab switches; connect/disconnect still call refresh directly. */
-const PREVIEW_DEBOUNCE_MS = 350;
-const PREVIEW_MIN_AGE_MS = 2_000;
-const previewDebounceTimers = new Map<string, number>();
-
 async function refreshSessionPreview(session: TermSession | null | undefined): Promise<void> {
   if (!session?.terminal) return;
-  const blob = await session.terminal.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
-  if (blob && sessions.includes(session)) {
-    tabPreviewCache.set(session.id, blob);
-    // Persist the capture against the host so the launcher can show a real
-    // session screenshot on the card later (best-effort; failure is harmless).
-    if (session.spec) void saveHostScreenshot(hostTargetKey(session.spec), blob).catch(() => undefined);
-  }
-}
-
-function scheduleSessionPreview(session: TermSession | null | undefined): void {
-  if (!session?.terminal) return;
-  const last = tabPreviewCache.get(session.id)?.updatedAt ?? 0;
-  if (last && Date.now() - last < PREVIEW_MIN_AGE_MS) return;
-  const existing = previewDebounceTimers.get(session.id);
-  if (existing) window.clearTimeout(existing);
-  const id = session.id;
-  previewDebounceTimers.set(
-    id,
-    window.setTimeout(() => {
-      previewDebounceTimers.delete(id);
-      const live = sessions.find((s) => s.id === id);
-      if (live) void refreshSessionPreview(live);
-    }, PREVIEW_DEBOUNCE_MS),
-  );
+  const existing = previewCaptureInflight.get(session.id);
+  if (existing) return existing;
+  let work!: Promise<void>;
+  work = (async () => {
+    const blob = await session.terminal!.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
+    if (blob && sessions.includes(session)) {
+      tabPreviewCache.set(session.id, blob);
+      // Persist before callers (e.g. launcher reload) re-read IndexedDB.
+      if (session.spec) await saveHostScreenshot(hostTargetKey(session.spec), blob).catch(() => undefined);
+    }
+  })().finally(() => {
+    if (previewCaptureInflight.get(session.id) === work) previewCaptureInflight.delete(session.id);
+  });
+  previewCaptureInflight.set(session.id, work);
+  return work;
 }
 
 function tabOverviewEntry(session: TermSession): TabOverviewEntry {
@@ -3951,8 +4002,7 @@ export function disposeTerminal(): void {
   dismissActiveAuthPrompts();
   if (tabRenderFrame) window.cancelAnimationFrame(tabRenderFrame);
   tabRenderFrame = 0;
-  for (const timer of previewDebounceTimers.values()) window.clearTimeout(timer);
-  previewDebounceTimers.clear();
+  previewCaptureInflight.clear();
   for (const session of sessions) {
     session.titleSub?.dispose();
     session.paneSubs.forEach((sub) => sub.dispose());
