@@ -19,6 +19,9 @@ export type {
   SplitDirection,
   TabInfo,
   TabKind,
+  TerminalPosition,
+  TerminalReadResult,
+  TerminalTextCapture,
   WindowInfo,
 } from './types';
 export { agentErr, agentOk } from './types';

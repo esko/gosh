@@ -28,8 +28,22 @@ import {
   type LayoutNode,
   type PaneDirection,
 } from './resttyLayout';
+import {
+  bindResttyPaneWasmRegistry,
+  ResttyPaneWasmRegistry,
+  unbindResttyPaneWasmRegistry,
+} from './resttyPaneWasmRegistry';
+import {
+  captureHistory,
+  captureTextRange,
+  captureViewport,
+  type PaneCaptureRuntime,
+  type TerminalPosition,
+  type TerminalTextCapture,
+} from './resttyTextCapture';
 
 export type { LayoutNode, PaneDirection } from './resttyLayout';
+export type { TerminalPosition, TerminalTextCapture } from './resttyTextCapture';
 
 type Rgb = { r: number; g: number; b: number };
 
@@ -482,6 +496,7 @@ type ResttySurface = ResttyHandle & {
   closePane?: (id: number) => boolean;
   setActivePane?: (id: number, options?: { focus?: boolean }) => void;
   getActivePane?: () => { id: number } | null;
+  getPaneById?: (id: number) => { id: number } | null;
   pane?: (id: number) => ResttyPaneHandleLite | null;
   activePane?: () => ResttyPaneHandleLite | null;
   panes?: () => ResttyPaneHandleLite[];
@@ -813,6 +828,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
   private settings: PwaTerminalSettings | null = null;
   private readonly previewCanvases = new Map<number, WebGpuPreviewState>();
   private layout: ResttyLayoutController | null = null;
+  private readonly wasmRegistry = new ResttyPaneWasmRegistry();
 
   private get surface(): ResttySurface | null {
     return (this.term?.restty as ResttySurface | null) ?? null;
@@ -820,6 +836,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
 
   static async create(el: HTMLElement, settings: PwaTerminalSettings): Promise<ResttyTerminalAdapter> {
     const adapter = new ResttyTerminalAdapter();
+    bindResttyPaneWasmRegistry(adapter.wasmRegistry);
     adapter.root = el;
     adapter.layout = new ResttyLayoutController(() => adapter.root, {
       requestLayoutSync: () => adapter.surface?.requestLayoutSync?.(),
@@ -841,6 +858,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
       // Per-pane app options: every pane (the first and every split) gets its
       // own PtyTransport bridge keyed by the pane id restty assigns it.
       appOptions: (ctx: { id: number; canvas: HTMLCanvasElement }) => {
+        adapter.wasmRegistry.beginPaneInit(ctx.id);
         adapter.previewCanvases.set(ctx.id, instrumentPreviewCanvas(ctx.canvas));
         // Restty consumes this limit only when a pane core is created. Use the
         // latest settings so splits opened after a settings change get the new
@@ -982,6 +1000,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
 
   private handlePaneClosed(id: number): void {
     if (this.layout?.isPaneZoomed(id)) this.layout.clearZoom();
+    this.wasmRegistry.releasePane(id);
     this.releasePreviewCanvas(id);
     const state = this.panes.get(id);
     if (state) state.bridge.dispose();
@@ -1402,6 +1421,43 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     };
   }
 
+  private resolvePaneId(paneId?: number): number {
+    const id = paneId ?? this.activePaneId;
+    if (id < 0 || !this.panes.has(id)) {
+      throw new Error(`Unknown restty pane: ${id}`);
+    }
+    return id;
+  }
+
+  private paneCaptureRuntime(paneId?: number): PaneCaptureRuntime {
+    const id = this.resolvePaneId(paneId);
+    const wasm = this.wasmRegistry.getWasm();
+    const handle = this.wasmRegistry.getHandle(id);
+    const exports = this.wasmRegistry.getExports();
+    if (!wasm || !handle || !exports) {
+      throw new Error(`Terminal grid not ready for pane ${id}`);
+    }
+    return { wasm, handle, exports };
+  }
+
+  /** Plain-text viewport from the authoritative WASM cell grid (not DOM/OCR). */
+  captureViewportText(paneId?: number): TerminalTextCapture {
+    return captureViewport(this.paneCaptureRuntime(paneId));
+  }
+
+  /** Best-effort scrollback via WASM viewport scrolling; includes truncation metadata. */
+  captureHistoryText(paneId: number | undefined, opts: { lastLines: number }): TerminalTextCapture {
+    return captureHistory(this.paneCaptureRuntime(paneId), opts);
+  }
+
+  /** Viewport-relative range capture using Restty cell state. */
+  captureTextRange(
+    paneId: number | undefined,
+    opts: { start: TerminalPosition; end: TerminalPosition },
+  ): TerminalTextCapture {
+    return captureTextRange(this.paneCaptureRuntime(paneId), opts);
+  }
+
   /** SPIKE debug: per-pane grid + backend (cols/rows > 0 ⇒ cellH > 0 ⇒ scrollable). */
   paneMetrics(): Array<{ id: number; cols: number; rows: number; backend: string }> {
     return [...this.panes.entries()].map(([id, state]) => {
@@ -1444,6 +1500,7 @@ export class ResttyTerminalAdapter implements TerminalAdapter {
     this.paneOpenListeners.clear();
     this.paneCloseListeners.clear();
     this.activePaneListeners.clear();
+    unbindResttyPaneWasmRegistry(this.wasmRegistry);
   }
 
   private async waitForBackend(timeoutMs = 20_000): Promise<void> {

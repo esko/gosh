@@ -30,7 +30,7 @@ If the client requests an unsupported major version, the server responds with `i
 | `pane.zoom` | `{ paneId, zoomed? }` |
 | `pane.close` | `{ paneId }` |
 | `terminal.send` | `{ paneId, data }` |
-| `terminal.read` | `{ paneId, maxBytes? }` (stub) |
+| `terminal.read` | `{ paneId, maxBytes?, lastLines? }` |
 | `terminal.run` | `{ paneId, command, timeoutMs? }` (stub) |
 | `pane.diagnostics` | `{ paneId }` |
 | `events.subscribe` | `{ types?: string[] }` |

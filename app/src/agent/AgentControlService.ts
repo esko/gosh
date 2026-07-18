@@ -13,6 +13,7 @@ import {
   type PaneDiagnostics,
   type SplitDirection,
   type TabInfo,
+  type TerminalReadResult,
   type WindowInfo,
 } from './types';
 
@@ -41,7 +42,10 @@ export class AgentControlService {
   }
 
   capabilities(): AgentCapabilities {
-    return buildCapabilities({ hasPaneHost: this.host !== null });
+    return buildCapabilities({
+      hasPaneHost: this.host !== null,
+      hasTerminalRead: this.host !== null && typeof this.host.readViewport === 'function',
+    });
   }
 
   listWindows(): AgentResult<WindowInfo[]> {
@@ -181,8 +185,47 @@ export class AgentControlService {
     }
   }
 
-  terminalRead(): AgentResult<never> {
-    return agentErr('unavailable', 'terminalRead is not implemented in this build');
+  terminalRead(input: {
+    paneId: string;
+    lastLines?: number;
+    maxBytes?: number;
+  }): AgentResult<TerminalReadResult> {
+    const host = this.requireHost();
+    if (!host.ok) return host;
+    if (!this.registry.getPane(input.paneId)) {
+      return agentErr('not-found', `Unknown pane: ${input.paneId}`);
+    }
+    if (input.lastLines !== undefined && (!Number.isFinite(input.lastLines) || input.lastLines <= 0)) {
+      return agentErr('invalid-argument', 'lastLines must be a positive number');
+    }
+    if (input.maxBytes !== undefined && (!Number.isFinite(input.maxBytes) || input.maxBytes <= 0)) {
+      return agentErr('invalid-argument', 'maxBytes must be a positive number');
+    }
+    try {
+      const capture =
+        input.lastLines !== undefined
+          ? host.value.readHistory(input.paneId, { lastLines: input.lastLines })
+          : host.value.readViewport(input.paneId);
+      let text = capture.lines.join('\n');
+      let truncated = capture.truncated;
+      if (input.maxBytes !== undefined) {
+        const encoder = new TextEncoder();
+        if (encoder.encode(text).length > input.maxBytes) {
+          let lo = 0;
+          let hi = text.length;
+          while (lo < hi) {
+            const mid = Math.ceil((lo + hi) / 2);
+            if (encoder.encode(text.slice(0, mid)).length <= input.maxBytes) lo = mid;
+            else hi = mid - 1;
+          }
+          text = text.slice(0, lo);
+          truncated = true;
+        }
+      }
+      return agentOk({ paneId: input.paneId, capture, text, truncated });
+    } catch (err) {
+      return agentErr('failed', err instanceof Error ? err.message : String(err));
+    }
   }
 
   terminalRun(): AgentResult<never> {
