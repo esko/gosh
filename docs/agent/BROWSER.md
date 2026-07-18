@@ -109,7 +109,7 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 - No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
 - Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; the same split targets are available from the command palette and terminal context menu. `Ctrl+Shift+E` / `Ctrl+Shift+D` split a new terminal leaf when a terminal leaf is focused. `pane.zoom` toggles maximize for the focused mixed leaf (`Ctrl+Shift+Z` in the UI, same as Restty pane zoom on terminal-only tabs)
 - Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
-- Browser tabs are not restored from `sessionStorage` tab layout
+- Browser-only tabs restore from per-window `sessionStorage` tab layout on reload (same connection window); `about:blank` tabs are not saved
 - No `newwindow` / `dialog` automation yet
 - Dev vite server lacks a real `<controlledframe>` element
 - Enterprise-managed IWA install required on ChromeOS today

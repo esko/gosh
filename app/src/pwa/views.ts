@@ -143,10 +143,11 @@ import {
 import {
   TAB_LAYOUT_KEY,
   buildSavedTabLayoutFromSnapshots,
-  firstTabSpec,
+  layoutConnectionKey,
   parseSavedTabLayout,
   serializeSavedTabLayout,
   type RestorableSessionSnapshot,
+  type SavedBrowserTab,
   type SavedMixedTab,
 } from './tabLayoutPersistence';
 
@@ -320,7 +321,16 @@ function collectBrowserUrls(session: TermSession): Record<string, string> | unde
   return Object.keys(urls).length > 0 ? urls : undefined;
 }
 
+/** Connection identity for this terminal window (profile/query on first render). */
+let windowConnectionKey = '';
+
 function sessionToRestorableSnapshot(session: TermSession): RestorableSessionSnapshot | null {
+  if (session.kind === 'browser') {
+    const url = session.browser?.getUrl();
+    if (!url || url === 'about:blank') return null;
+    const title = session.title.trim() && session.title !== 'Browser' ? session.title : undefined;
+    return { kind: 'browser', url, title };
+  }
   if (!session.spec) return null;
   if (session.kind === 'terminal') {
     return { kind: 'terminal', spec: session.spec, resumeEtSessionId: session.resumeEtSessionId };
@@ -355,7 +365,7 @@ function saveTabLayout(): void {
     const activeIndex = activeSessionId
       ? Math.max(0, restorableIds.indexOf(activeSessionId))
       : 0;
-    const layout = buildSavedTabLayoutFromSnapshots(snapshots, activeIndex);
+    const layout = buildSavedTabLayoutFromSnapshots(snapshots, activeIndex, windowConnectionKey);
     if (!layout) {
       sessionStorage.removeItem(TAB_LAYOUT_KEY);
       return;
@@ -2464,6 +2474,7 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     renderTerminalConnect(root);
     return;
   }
+  windowConnectionKey = layoutSpecKey(spec);
 
   root.innerHTML = `
     <div class="term-shell">
@@ -2553,10 +2564,11 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   // Restore this window's tabs on reload/crash when they belong to the same
   // connection (sessionStorage is per-window); otherwise start a single tab.
   const layout = loadTabLayout();
-  if (layout && layoutSpecKey(firstTabSpec(layout)) === layoutSpecKey(spec)) {
+  if (layout && layoutConnectionKey(layout) === windowConnectionKey) {
     for (const saved of layout.tabs) {
       if (saved.kind === 'terminal') await createSession(saved.spec);
-      else await restoreMixedTab(saved);
+      else if (saved.kind === 'mixed') await restoreMixedTab(saved);
+      else restoreBrowserTab(saved);
     }
     const active = sessions[Math.min(layout.activeIndex, sessions.length - 1)] ?? sessions[0];
     if (active) setActiveSession(active.id);
@@ -2695,6 +2707,16 @@ function createLauncherTab(): TermSession {
   session.reloadLauncher = () => renderLauncherInto(pickerHost, tabCtx);
   void renderLauncherInto(pickerHost, tabCtx);
   renderTabs();
+  return session;
+}
+
+/** Recreate a browser-only tab from sessionStorage. */
+function restoreBrowserTab(saved: SavedBrowserTab): TermSession {
+  const session = createBrowserTab(saved.url);
+  if (saved.title) {
+    session.title = saved.title;
+    getWorkspaceRegistry().setTabTitle(session.id, saved.title);
+  }
   return session;
 }
 
