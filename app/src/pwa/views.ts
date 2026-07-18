@@ -120,7 +120,7 @@ import {
 import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
-import type { MixedLayoutNode } from '../layout/MixedLayout';
+import type { MixedLayoutNode, MixedSplitDirection } from '../layout/MixedLayout';
 import { deserializeLayout, findLeaf, walkLeaves } from '../layout/MixedLayout';
 import type { MixedLayoutDomMount } from '../layout/mixedLayoutDom';
 import {
@@ -129,9 +129,11 @@ import {
   createMixedLayout,
   disposeMixedLeaf,
   focusMixedLeafDom,
+  isMixedLeafZoomed,
   mountMixedLayout,
   resizeMixedLeaf,
   splitMixedLayoutLeaf,
+  zoomMixedLeaf,
   browserLeafId,
   terminalLeafId,
   type MixedLeafState,
@@ -261,7 +263,32 @@ function focusMixedPaneInDirection(dir: PaneDirection): boolean {
 }
 
 function sessionPaneCount(session: TermSession): number {
+  if (session.kind === 'mixed' && session.mixedLayout) {
+    return walkLeaves(session.mixedLayout).length;
+  }
   return getWorkspaceRegistry().listPanes({ tabId: session.id }).length || session.panes.size;
+}
+
+function mixedPaneLeafId(session: TermSession, pane: { leafId?: string; surface?: string }): string | undefined {
+  if (!session.mixedLayout) return undefined;
+  return (
+    pane.leafId ??
+    (pane.surface === 'terminal'
+      ? terminalLeafId(session.mixedLayout)
+      : pane.surface === 'browser'
+        ? browserLeafId(session.mixedLayout)
+        : undefined)
+  );
+}
+
+function isActivePaneZoomed(): boolean {
+  const session = activeSession();
+  if (session?.kind === 'mixed' && session.mixedMount && session.mixedLayout) {
+    const pane = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active);
+    const leafId = pane ? mixedPaneLeafId(session, pane) : undefined;
+    return leafId ? isMixedLeafZoomed(session.mixedMount, leafId) : false;
+  }
+  return activeTerminal?.isPaneZoomed() ?? false;
 }
 
 const sessions: TermSession[] = [];
@@ -2501,6 +2528,7 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     closeMixedPane: closeMixedPaneById,
     focusMixedPane: focusMixedPaneById,
     resizeMixedPane: resizeMixedPaneById,
+    zoomMixedPane: zoomMixedPaneById,
     splitMixedPane: splitMixedPaneById,
   });
   agentControlCleanup?.();
@@ -2775,12 +2803,15 @@ async function wireMixedTerminalLeaf(
   terminal.fit?.();
 }
 
-/** Open a mixed tab: terminal left, Controlled Frame browser right (ADR 0016). */
-async function createMixedTab(spec: LaunchConnectionIntent): Promise<TermSession> {
+/** Open a mixed tab: terminal + Controlled Frame browser (ADR 0016). */
+async function createMixedTab(
+  spec: LaunchConnectionIntent,
+  direction: MixedSplitDirection = 'vertical',
+): Promise<TermSession> {
   const connectSpec = { ...spec, etSessionId: undefined };
   const title = formatConnectionTarget(connectSpec);
   const tabId = getWorkspaceRegistry().openTab({ kind: 'mixed', title });
-  const { layout } = createMixedLayout(tabId, 'vertical');
+  const { layout } = createMixedLayout(tabId, direction);
   return mountMixedTabSession({ tabId, spec, layout });
 }
 
@@ -2937,6 +2968,25 @@ function promoteMixedToBrowser(session: TermSession, leafId: string): void {
   getWorkspaceRegistry().setTabKind(session.id, 'browser');
 }
 
+function zoomMixedPaneById(tabId: string, paneId: string, zoomed?: boolean): boolean {
+  const session = sessions.find((s) => s.id === tabId);
+  if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout) return false;
+  const pane = getWorkspaceRegistry().getPane(paneId);
+  if (!pane) return false;
+  const leafId = mixedPaneLeafId(session, pane);
+  if (!leafId) return false;
+
+  const currently = isMixedLeafZoomed(session.mixedMount, leafId);
+  const target = zoomed ?? !currently;
+  if (target === currently) return true;
+
+  if (target && walkLeaves(session.mixedLayout).length <= 1) return false;
+
+  const ok = zoomMixedLeaf(session.mixedMount, leafId, target);
+  if (ok) getWorkspaceRegistry().setPaneZoomed(paneId, target);
+  return ok;
+}
+
 function closeMixedPaneById(tabId: string, paneId: string): boolean {
   const session = sessions.find((s) => s.id === tabId);
   if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout || !session.mixedLeaves) {
@@ -2944,9 +2994,10 @@ function closeMixedPaneById(tabId: string, paneId: string): boolean {
   }
   const pane = getWorkspaceRegistry().getPane(paneId);
   if (!pane || pane.tabId !== tabId) return false;
-  const leafId =
-    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  const leafId = mixedPaneLeafId(session, pane);
   if (!leafId) return false;
+
+  session.mixedMount?.clearZoom();
 
   if (pane.surface === 'terminal' && pane.resttyPaneId !== undefined) {
     const leaf = session.mixedLeaves.get(leafId);
@@ -2976,8 +3027,7 @@ function focusMixedPaneById(tabId: string, paneId: string): void {
   if (!session || session.kind !== 'mixed' || !session.mixedLayout) return;
   const pane = getWorkspaceRegistry().getPane(paneId);
   if (!pane) return;
-  const leafId =
-    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  const leafId = mixedPaneLeafId(session, pane);
   if (leafId) focusMixedLeaf(session, leafId);
 }
 
@@ -2991,8 +3041,7 @@ function resizeMixedPaneById(
   if (!session || session.kind !== 'mixed' || !session.mixedMount || !session.mixedLayout) return false;
   const pane = getWorkspaceRegistry().getPane(paneId);
   if (!pane) return false;
-  const leafId =
-    pane.leafId ?? (pane.surface === 'terminal' ? terminalLeafId(session.mixedLayout) : undefined);
+  const leafId = mixedPaneLeafId(session, pane);
   if (!leafId) return false;
   const step = Math.max(0.01, Math.min(0.25, amount / 100));
   return resizeMixedLeaf(session.mixedMount, session.mixedLayout, leafId, direction, step);
@@ -3010,13 +3059,7 @@ async function splitMixedPaneById(
   }
   const pane = getWorkspaceRegistry().getPane(sourcePaneId);
   if (!pane || pane.tabId !== tabId) return null;
-  const leafId =
-    pane.leafId ??
-    (pane.surface === 'terminal'
-      ? terminalLeafId(session.mixedLayout)
-      : pane.surface === 'browser'
-        ? browserLeafId(session.mixedLayout)
-        : undefined);
+  const leafId = mixedPaneLeafId(session, pane);
   if (!leafId) return null;
   const sourceLeaf = findLeaf(session.mixedLayout, leafId);
   if (!sourceLeaf) return null;
@@ -3394,8 +3437,8 @@ function closeSession(session: TermSession): void {
   }
 }
 
-async function openMixedTab(spec: LaunchConnectionIntent): Promise<void> {
-  const session = await createMixedTab(spec);
+async function openMixedTab(spec: LaunchConnectionIntent, direction: MixedSplitDirection = 'vertical'): Promise<void> {
+  const session = await createMixedTab(spec, direction);
   setActiveSession(session.id);
 }
 
@@ -3605,7 +3648,18 @@ async function openNewTabMenu(anchor: HTMLElement): Promise<void> {
   const items: ContextMenuItem[] = [
     { type: 'item', label: 'New tab', onSelect: () => setActiveSession(createLauncherTab().id) },
     { type: 'item', label: 'New browser tab', onSelect: () => setActiveSession(createBrowserTab().id) },
-    { type: 'item', label: 'New mixed tab', disabled: !activeSpec, onSelect: () => activeSpec && void openMixedTab(activeSpec) },
+    {
+      type: 'item',
+      label: 'New mixed tab (side by side)',
+      disabled: !activeSpec,
+      onSelect: () => activeSpec && void openMixedTab(activeSpec, 'vertical'),
+    },
+    {
+      type: 'item',
+      label: 'New mixed tab (stacked)',
+      disabled: !activeSpec,
+      onSelect: () => activeSpec && void openMixedTab(activeSpec, 'horizontal'),
+    },
   ];
   if (activeSpec) items.push({ type: 'item', label: 'Duplicate current tab', onSelect: () => activeSpec && void openTab(activeSpec) });
   items.push({ type: 'separator' });
@@ -3811,7 +3865,13 @@ function resizeActivePane(dir: PaneDirection): boolean {
 
 /** Toggle maximize for the focused pane. */
 function toggleZoomActivePane(): boolean {
-  return activeSession()?.terminal?.toggleZoomActivePane() ?? false;
+  const session = activeSession();
+  if (session?.kind === 'mixed' && session.mixedMount && session.mixedLayout) {
+    const pane = getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active);
+    if (!pane) return false;
+    return zoomMixedPaneById(session.id, pane.paneId);
+  }
+  return session?.terminal?.toggleZoomActivePane() ?? false;
 }
 
 /** Runs an app shortcut action; returns true when it actually did something. */
@@ -4096,7 +4156,8 @@ function installTerminalContextMenu(terminalRoot: HTMLElement): void {
     // restty copies its own canvas selection (no public selection-text query),
     // so enable Copy whenever that path exists; it's a no-op with no selection.
     const canCopy = (activeTerminal?.hasSelection() ?? false) || canCopyViaRenderer();
-    const paneCount = activeTerminal?.paneCount() ?? 1;
+    const session = activeSession();
+    const paneCount = session ? sessionPaneCount(session) : (activeTerminal?.paneCount() ?? 1);
     const items: ContextMenuItem[] = [
       { type: 'item', label: 'Copy', key: '⌃⇧C', disabled: !canCopy, onSelect: copySelection },
       { type: 'item', label: 'Paste', key: '⌃⇧V', onSelect: () => void pasteClipboard() },
@@ -4106,7 +4167,7 @@ function installTerminalContextMenu(terminalRoot: HTMLElement): void {
       ...([
             { type: 'item', label: 'Split right', key: '⌃⇧E', onSelect: () => void splitActivePane('vertical') },
             { type: 'item', label: 'Split down', key: '⌃⇧D', onSelect: () => void splitActivePane('horizontal') },
-            { type: 'item', label: activeTerminal?.isPaneZoomed() ? 'Restore pane' : 'Zoom pane', key: '⌃⇧Z', disabled: paneCount <= 1, onSelect: () => void toggleZoomActivePane() },
+            { type: 'item', label: isActivePaneZoomed() ? 'Restore pane' : 'Zoom pane', key: '⌃⇧Z', disabled: paneCount <= 1, onSelect: () => void toggleZoomActivePane() },
             { type: 'item', label: 'Close pane', key: '⌃⇧W', disabled: paneCount <= 1, onSelect: () => void closeActivePane() },
             { type: 'separator' },
           ] as ContextMenuItem[]),
@@ -4181,22 +4242,34 @@ function fuzzyScore(label: string, needle: string): number {
  */
 function buildPaletteCommands(): PaletteCommand[] {
   const session = activeSession();
-  const paneCount = activeTerminal?.paneCount() ?? 1;
+  const paneCount = session ? sessionPaneCount(session) : (activeTerminal?.paneCount() ?? 1);
   const canCopy = (activeTerminal?.hasSelection() ?? false) || canCopyViaRenderer();
   const commands: PaletteCommand[] = [
     { label: 'New tab', group: 'Tabs', key: '⌃T', run: () => setActiveSession(createLauncherTab().id) },
     { label: 'New browser tab', group: 'Tabs', run: () => setActiveSession(createBrowserTab().id) },
     {
-      label: 'New mixed tab',
+      label: 'New mixed tab (side by side)',
       group: 'Tabs',
       disabled: !activeSpec,
-      run: () => activeSpec && void openMixedTab(activeSpec),
+      run: () => activeSpec && void openMixedTab(activeSpec, 'vertical'),
+    },
+    {
+      label: 'New mixed tab (stacked)',
+      group: 'Tabs',
+      disabled: !activeSpec,
+      run: () => activeSpec && void openMixedTab(activeSpec, 'horizontal'),
     },
     {
       label: 'Split browser beside terminal',
       group: 'Panes',
       disabled: session?.kind !== 'terminal' || !session.terminal,
       run: () => void splitBrowserBesideActiveTerminal('vertical'),
+    },
+    {
+      label: 'Split browser below terminal',
+      group: 'Panes',
+      disabled: session?.kind !== 'terminal' || !session.terminal,
+      run: () => void splitBrowserBesideActiveTerminal('horizontal'),
     },
     { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: openTabOverview },
     { label: 'Duplicate session', group: 'Tabs', disabled: !activeSpec, run: duplicateSession },
@@ -4207,7 +4280,7 @@ function buildPaletteCommands(): PaletteCommand[] {
     { label: 'Split down', group: 'Panes', key: '⌃⇧D', run: () => void splitActivePane('horizontal') },
     { label: 'Focus next pane', group: 'Panes', disabled: paneCount <= 1, run: () => void activeTerminal?.cyclePane(1) },
     { label: 'Focus previous pane', group: 'Panes', disabled: paneCount <= 1, run: () => void activeTerminal?.cyclePane(-1) },
-    { label: activeTerminal?.isPaneZoomed() ? 'Restore pane' : 'Zoom pane', group: 'Panes', key: '⌃⇧Z', disabled: paneCount <= 1, run: () => void toggleZoomActivePane() },
+    { label: isActivePaneZoomed() ? 'Restore pane' : 'Zoom pane', group: 'Panes', key: '⌃⇧Z', disabled: paneCount <= 1, run: () => void toggleZoomActivePane() },
     { label: 'Close pane', group: 'Panes', key: '⌃⇧W', disabled: paneCount <= 1, run: () => void closeActivePane() },
     { label: 'Copy', group: 'Clipboard', key: '⌃⇧C', disabled: !canCopy, run: copySelection },
     { label: 'Paste', group: 'Clipboard', key: '⌃⇧V', run: () => void pasteClipboard() },

@@ -43,6 +43,7 @@ export type AgentSessionLookup = {
   closeMixedPane?: (tabId: string, paneId: string) => boolean;
   focusMixedPane?: (tabId: string, paneId: string) => void;
   resizeMixedPane?: (tabId: string, paneId: string, direction: PaneDirection, amount: number) => boolean;
+  zoomMixedPane?: (tabId: string, paneId: string, zoomed?: boolean) => boolean;
   splitMixedPane?: (
     tabId: string,
     sourcePaneId: string,
@@ -182,7 +183,7 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
       const pane = requirePane(paneId);
       const session = requireSession(pane.tabId);
       if (session.kind === 'mixed') {
-        return false;
+        return lookup.zoomMixedPane?.(pane.tabId, paneId, zoomed) ?? false;
       }
       const terminal = terminalForPane(session, pane);
       terminal.focusPane(pane.resttyPaneId!);
@@ -249,7 +250,14 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
     isZoomed(paneId: string) {
       const pane = requirePane(paneId);
       const session = lookup.findByTabId(pane.tabId);
-      if (session?.kind === 'mixed') return false;
+      if (session?.kind === 'mixed') {
+        const leafId = pane.leafId;
+        return (
+          (leafId ? session.mixedMount?.isLeafZoomed(leafId) : false) ||
+          reg.getPane(paneId)?.zoomed ||
+          false
+        );
+      }
       return session?.terminal?.isPaneZoomed(pane.resttyPaneId!) ?? reg.getPane(paneId)?.zoomed ?? false;
     },
   };

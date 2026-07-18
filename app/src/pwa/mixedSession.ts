@@ -118,6 +118,19 @@ export function resizeMixedLeaf(
   return mount.resizeLeaf(leafId, direction, step);
 }
 
+export function zoomMixedLeaf(
+  mount: MixedLayoutDomMount,
+  leafId: string,
+  zoomed?: boolean,
+): boolean {
+  if (zoomed === undefined) return mount.toggleLeafZoom(leafId);
+  return mount.setLeafZoomed(leafId, zoomed);
+}
+
+export function isMixedLeafZoomed(mount: MixedLayoutDomMount, leafId: string): boolean {
+  return mount.isLeafZoomed(leafId);
+}
+
 export function splitMixedLayoutLeaf(
   layout: MixedLayoutNode,
   leafId: string,

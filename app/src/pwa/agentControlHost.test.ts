@@ -43,6 +43,37 @@ describe('createPaneHost mixed split', () => {
     resetAgentControl();
   });
 
+  it('routes pane.zoom for mixed tabs through zoomMixedPane', () => {
+    resetAgentControl();
+    const reg = getWorkspaceRegistry();
+    const tabId = reg.openTab({ kind: 'mixed', title: 'mixed' });
+    const paneId = reg.openPane({
+      tabId,
+      surface: 'browser',
+      leafId: 'leaf_browser',
+      active: true,
+    });
+    const zoomMixedPane = vi.fn(() => true);
+    const host = createPaneHost({
+      findByTabId: (id) =>
+        id === tabId
+          ? {
+              id: tabId,
+              kind: 'mixed',
+              panes: new Map(),
+              mixedMount: { isLeafZoomed: () => true } as never,
+            }
+          : undefined,
+      sleep: async () => undefined,
+      zoomMixedPane,
+    });
+
+    expect(host.zoom(paneId, true)).toBe(true);
+    expect(zoomMixedPane).toHaveBeenCalledWith(tabId, paneId, true);
+    expect(host.isZoomed?.(paneId)).toBe(true);
+    resetAgentControl();
+  });
+
   it('keeps Restty split behavior for terminal-only tabs', async () => {
     resetAgentControl();
     const reg = getWorkspaceRegistry();

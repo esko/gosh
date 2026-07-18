@@ -16,6 +16,11 @@ export type MixedLayoutDomMount = {
   leafHosts: ReadonlyMap<string, HTMLElement>;
   applyLayout(layout: MixedLayoutNode): void;
   resizeLeaf(leafId: string, direction: MixedResizeDirection, step?: number): boolean;
+  setLeafZoomed(leafId: string, zoomed: boolean): boolean;
+  isLeafZoomed(leafId: string): boolean;
+  hasZoomedLeaf(): boolean;
+  clearZoom(): void;
+  toggleLeafZoom(leafId: string): boolean;
   dispose(): void;
 };
 
@@ -29,12 +34,59 @@ export function mountMixedLayoutDom(
 ): MixedLayoutDomMount {
   const leafHosts = new Map<string, HTMLElement>();
   let currentLayout = layout;
+  let zoomedLeafId: string | null = null;
+  let prevRootPosition: string | null = null;
 
   const rootEl = document.createElement('div');
   rootEl.className = MIXED_LAYOUT_ROOT_CLASS;
   container.replaceChildren(rootEl);
 
+  const clearZoom = (): void => {
+    if (zoomedLeafId === null) return;
+    const el = leafHosts.get(zoomedLeafId);
+    if (el) {
+      el.style.position = '';
+      el.style.inset = '';
+      el.style.zIndex = '';
+      el.classList.remove('is-zoomed');
+    }
+    if (prevRootPosition !== null) {
+      rootEl.style.position = prevRootPosition;
+      prevRootPosition = null;
+    }
+    zoomedLeafId = null;
+  };
+
+  const applyLeafZoom = (leafId: string): boolean => {
+    const el = leafHosts.get(leafId);
+    if (!el) return false;
+    if (!rootEl.style.position) {
+      prevRootPosition = rootEl.style.position;
+      rootEl.style.position = 'relative';
+    }
+    el.style.position = 'absolute';
+    el.style.inset = '0';
+    el.style.zIndex = '6';
+    el.classList.add('is-zoomed');
+    zoomedLeafId = leafId;
+    return true;
+  };
+
+  const setLeafZoomed = (leafId: string, zoomed: boolean): boolean => {
+    if (zoomed) {
+      if (zoomedLeafId === leafId) return true;
+      if (zoomedLeafId !== null) clearZoom();
+      return applyLeafZoom(leafId);
+    }
+    if (zoomedLeafId === leafId) {
+      clearZoom();
+      return true;
+    }
+    return zoomedLeafId === null;
+  };
+
   const applyLayout = (next: MixedLayoutNode): void => {
+    clearZoom();
     const preserved = preserveLeafChildren(leafHosts);
     currentLayout = next;
     leafHosts.clear();
@@ -48,6 +100,22 @@ export function mountMixedLayoutDom(
     rootEl,
     leafHosts,
     applyLayout,
+    setLeafZoomed,
+    isLeafZoomed(leafId) {
+      return zoomedLeafId === leafId;
+    },
+    hasZoomedLeaf() {
+      return zoomedLeafId !== null;
+    },
+    clearZoom,
+    toggleLeafZoom(leafId) {
+      if (zoomedLeafId === leafId) {
+        clearZoom();
+        return true;
+      }
+      if (zoomedLeafId !== null) clearZoom();
+      return setLeafZoomed(leafId, true);
+    },
     resizeLeaf(leafId, direction, step = DEFAULT_RESIZE_STEP) {
       const located = locateLeafSplit(rootEl, leafId);
       if (!located) return false;
@@ -66,6 +134,7 @@ export function mountMixedLayoutDom(
       return true;
     },
     dispose() {
+      clearZoom();
       container.replaceChildren();
       leafHosts.clear();
     },

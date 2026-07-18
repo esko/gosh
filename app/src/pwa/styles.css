@@ -3020,6 +3020,10 @@ html.app-chrome .term-shell {
   overflow: hidden;
 }
 
+.mixed-leaf.is-zoomed {
+  background: var(--term-bg, #1a1a1a);
+}
+
 .mixed-terminal-surface {
   flex: 1;
   min-height: 0;
