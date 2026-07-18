@@ -45,7 +45,7 @@ export type AgentRpcParams = {
   'pane.close': { paneId: string };
   'terminal.send': { paneId: string; data: string };
   'terminal.read': { paneId: string; maxBytes?: number };
-  'terminal.run': { paneId: string; command: string; timeoutMs?: number };
+  'terminal.run': { paneId: string; command: string; timeoutMs?: number; maxOutputBytes?: number };
   'pane.diagnostics': { paneId: string };
   'events.subscribe': { types?: string[] };
 };

@@ -101,7 +101,9 @@ import {
 import {
   getWorkspaceRegistry,
   installAgentControl,
+  notifyPaneDisconnected,
   resetAgentControl,
+  wireTerminalOsc133,
 } from './agentControlHost';
 
 // `active*` always point at the focused tab's session, so the existing helpers
@@ -2423,6 +2425,7 @@ async function attachTerminalToSession(session: TermSession, spec: LaunchConnect
   // Restty connects it; registering the listener flushes the initial pane.
   session.paneSubs.push(terminal.onPaneClose((id) => closePaneConn(session, id)));
   session.paneSubs.push(terminal.onPaneOpen((sink) => void openPaneConn(session, sink)));
+  session.paneSubs.push(wireTerminalOsc133(session.id, terminal));
   session.paneSubs.push(
     terminal.onActivePaneChange((resttyId) => {
       const paneId = getWorkspaceRegistry().paneIdForRestty(session.id, resttyId);
@@ -2573,6 +2576,9 @@ function onPaneStatus(session: TermSession, paneId: number, state: TerminalTrans
   session.statusError = paneStatusError(session);
   if (session.id === activeSessionId) updateSharedStatus(session, tabStatus(session), session.statusError);
   scheduleTabRender();
+  if (state === 'disconnected') {
+    notifyPaneDisconnected(session.id, paneId);
+  }
   if (state === 'connected') {
     if (session.panes.keys().next().value === paneId) {
       session.resumeEtSessionId = conn.transport.getPersistentSessionId?.() ?? session.resumeEtSessionId;

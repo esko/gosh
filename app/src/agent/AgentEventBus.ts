@@ -16,7 +16,13 @@ export class AgentEventBus {
 
   emit(
     type: AgentEventType,
-    payload: { windowId: string; tabId?: string; paneId?: string },
+    payload: {
+      windowId: string;
+      tabId?: string;
+      paneId?: string;
+      commandId?: string;
+      exitCode?: number | null;
+    },
   ): AgentEvent {
     const event: AgentEvent = {
       seq: ++this.seq,
@@ -25,6 +31,8 @@ export class AgentEventBus {
       windowId: payload.windowId,
       tabId: payload.tabId,
       paneId: payload.paneId,
+      commandId: payload.commandId,
+      exitCode: payload.exitCode,
     };
     for (const listener of this.listeners) {
       try {

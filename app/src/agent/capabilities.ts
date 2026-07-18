@@ -1,11 +1,10 @@
 import type { AgentCapabilities } from './types';
 
-const UNAVAILABLE_LATER = 'Not implemented in this build; tracked for a later control-plane slice.';
-
 /** Report which AgentControlService methods are live vs stubbed. */
 export function buildCapabilities(options?: {
   hasPaneHost?: boolean;
   hasTerminalRead?: boolean;
+  hasTerminalRun?: boolean;
 }): AgentCapabilities {
   const host = options?.hasPaneHost ?? true;
   const hostReason = host ? undefined : 'Pane host is not wired.';
@@ -15,6 +14,14 @@ export function buildCapabilities(options?: {
     : host
       ? 'Terminal read is not wired in this build.'
       : hostReason;
+  const terminalRun = host && terminalRead && (options?.hasTerminalRun ?? true);
+  const terminalRunReason = terminalRun
+    ? undefined
+    : !host
+      ? hostReason
+      : !terminalRead
+        ? terminalReadReason
+        : 'terminalRun is not wired in this build.';
   return {
     methods: {
       capabilities: { available: true },
@@ -28,7 +35,7 @@ export function buildCapabilities(options?: {
       paneClose: { available: host, reason: hostReason },
       terminalSend: { available: host, reason: hostReason },
       terminalRead: { available: terminalRead, reason: terminalReadReason },
-      terminalRun: { available: false, reason: UNAVAILABLE_LATER },
+      terminalRun: { available: terminalRun, reason: terminalRunReason },
       paneDiagnostics: { available: host, reason: hostReason },
       subscribe: { available: true },
     },

@@ -192,9 +192,13 @@ function validateMethodParams(
       if (params.timeoutMs !== undefined && timeoutMs === undefined) {
         return invalidParams(id, 'timeoutMs must be a finite number');
       }
+      const maxOutputBytes = optionalNumber(params, 'maxOutputBytes');
+      if (params.maxOutputBytes !== undefined && maxOutputBytes === undefined) {
+        return invalidParams(id, 'maxOutputBytes must be a finite number');
+      }
       return {
         ok: true,
-        params: { paneId: paneId.value, command: command.value, timeoutMs },
+        params: { paneId: paneId.value, command: command.value, timeoutMs, maxOutputBytes },
       };
     }
     case 'pane.diagnostics': {
