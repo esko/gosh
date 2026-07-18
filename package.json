@@ -32,6 +32,8 @@
     "test:goshctl": "vitest run --config vitest.goshctl.config.ts",
     "verify:agent-control": "node scripts/verify-agent-control.mjs",
     "verify:splits": "node scripts/verify-splits.mjs",
+    "probe:agent-control-transport": "node scripts/probe-agent-control-transport.mjs",
+    "probe:agent-control-negative": "node scripts/probe-agent-control-negative.mjs",
     "probe:controlled-frame-screenshot": "node scripts/probe-controlled-frame-screenshot.mjs",
     "check:regression": "node --experimental-strip-types scripts/check-storage-regression.mjs",
     "iwa:keygen": "bash scripts/generate-iwa-signing-key.sh",

@@ -127,3 +127,14 @@ External control (ADR 0013) requires a pairing handshake before any workspace RP
 | Auth | `gosh.authenticate` with pairing token |
 
 Implementations should bound read buffers and reject unterminated lines that exceed the max frame size without waiting for `\n`.
+
+## Device validation
+
+ChromeOS acceptance for the loopback transport (C2) and installed-IWA agent matrix (E3) is tracked in [CHROMEBOOK_VALIDATION.md](./CHROMEBOOK_VALIDATION.md). From Crostini, with port and token from Settings → Security:
+
+```bash
+npm run probe:agent-control-transport
+npm run probe:agent-control-negative
+```
+
+See also `npm run goshctl` and [ADR 0013](../adr/0013-agent-control-transport.md).

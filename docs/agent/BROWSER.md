@@ -85,6 +85,8 @@ Typical flow:
 
 Visual capture of Controlled Frame **guest** content is **not** implemented. CDP `Page.captureScreenshot` may only include the outer IWA shell unless Chromium exposes a nested guest target — see [ADR 0015](../adr/0015-browser-screenshot-feasibility.md) and `npm run probe:controlled-frame-screenshot` for the device-validation harness.
 
+Full Chromebook E2E rows (browser navigation, snapshot, agent RPC) are in [CHROMEBOOK_VALIDATION.md](./CHROMEBOOK_VALIDATION.md).
+
 Semantic `browser.snapshot` remains the supported automation path when pixels are unavailable.
 
 ## Known limitations
