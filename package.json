@@ -1,6 +1,6 @@
 {
   "name": "gosh",
-  "version": "0.1.176",
+  "version": "0.1.177",
   "private": true,
   "type": "module",
   "packageManager": "npm@11.13.0",
