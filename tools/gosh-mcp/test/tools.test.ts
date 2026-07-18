@@ -35,6 +35,8 @@ describe('gosh-mcp tools', () => {
       'gosh_browser_press',
       'gosh_browser_get_url',
       'gosh_browser_get_title',
+      'gosh_browser_handle_dialog',
+      'gosh_browser_handle_newwindow',
     ]);
   });
 
