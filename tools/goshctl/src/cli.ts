@@ -12,6 +12,15 @@ import {
 import { EXIT_PROTOCOL, EXIT_RPC } from './exitCodes.ts';
 import type { AgentRpcParams, PaneInfo } from './protocol.ts';
 
+type BrowserTargetParams = { tabId?: string; paneId?: string };
+
+function parseBrowserTarget(flags: Record<string, unknown>): BrowserTargetParams {
+  const tabId = typeof flags.tab === 'string' ? flags.tab : undefined;
+  const paneId = typeof flags.pane === 'string' ? flags.pane : undefined;
+  if (!tabId && !paneId) throw new Error('--tab or --pane is required');
+  return { tabId, paneId };
+}
+
 const HELP = `goshctl — Gosh agent control client (NDJSON JSON-RPC over loopback)
 
 Usage:
@@ -34,18 +43,18 @@ Commands:
   pane focus --pane <id>
   pane zoom --pane <id>
   pane close --pane <id>
-  browser navigate --tab <id> <url>
-  browser back --tab <id>
-  browser forward --tab <id>
-  browser reload --tab <id>
-  browser snapshot --tab <id> [--max-nodes N] [--max-bytes N]
-  browser query --tab <id> [--role R] [--name N] [--text T] [--selector S]
-  browser wait-for --tab <id> [--selector S] [--text T] [--load-state load|idle]
-  browser click --tab <id> --ref <ref>
-  browser type --tab <id> --ref <ref> [--no-clear] [--] <text...>
-  browser press --tab <id> --ref <ref> --key <key>
-  browser get-url --tab <id>
-  browser get-title --tab <id>
+  browser navigate (--tab <id> | --pane <id>) <url>
+  browser back (--tab <id> | --pane <id>)
+  browser forward (--tab <id> | --pane <id>)
+  browser reload (--tab <id> | --pane <id>)
+  browser snapshot (--tab <id> | --pane <id>) [--max-nodes N] [--max-bytes N]
+  browser query (--tab <id> | --pane <id>) [--role R] [--name N] [--text T] [--selector S]
+  browser wait-for (--tab <id> | --pane <id>) [--selector S] [--text T] [--load-state load|idle]
+  browser click (--tab <id> | --pane <id>) --ref <ref>
+  browser type (--tab <id> | --pane <id>) --ref <ref> [--no-clear] [--] <text...>
+  browser press (--tab <id> | --pane <id>) --ref <ref> --key <key>
+  browser get-url (--tab <id> | --pane <id>)
+  browser get-title (--tab <id> | --pane <id>)
   events [--json]
 
 Credentials:
@@ -268,35 +277,36 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
   }
 
   if (group === 'browser') {
-    const tabId = () => requireFlag(parseFlags(parsed.rest, { tab: 'string' }).flags, 'tab');
+    const browserFlags = { tab: 'string' as const, pane: 'string' as const };
 
     if (action === 'navigate') {
-      const { flags, positional, passthrough } = parseFlags(parsed.rest, { tab: 'string' });
-      const id = requireFlag(flags, 'tab');
+      const { flags, positional, passthrough } = parseFlags(parsed.rest, { ...browserFlags });
+      const target = parseBrowserTarget(flags);
       const url = passthrough[0] ?? positional[0];
       if (!url) throw new Error('url is required (positional or after --)');
       const result = await withClient(parsed, (client) =>
-        client.call('browser.navigate', { tabId: id, url } satisfies AgentRpcParams['browser.navigate']),
+        client.call('browser.navigate', { ...target, url } satisfies AgentRpcParams['browser.navigate']),
       );
       printJson(result);
       return 0;
     }
 
     if (action === 'back' || action === 'forward' || action === 'reload') {
-      const id = tabId();
+      const { flags } = parseFlags(parsed.rest, browserFlags);
+      const target = parseBrowserTarget(flags);
       const method =
         action === 'back' ? 'browser.back' : action === 'forward' ? 'browser.forward' : 'browser.reload';
       const result = await withClient(parsed, (client) =>
-        client.call(method, { tabId: id } satisfies AgentRpcParams['browser.back']),
+        client.call(method, target satisfies AgentRpcParams['browser.back']),
       );
       printJson(result);
       return 0;
     }
 
     if (action === 'snapshot') {
-      const { flags } = parseFlags(parsed.rest, { tab: 'string', 'max-nodes': 'number', 'max-bytes': 'number' });
-      const id = requireFlag(flags, 'tab');
-      const params: AgentRpcParams['browser.snapshot'] = { tabId: id };
+      const { flags } = parseFlags(parsed.rest, { ...browserFlags, 'max-nodes': 'number', 'max-bytes': 'number' });
+      const target = parseBrowserTarget(flags);
+      const params: AgentRpcParams['browser.snapshot'] = { ...target };
       if (typeof flags['max-nodes'] === 'number') params.maxNodes = flags['max-nodes'];
       if (typeof flags['max-bytes'] === 'number') params.maxBytes = flags['max-bytes'];
       const result = await withClient(parsed, (client) => client.call('browser.snapshot', params));
@@ -306,14 +316,14 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
 
     if (action === 'query') {
       const { flags } = parseFlags(parsed.rest, {
-        tab: 'string',
+        ...browserFlags,
         role: 'string',
         name: 'string',
         text: 'string',
         selector: 'string',
       });
-      const id = requireFlag(flags, 'tab');
-      const params: AgentRpcParams['browser.query'] = { tabId: id };
+      const target = parseBrowserTarget(flags);
+      const params: AgentRpcParams['browser.query'] = { ...target };
       if (typeof flags.role === 'string') params.role = flags.role;
       if (typeof flags.name === 'string') params.name = flags.name;
       if (typeof flags.text === 'string') params.text = flags.text;
@@ -325,15 +335,15 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
 
     if (action === 'wait-for') {
       const { flags } = parseFlags(parsed.rest, {
-        tab: 'string',
+        ...browserFlags,
         selector: 'string',
         text: 'string',
         'load-state': 'string',
         'timeout-ms': 'number',
         'poll-interval-ms': 'number',
       });
-      const id = requireFlag(flags, 'tab');
-      const params: AgentRpcParams['browser.waitFor'] = { tabId: id };
+      const target = parseBrowserTarget(flags);
+      const params: AgentRpcParams['browser.waitFor'] = { ...target };
       if (typeof flags.selector === 'string') params.selector = flags.selector;
       if (typeof flags.text === 'string') params.text = flags.text;
       if (flags['load-state'] === 'load' || flags['load-state'] === 'idle') {
@@ -349,10 +359,10 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
     }
 
     if (action === 'click') {
-      const { flags } = parseFlags(parsed.rest, { tab: 'string', ref: 'string' });
+      const { flags } = parseFlags(parsed.rest, { ...browserFlags, ref: 'string' });
       const result = await withClient(parsed, (client) =>
         client.call('browser.click', {
-          tabId: requireFlag(flags, 'tab'),
+          ...parseBrowserTarget(flags),
           ref: requireFlag(flags, 'ref'),
         } satisfies AgentRpcParams['browser.click']),
       );
@@ -362,12 +372,12 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
 
     if (action === 'type') {
       const { flags, passthrough } = parseFlags(parsed.rest, {
-        tab: 'string',
+        ...browserFlags,
         ref: 'string',
         text: 'string',
         'no-clear': 'boolean',
       });
-      const id = requireFlag(flags, 'tab');
+      const target = parseBrowserTarget(flags);
       const ref = requireFlag(flags, 'ref');
       const text =
         typeof flags.text === 'string'
@@ -376,7 +386,7 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
             ? passthrough.join(' ')
             : null;
       if (!text) throw new Error('text is required (--text or after --)');
-      const params: AgentRpcParams['browser.type'] = { tabId: id, ref, text };
+      const params: AgentRpcParams['browser.type'] = { ...target, ref, text };
       if (flags['no-clear'] === true) params.clear = false;
       const result = await withClient(parsed, (client) => client.call('browser.type', params));
       printJson(result);
@@ -384,10 +394,10 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
     }
 
     if (action === 'press') {
-      const { flags } = parseFlags(parsed.rest, { tab: 'string', ref: 'string', key: 'string' });
+      const { flags } = parseFlags(parsed.rest, { ...browserFlags, ref: 'string', key: 'string' });
       const result = await withClient(parsed, (client) =>
         client.call('browser.press', {
-          tabId: requireFlag(flags, 'tab'),
+          ...parseBrowserTarget(flags),
           ref: requireFlag(flags, 'ref'),
           key: requireFlag(flags, 'key'),
         } satisfies AgentRpcParams['browser.press']),
@@ -397,10 +407,11 @@ async function runCommand(parsed: ParsedArgv): Promise<number> {
     }
 
     if (action === 'get-url' || action === 'get-title') {
-      const id = tabId();
+      const { flags } = parseFlags(parsed.rest, browserFlags);
+      const target = parseBrowserTarget(flags);
       const method = action === 'get-url' ? 'browser.getUrl' : 'browser.getTitle';
       const result = await withClient(parsed, (client) =>
-        client.call(method, { tabId: id } satisfies AgentRpcParams['browser.getUrl']),
+        client.call(method, target satisfies AgentRpcParams['browser.getUrl']),
       );
       printJson(result);
       return 0;

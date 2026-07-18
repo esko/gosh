@@ -8,6 +8,7 @@ import {
   WorkspaceRegistry,
   buildPaneDiagnostics,
   type BrowserHost,
+  type BrowserHostTarget,
   type PaneDirection,
   type PaneHost,
   type PaneSplitOptions,
@@ -254,12 +255,17 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
   };
 }
 
-function browserControllerForTab(session: AgentSessionRef): ControlledFrameController {
+function browserControllerForTarget(session: AgentSessionRef, target: BrowserHostTarget): ControlledFrameController {
   if (session.kind === 'browser') {
     if (!session.browser) throw new Error(`Browser tab is not ready: ${session.id}`);
     return session.browser;
   }
   if (session.kind === 'mixed') {
+    if (target.leafId) {
+      const leaf = session.mixedLeaves?.get(target.leafId);
+      if (leaf?.surface === 'browser' && leaf.browser) return leaf.browser;
+      throw new Error(`Browser leaf is not ready: ${target.leafId}`);
+    }
     for (const leaf of session.mixedLeaves?.values() ?? []) {
       if (leaf.surface === 'browser' && leaf.browser) return leaf.browser;
     }
@@ -269,56 +275,56 @@ function browserControllerForTab(session: AgentSessionRef): ControlledFrameContr
 }
 
 export function createBrowserHost(lookup: AgentSessionLookup): BrowserHost {
-  const requireBrowserTab = (tabId: string): ControlledFrameController => {
-    const session = lookup.findByTabId(tabId);
-    if (!session) throw new Error(`Unknown tab: ${tabId}`);
-    return browserControllerForTab(session);
+  const requireBrowserSession = (target: BrowserHostTarget): AgentSessionRef => {
+    const session = lookup.findByTabId(target.tabId);
+    if (!session) throw new Error(`Unknown tab: ${target.tabId}`);
+    return session;
   };
 
-  const requireAutomation = (tabId: string) => {
-    const controller = requireBrowserTab(tabId);
+  const requireAutomation = (target: BrowserHostTarget) => {
+    const controller = browserControllerForTarget(requireBrowserSession(target), target);
     if (!controller.automation) {
-      throw new Error(`Browser automation is not available for tab: ${tabId}`);
+      throw new Error(`Browser automation is not available for tab: ${target.tabId}`);
     }
     return controller.automation;
   };
 
   return {
-    navigate(tabId, url) {
-      requireBrowserTab(tabId).navigate(url);
+    navigate(target, url) {
+      browserControllerForTarget(requireBrowserSession(target), target).navigate(url);
     },
-    async back(tabId) {
-      return requireBrowserTab(tabId).back();
+    async back(target) {
+      return browserControllerForTarget(requireBrowserSession(target), target).back();
     },
-    async forward(tabId) {
-      return requireBrowserTab(tabId).forward();
+    async forward(target) {
+      return browserControllerForTarget(requireBrowserSession(target), target).forward();
     },
-    reload(tabId) {
-      requireBrowserTab(tabId).reload();
+    reload(target) {
+      browserControllerForTarget(requireBrowserSession(target), target).reload();
     },
-    async waitFor(tabId, input) {
-      return requireAutomation(tabId).waitFor(input);
+    async waitFor(target, input) {
+      return requireAutomation(target).waitFor(input);
     },
-    async snapshot(tabId, input) {
-      return requireAutomation(tabId).snapshot(input);
+    async snapshot(target, input) {
+      return requireAutomation(target).snapshot(input);
     },
-    async query(tabId, input) {
-      return requireAutomation(tabId).query(input);
+    async query(target, input) {
+      return requireAutomation(target).query(input);
     },
-    async click(tabId, input) {
-      await requireAutomation(tabId).click(input.ref);
+    async click(target, input) {
+      await requireAutomation(target).click(input.ref);
     },
-    async type(tabId, input) {
-      await requireAutomation(tabId).type(input.ref, input.text, { clear: input.clear });
+    async type(target, input) {
+      await requireAutomation(target).type(input.ref, input.text, { clear: input.clear });
     },
-    async press(tabId, input) {
-      await requireAutomation(tabId).press(input.ref, input.key);
+    async press(target, input) {
+      await requireAutomation(target).press(input.ref, input.key);
     },
-    getUrl(tabId) {
-      return requireBrowserTab(tabId).getUrl();
+    getUrl(target) {
+      return browserControllerForTarget(requireBrowserSession(target), target).getUrl();
     },
-    getTitle(tabId) {
-      return requireBrowserTab(tabId).getTitle();
+    getTitle(target) {
+      return browserControllerForTarget(requireBrowserSession(target), target).getTitle();
     },
   };
 }
@@ -368,11 +374,11 @@ export function notifyPaneDisconnected(tabId: string, resttyPaneId: number): voi
 }
 
 /** Forward Controlled Frame navigation failures into the agent event bus. */
-export function createBrowserAgentStateHook(tabId: string): (state: ControlledFrameNavState) => void {
+export function createBrowserAgentStateHook(tabId: string, paneId?: string): (state: ControlledFrameNavState) => void {
   let wasFailed = false;
   return (state) => {
     if (state.failed && !wasFailed && state.failureReason) {
-      getAgentControlService().noteBrowserLoadFailed(tabId, state.url, state.failureReason);
+      getAgentControlService().noteBrowserLoadFailed(tabId, state.url, state.failureReason, paneId);
     }
     wasFailed = state.failed;
   };

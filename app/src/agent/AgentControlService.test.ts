@@ -195,9 +195,126 @@ describe('AgentControlService', () => {
     expect(service.capabilities().methods.browserNavigate.available).toBe(true);
     const nav = service.browserNavigate({ tabId, url: 'https://example.com' });
     expect(nav.ok).toBe(true);
-    expect(browserHost.navigate).toHaveBeenCalledWith(tabId, 'https://example.com');
+    expect(browserHost.navigate).toHaveBeenCalledWith({ tabId }, 'https://example.com');
     expect(service.browserGetTitle({ tabId })).toEqual({ ok: true, value: { tabId, title: 'Example' } });
     expect(service.capabilities().methods.browserSnapshot.available).toBe(true);
+  });
+});
+
+describe('AgentControlService browser pane targeting', () => {
+  function mixedBrowserSetup() {
+    const registry = new WorkspaceRegistry();
+    const tabId = registry.openTab({ kind: 'mixed', title: 'mixed' });
+    const paneA = registry.openPane({ tabId, surface: 'browser', leafId: 'leaf_a', active: false });
+    const paneB = registry.openPane({ tabId, surface: 'browser', leafId: 'leaf_b', active: true });
+    const controllers = new Map([
+      ['leaf_a', { navigate: vi.fn(), getUrl: vi.fn(() => 'https://a.test'), getTitle: vi.fn(() => 'A') }],
+      ['leaf_b', { navigate: vi.fn(), getUrl: vi.fn(() => 'https://b.test'), getTitle: vi.fn(() => 'B') }],
+    ]);
+    const browserHost = {
+      navigate: vi.fn((target: { leafId?: string }, url: string) => {
+        controllers.get(target.leafId!)?.navigate(url);
+      }),
+      back: vi.fn(async () => false),
+      forward: vi.fn(async () => false),
+      reload: vi.fn(),
+      waitFor: vi.fn(async () => ({ tabId, satisfied: true, reason: 'load' as const })),
+      snapshot: vi.fn(async () => ({
+        tabId,
+        url: 'https://example.com',
+        title: 'Example',
+        generation: 1,
+        nodes: [],
+        truncated: false,
+        byteLength: 10,
+      })),
+      query: vi.fn(async () => ({ tabId, matches: [] })),
+      click: vi.fn(async () => undefined),
+      type: vi.fn(async () => undefined),
+      press: vi.fn(async () => undefined),
+      getUrl: vi.fn((target: { leafId?: string }) => controllers.get(target.leafId!)?.getUrl() ?? ''),
+      getTitle: vi.fn((target: { leafId?: string }) => controllers.get(target.leafId!)?.getTitle() ?? ''),
+    };
+    const service = new AgentControlService({ registry, host: null, browserHost });
+    return { registry, service, tabId, paneA, paneB, browserHost, controllers };
+  }
+
+  it('targets a specific browser pane by paneId', () => {
+    const { service, paneA, browserHost } = mixedBrowserSetup();
+    const nav = service.browserNavigate({ paneId: paneA, url: 'https://target.test' });
+    expect(nav.ok).toBe(true);
+    expect(browserHost.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ paneId: paneA, leafId: 'leaf_a' }),
+      'https://target.test',
+    );
+  });
+
+  it('defaults tabId-only calls to the focused browser pane', () => {
+    const { service, tabId, paneB, browserHost } = mixedBrowserSetup();
+    const nav = service.browserNavigate({ tabId, url: 'https://focused.test' });
+    expect(nav.ok).toBe(true);
+    expect(browserHost.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ paneId: paneB, leafId: 'leaf_b' }),
+      'https://focused.test',
+    );
+  });
+
+  it('rejects tabId and paneId that do not match', () => {
+    const { service, paneA } = mixedBrowserSetup();
+    const otherTab = 'tab_other';
+    const result = service.browserNavigate({ tabId: otherTab, paneId: paneA, url: 'https://x.test' });
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'invalid-argument',
+        message: `paneId ${paneA} does not belong to tab ${otherTab}`,
+      },
+    });
+  });
+
+  it('rejects non-browser panes', () => {
+    const registry = new WorkspaceRegistry();
+    const tabId = registry.openTab({ kind: 'mixed', title: 'mixed' });
+    const paneId = registry.openPane({ tabId, surface: 'terminal', resttyPaneId: 1 });
+    const service = new AgentControlService({
+      registry,
+      host: null,
+      browserHost: {
+        navigate: vi.fn(),
+        back: vi.fn(async () => false),
+        forward: vi.fn(async () => false),
+        reload: vi.fn(),
+        waitFor: vi.fn(async () => ({ tabId, satisfied: true, reason: 'load' as const })),
+        snapshot: vi.fn(async () => ({
+          tabId,
+          url: '',
+          title: '',
+          generation: 1,
+          nodes: [],
+          truncated: false,
+          byteLength: 0,
+        })),
+        query: vi.fn(async () => ({ tabId, matches: [] })),
+        click: vi.fn(async () => undefined),
+        type: vi.fn(async () => undefined),
+        press: vi.fn(async () => undefined),
+        getUrl: vi.fn(() => ''),
+        getTitle: vi.fn(() => ''),
+      },
+    });
+    const result = service.browserGetUrl({ paneId });
+    expect(result).toEqual({
+      ok: false,
+      error: { code: 'invalid-argument', message: `Pane is not a browser surface: ${paneId}` },
+    });
+  });
+
+  it('emits browser.navigated with paneId when known', () => {
+    const { service, paneA } = mixedBrowserSetup();
+    const events: Array<{ type: string; paneId?: string }> = [];
+    service.subscribe((event) => events.push({ type: event.type, paneId: event.paneId }));
+    service.browserNavigate({ paneId: paneA, url: 'https://event.test' });
+    expect(events).toEqual([{ type: 'browser.navigated', paneId: paneA }]);
   });
 });
 

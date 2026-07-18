@@ -86,13 +86,22 @@ function optionalBoolean(obj: Record<string, unknown>, key: string): boolean | u
   return typeof value === 'boolean' ? value : undefined;
 }
 
-function validateBrowserTabId(
+function validateBrowserTarget(
   id: string | number | null,
   params: Record<string, unknown>,
-): { ok: true; tabId: string } | ValidationError {
-  const tabId = requireString(id, params, 'tabId');
-  if (!tabId.ok) return tabId;
-  return { ok: true, tabId: tabId.value };
+): { ok: true; tabId?: string; paneId?: string } | ValidationError {
+  const tabId = optionalString(params, 'tabId');
+  if (params.tabId !== undefined && tabId === undefined) {
+    return invalidParams(id, 'tabId must be a non-empty string');
+  }
+  const paneId = optionalString(params, 'paneId');
+  if (params.paneId !== undefined && paneId === undefined) {
+    return invalidParams(id, 'paneId must be a non-empty string');
+  }
+  if (!tabId && !paneId) {
+    return invalidParams(id, 'tabId or paneId is required');
+  }
+  return { ok: true, tabId, paneId };
 }
 
 function validateMethodParams(
@@ -231,11 +240,11 @@ function validateMethodParams(
     }
     case 'browser.navigate': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const url = requireString(id, params, 'url');
       if (!url.ok) return url;
-      return { ok: true, params: { tabId: tabId.tabId, url: url.value } };
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId, url: url.value } };
     }
     case 'browser.back':
     case 'browser.forward':
@@ -243,14 +252,14 @@ function validateMethodParams(
     case 'browser.getUrl':
     case 'browser.getTitle': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
-      return { ok: true, params: { tabId: tabId.tabId } };
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId } };
     }
     case 'browser.waitFor': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const selector = optionalString(params, 'selector');
       if (params.selector !== undefined && selector === undefined) {
         return invalidParams(id, 'selector must be a string');
@@ -274,7 +283,8 @@ function validateMethodParams(
       return {
         ok: true,
         params: {
-          tabId: tabId.tabId,
+          tabId: target.tabId,
+          paneId: target.paneId,
           selector,
           text,
           loadState: loadState as 'load' | 'idle' | undefined,
@@ -285,8 +295,8 @@ function validateMethodParams(
     }
     case 'browser.snapshot': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const maxNodes = optionalNumber(params, 'maxNodes');
       if (params.maxNodes !== undefined && maxNodes === undefined) {
         return invalidParams(id, 'maxNodes must be a finite number');
@@ -295,12 +305,12 @@ function validateMethodParams(
       if (params.maxBytes !== undefined && maxBytes === undefined) {
         return invalidParams(id, 'maxBytes must be a finite number');
       }
-      return { ok: true, params: { tabId: tabId.tabId, maxNodes, maxBytes } };
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId, maxNodes, maxBytes } };
     }
     case 'browser.query': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const role = optionalString(params, 'role');
       if (params.role !== undefined && role === undefined) {
         return invalidParams(id, 'role must be a string');
@@ -317,26 +327,29 @@ function validateMethodParams(
       if (params.selector !== undefined && selector === undefined) {
         return invalidParams(id, 'selector must be a string');
       }
-      return { ok: true, params: { tabId: tabId.tabId, role, name, text, selector } };
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId, role, name, text, selector } };
     }
     case 'browser.click':
     case 'browser.press': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const ref = requireString(id, params, 'ref');
       if (!ref.ok) return ref;
       if (method === 'browser.press') {
         const key = requireString(id, params, 'key');
         if (!key.ok) return key;
-        return { ok: true, params: { tabId: tabId.tabId, ref: ref.value, key: key.value } };
+        return {
+          ok: true,
+          params: { tabId: target.tabId, paneId: target.paneId, ref: ref.value, key: key.value },
+        };
       }
-      return { ok: true, params: { tabId: tabId.tabId, ref: ref.value } };
+      return { ok: true, params: { tabId: target.tabId, paneId: target.paneId, ref: ref.value } };
     }
     case 'browser.type': {
       if (!isPlainObject(params)) return invalidParams(id, 'params must be an object');
-      const tabId = validateBrowserTabId(id, params);
-      if (!tabId.ok) return tabId;
+      const target = validateBrowserTarget(id, params);
+      if (!target.ok) return target;
       const ref = requireString(id, params, 'ref');
       if (!ref.ok) return ref;
       if (typeof params.text !== 'string') {
@@ -348,7 +361,7 @@ function validateMethodParams(
       }
       return {
         ok: true,
-        params: { tabId: tabId.tabId, ref: ref.value, text: params.text, clear },
+        params: { tabId: target.tabId, paneId: target.paneId, ref: ref.value, text: params.text, clear },
       };
     }
     case 'events.subscribe': {

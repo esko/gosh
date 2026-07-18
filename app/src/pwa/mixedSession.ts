@@ -62,7 +62,7 @@ export function attachMixedBrowserLeaf(
   hostEl: HTMLElement,
   initialUrl?: string,
 ): void {
-  registry.openPane({ tabId, surface: 'browser', leafId });
+  const paneId = registry.openPane({ tabId, surface: 'browser', leafId });
   const leafContainer = document.createElement('div');
   leafContainer.className = 'term-browser mixed-browser-leaf';
   hostEl.append(leafContainer);
@@ -70,7 +70,7 @@ export function attachMixedBrowserLeaf(
     tabId,
     container: leafContainer,
     initialUrl,
-    onAgentNavState: createBrowserAgentStateHook(tabId),
+    onAgentNavState: createBrowserAgentStateHook(tabId, paneId),
   });
   leaves.set(leafId, {
     leafId,

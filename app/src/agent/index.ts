@@ -26,6 +26,8 @@ export type {
   PaneHost,
   PaneSplitOptions,
   BrowserHost,
+  BrowserHostTarget,
+  BrowserRpcInput,
   PaneInfo,
   SplitDirection,
   TabInfo,
