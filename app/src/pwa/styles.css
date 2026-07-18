@@ -2823,6 +2823,32 @@ html.app-chrome .term-shell {
   border-color: rgba(224, 87, 75, 0.4);
 }
 
+.agent-control-indicator {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 1200;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.agent-control-indicator[data-connected='true'] {
+  color: var(--status-ok);
+  border-color: color-mix(in srgb, var(--status-ok) 35%, var(--line-2));
+}
+
+.pairing-token {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .term-debug-btn {
   position: fixed;
   top: 10px;

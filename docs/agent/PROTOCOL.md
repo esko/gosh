@@ -80,12 +80,32 @@ Future transports may cancel in-flight requests by id. Cancelled work returns `c
 2. Server: `events.push` notifications for matching `AgentEvent` payloads.
 3. Unsubscribe is transport-specific (later slice); until then, disconnect ends the subscription.
 
+## Authentication
+
+External control (ADR 0013) requires a pairing handshake before any workspace RPC:
+
+1. Owner enables **External agent control** in Settings → Security (off by default).
+2. Gosh generates a random bearer token (owner-only, IndexedDB).
+3. Client connects to the loopback listener and sends:
+
+```json
+{"jsonrpc":"2.0","method":"gosh.authenticate","params":{"token":"<pairing-token>"},"id":1}
+```
+
+4. On success: `{"jsonrpc":"2.0","result":{"ok":true},"id":1}` — subsequent methods are allowed.
+5. Missing or wrong token → `unauthorized` (-32002). No workspace method runs unauthenticated.
+
+`gosh.authenticate` is transport-only and is not part of `AgentControlService`.
+
 ## Limits
 
 | Limit | Value |
 |-------|-------|
 | Max frame | 1 MiB |
 | Protocol version | 1 |
-| Auth | Not on wire in this slice (`unauthorized` reserved) |
+| Max clients | 4 |
+| Request rate | 30/s per connection (token bucket) |
+| Bind address | `127.0.0.1` only (interim) |
+| Auth | `gosh.authenticate` with pairing token |
 
 Implementations should bound read buffers and reject unterminated lines that exceed the max frame size without waiting for `\n`.

@@ -100,11 +100,22 @@ import {
 } from './sessionLifecycle';
 import {
   getWorkspaceRegistry,
+  getAgentControlService,
   installAgentControl,
   notifyPaneDisconnected,
   resetAgentControl,
   wireTerminalOsc133,
 } from './agentControlHost';
+import { loadPairingState } from '../agent/security/Pairing';
+import { isControlTransportAvailable } from '../agent/server/ControlServer';
+import {
+  getAgentControlServerStatus,
+  mountAgentControlIndicator,
+  rotateAgentControlToken,
+  setAgentControlEnabled,
+  stopAgentControlServer,
+  syncAgentControlServer,
+} from './agentControlServerHost';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -128,6 +139,7 @@ let tabStrip: HTMLElement | null = null;
 let sessionsHost: HTMLElement | null = null;
 let sharedStatus: HTMLElement | null = null;
 let captionCleanup: (() => void) | null = null;
+let agentControlCleanup: (() => void) | null = null;
 /** Removes the launcher's document-level "/" focus shortcut before each re-render. */
 let homeKeydownCleanup: (() => void) | null = null;
 /** Removes the terminal view's document-level keydown listeners on teardown. */
@@ -1672,10 +1684,13 @@ function renderSettingsTab(body: HTMLElement, tab: SettingsTab, profileId: strin
  */
 async function renderSecurityTab(body: HTMLElement): Promise<void> {
   const gen = body.dataset.gen;
-  const [hasMaster, locked, etLocal] = await Promise.all([
+  const [hasMaster, locked, etLocal, pairing, controlStatus, transportAvailable] = await Promise.all([
     credentialVault.hasMasterPassword(),
     credentialVault.isLocked(),
     readEtLocalDataSummary(),
+    loadPairingState(),
+    Promise.resolve(getAgentControlServerStatus()),
+    Promise.resolve(isControlTransportAvailable()),
   ]);
   if (body.dataset.gen !== gen) return;
   const rerender = (): void => void renderSecurityTab(body);
@@ -1702,12 +1717,32 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
         : '')
       + (etLocal.hasDeviceKey ? ', local device key present' : '');
 
+  const controlHint = transportAvailable
+    ? 'Listens on 127.0.0.1 only while a terminal window is open. Clients must authenticate with the pairing token before any workspace RPC.'
+    : 'TCPServerSocket is unavailable in this environment (requires an installed IWA with Direct Sockets). Enable is stored but the listener cannot start here.';
+
+  const tokenDisplay = pairing.token
+    ? `<code class="pairing-token" data-token>${escapeHTML(pairing.token)}</code>`
+    : '<span class="set-state">Not generated</span>';
+  const portDisplay = controlStatus.port ? `127.0.0.1:${controlStatus.port}` : '—';
+
   body.innerHTML =
     `<div class="group-title">Saved passwords</div>` +
     setRow('Master password', `<span class="set-state${locked ? ' is-warn' : ''}">${hasMaster ? (locked ? 'Locked' : 'Set') : 'Not set'}</span>`,
       'An extra password that encrypts every saved SSH password on this device.') +
     `<p class="set-hint" style="margin:0 0 16px">${escapeHTML(status)}</p>` +
     `<div class="actions" style="justify-content:flex-start;gap:10px;margin-bottom:28px">${buttons}</div>` +
+    `<div class="group-title">External agent control</div>` +
+    setRow(
+      'Allow local control',
+      `<select name="agentControlEnabled"${transportAvailable ? '' : ''}><option value="off"${pairing.enabled ? '' : ' selected'}>Off</option><option value="on"${pairing.enabled ? ' selected' : ''}>On</option></select>`,
+      controlHint,
+    ) +
+    (pairing.enabled
+      ? setRow('Pairing token', `${tokenDisplay} <button type="button" class="btn-ghost" data-copy-token>Copy</button>`, 'Shown once here — copy it for your CLI or MCP client. Reset if leaked.') +
+        setRow('Listen address', `<span class="set-state">${escapeHTML(portDisplay)}</span>`, controlStatus.connectedClients > 0 ? `${controlStatus.connectedClients} client connected` : 'Waiting for a client') +
+        `<div class="actions" style="justify-content:flex-start;margin-bottom:28px"><button type="button" class="btn-ghost" data-reset-token>Reset pairing token…</button></div>`
+      : '') +
     `<div class="group-title">Eternal Terminal</div>` +
     `<p class="set-hint" style="margin:0 0 12px">${escapeHTML(etSummary)}. Clearing removes resumable ET sessions, recovery journals, wrapped passkeys, and the local device encryption key. Saved SSH passwords and the master-password vault are cleared too because they use the same key. ET connection profiles stay; remote shells may keep running on the server.</p>` +
     `<div class="actions" style="justify-content:flex-start"><button class="btn-ghost btn-danger" type="button" data-purge-et${etLocal.sessions === 0 && !etLocal.hasDeviceKey ? ' disabled' : ''}>Delete all ET sessions and keys…</button></div>`;
@@ -1729,6 +1764,39 @@ async function renderSecurityTab(body: HTMLElement): Promise<void> {
       confirmLabel: 'Delete all',
       danger: true,
       onConfirm: () => void purgeAllEtLocalData().then(() => rerender()),
+    }),
+  );
+
+  body.querySelector<HTMLSelectElement>('[name="agentControlEnabled"]')?.addEventListener('change', async (event) => {
+    const enabled = (event.target as HTMLSelectElement).value === 'on';
+    try {
+      await setAgentControlEnabled(getAgentControlService(), enabled);
+    } catch (error) {
+      openConfirmModal({
+        title: 'External control unavailable',
+        body: error instanceof Error ? error.message : 'Could not start the control server.',
+        confirmLabel: 'OK',
+        onConfirm: () => undefined,
+      });
+    }
+    rerender();
+  });
+  body.querySelector<HTMLButtonElement>('[data-copy-token]')?.addEventListener('click', async () => {
+    const token = body.querySelector<HTMLElement>('[data-token]')?.textContent?.trim();
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+    } catch {
+      // Clipboard may be blocked; user can select the token manually.
+    }
+  });
+  body.querySelector<HTMLButtonElement>('[data-reset-token]')?.addEventListener('click', () =>
+    openConfirmModal({
+      title: 'Reset pairing token',
+      body: 'Generate a new token and disconnect existing control clients. Update any local CLI or scripts with the new token.',
+      confirmLabel: 'Reset token',
+      danger: true,
+      onConfirm: () => void rotateAgentControlToken(getAgentControlService()).then(() => rerender()),
     }),
   );
 }
@@ -2325,6 +2393,11 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   installAgentControl({
     findByTabId: (tabId) => sessions.find((s) => s.id === tabId),
     sleep,
+  });
+  agentControlCleanup?.();
+  agentControlCleanup = mountAgentControlIndicator(root);
+  void loadPairingState().then((pairing) => {
+    if (pairing.enabled) void syncAgentControlServer(getAgentControlService()).catch(() => undefined);
   });
 
   // Restore this window's tabs on reload/crash when they belong to the same
@@ -4060,6 +4133,9 @@ export function disposeTerminal(): void {
   }
   sessions.length = 0;
   resetAgentControl();
+  void stopAgentControlServer();
+  agentControlCleanup?.();
+  agentControlCleanup = null;
   tabPreviewCache.clear();
   // Caption-hosted tab strip lives outside `root` — remove it so Back-to-menu
   // does not leave a stale strip in the chrome.
