@@ -91,6 +91,13 @@ export async function dispatchAgentRpc(
       return wrap(service.browserGetUrl(params as AgentRpcParams['browser.getUrl']), requestId);
     case 'browser.getTitle':
       return wrap(service.browserGetTitle(params as AgentRpcParams['browser.getTitle']), requestId);
+    case 'browser.handleDialog':
+      return wrap(service.browserHandleDialog(params as AgentRpcParams['browser.handleDialog']), requestId);
+    case 'browser.handleNewWindow':
+      return wrap(
+        service.browserHandleNewWindow(params as AgentRpcParams['browser.handleNewWindow']),
+        requestId,
+      );
     case 'events.subscribe':
       return {
         ok: true,

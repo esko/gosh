@@ -40,6 +40,8 @@ export const GOSH_MCP_PROTOCOL_METHODS = [
   'browser.press',
   'browser.getUrl',
   'browser.getTitle',
+  'browser.handleDialog',
+  'browser.handleNewWindow',
 ] as const;
 
 export type GoshMcpProtocolMethod = (typeof GOSH_MCP_PROTOCOL_METHODS)[number];
@@ -388,6 +390,34 @@ export const GOSH_MCP_TOOLS: GoshMcpToolDefinition[] = [
     description: 'Get the current document title of a browser tab or pane.',
     paramsSchema: browserTargetSchema({}),
     toParams: (args) => browserTargetSchema({}).parse(args),
+  },
+  {
+    name: 'gosh_browser_handle_dialog',
+    method: 'browser.handleDialog',
+    description: 'Accept or dismiss a pending JavaScript dialog in a browser tab or pane.',
+    paramsSchema: browserTargetSchema({
+      action: z.enum(['accept', 'dismiss']),
+      promptText: z.string().optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
+        action: z.enum(['accept', 'dismiss']),
+        promptText: z.string().optional(),
+      }).parse(args),
+  },
+  {
+    name: 'gosh_browser_handle_newwindow',
+    method: 'browser.handleNewWindow',
+    description: 'Deny or open a pending window.open / target=_blank request in a new Gosh browser tab.',
+    paramsSchema: browserTargetSchema({
+      action: z.enum(['deny', 'open-tab']),
+      url: z.string().optional(),
+    }),
+    toParams: (args) =>
+      browserTargetSchema({
+        action: z.enum(['deny', 'open-tab']),
+        url: z.string().optional(),
+      }).parse(args),
   },
 ];
 

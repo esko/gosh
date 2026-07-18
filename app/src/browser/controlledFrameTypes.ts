@@ -18,6 +18,47 @@ export type ControlledFramePermissionRequestEvent = Event & {
   request?: ControlledFramePermissionRequest;
 };
 
+export type BrowserDialogType = 'alert' | 'confirm' | 'prompt';
+
+export type ControlledFrameDialogController = {
+  okay?: (response?: string) => void;
+  ok?: (response?: string) => void;
+  cancel?: () => void;
+};
+
+export type ControlledFrameDialogMessage = {
+  messageType?: BrowserDialogType;
+  messageText?: string;
+  dialog?: ControlledFrameDialogController;
+};
+
+export type ControlledFrameDialogEvent = Event & {
+  messageType?: BrowserDialogType;
+  messageText?: string;
+  dialog?: ControlledFrameDialogController;
+  dialogMessage?: ControlledFrameDialogMessage;
+};
+
+export type ControlledFrameNewWindowController = {
+  attach?: (element: ControlledFrameElementLike) => void;
+  discard?: () => void;
+};
+
+export type ControlledFrameNewWindowDetails = {
+  targetUrl?: string;
+  name?: string;
+  windowOpenDisposition?: string;
+  window?: ControlledFrameNewWindowController;
+};
+
+export type ControlledFrameNewWindowEvent = Event & {
+  targetUrl?: string;
+  name?: string;
+  windowOpenDisposition?: string;
+  window?: ControlledFrameNewWindowController;
+  newWindow?: ControlledFrameNewWindowDetails;
+};
+
 export type ControlledFrameElementLike = {
   src: string;
   partition?: string;

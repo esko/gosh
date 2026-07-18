@@ -86,7 +86,9 @@ export type AgentEventType =
   | 'terminal.command.completed'
   | 'terminal.disconnected'
   | 'browser.navigated'
-  | 'browser.load.failed';
+  | 'browser.load.failed'
+  | 'browser.dialog'
+  | 'browser.newwindow';
 
 export type AgentEvent = {
   seq: number;
@@ -99,6 +101,10 @@ export type AgentEvent = {
   exitCode?: number | null;
   url?: string;
   failureReason?: string;
+  dialogType?: 'alert' | 'confirm' | 'prompt';
+  message?: string;
+  name?: string;
+  windowOpenDisposition?: string;
 };
 
 export type TerminalRunCompletion =
@@ -143,6 +149,8 @@ export type AgentCapabilityMethod =
   | 'browserPress'
   | 'browserGetUrl'
   | 'browserGetTitle'
+  | 'browserHandleDialog'
+  | 'browserHandleNewWindow'
   | 'subscribe';
 
 export type AgentCapabilities = {
@@ -227,6 +235,14 @@ export type BrowserHost = {
   press(target: BrowserHostTarget, input: { ref: string; key: string }): Promise<void>;
   getUrl(target: BrowserHostTarget): string;
   getTitle(target: BrowserHostTarget): string;
+  handleDialog(
+    target: BrowserHostTarget,
+    input: { action: 'accept' | 'dismiss'; promptText?: string },
+  ): { handled: boolean };
+  handleNewWindow(
+    target: BrowserHostTarget,
+    input: { action: 'deny' | 'open-tab'; url?: string },
+  ): { handled: boolean; tabId?: string };
 };
 
 export function agentOk<T>(value: T): AgentResult<T> {

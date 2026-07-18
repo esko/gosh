@@ -53,6 +53,8 @@ export function buildCapabilities(options?: {
       browserPress: browserCap,
       browserGetUrl: browserCap,
       browserGetTitle: browserCap,
+      browserHandleDialog: browserCap,
+      browserHandleNewWindow: browserCap,
       subscribe: { available: true },
     },
   };

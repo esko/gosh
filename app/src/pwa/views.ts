@@ -99,7 +99,7 @@ import {
   sleep,
 } from './sessionLifecycle';
 import {
-  createBrowserAgentStateHook,
+  createBrowserAgentHooks,
   getWorkspaceRegistry,
   getAgentControlService,
   installAgentControl,
@@ -2538,6 +2538,11 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
   installAgentControl({
     findByTabId: (tabId) => sessions.find((s) => s.id === tabId),
     sleep,
+    openBrowserTab: (url) => {
+      const session = createBrowserTab(url);
+      setActiveSession(session.id);
+      return session.id;
+    },
     closeMixedPane: closeMixedPaneById,
     focusMixedPane: focusMixedPaneById,
     resizeMixedPane: resizeMixedPaneById,
@@ -2738,6 +2743,7 @@ function createBrowserTab(initialUrl?: string): TermSession {
     titleSub: null,
   };
   sessions.push(session);
+  const agentHooks = createBrowserAgentHooks(tabId);
   const handle = mountBrowserSession({
     tabId,
     container,
@@ -2748,7 +2754,7 @@ function createBrowserTab(initialUrl?: string): TermSession {
       if (session.id === activeSessionId) document.title = title;
       scheduleTabRender();
     },
-    onAgentNavState: createBrowserAgentStateHook(tabId),
+    ...agentHooks,
   });
   session.browser = handle.controller;
   session.browserDispose = handle.dispose;

@@ -45,6 +45,19 @@ Every `browser.*` RPC accepts **`tabId` or `paneId`** (at least one). Use `paneI
 | `browser.reload` | `browserReload` | `{ tabId?, paneId? }` |
 | `browser.getUrl` | `browserGetUrl` | `{ tabId?, paneId? }` |
 | `browser.getTitle` | `browserGetTitle` | `{ tabId?, paneId? }` |
+| `browser.handleDialog` | `browserHandleDialog` | `{ tabId?, paneId?, action: 'accept' \| 'dismiss', promptText? }` |
+| `browser.handleNewWindow` | `browserHandleNewWindow` | `{ tabId?, paneId?, action: 'deny' \| 'open-tab', url? }` |
+
+### Dialog and new-window automation
+
+Embedded pages may call `alert` / `confirm` / `prompt` or `window.open`. Controlled Frame fires `dialog` and `newwindow` on the element. Gosh queues **at most one pending request per browser tab** and **auto-dismisses / discards after ~30 seconds** if the agent does not respond.
+
+Push events: `browser.dialog` (`dialogType`, `message`) and `browser.newwindow` (`url`, `name`, optional `windowOpenDisposition`). Deny by default; use `browser.handleDialog` or `browser.handleNewWindow` while a request is pending. `open-tab` creates a new Gosh browser tab when the host callback is wired; otherwise the request is denied.
+
+```bash
+goshctl browser handle-dialog --tab <tabId> --action accept
+goshctl browser handle-newwindow --pane <paneId> --action open-tab
+```
 
 ### Snapshot and interaction
 
@@ -87,7 +100,7 @@ goshctl browser snapshot --tab <tabId>
 goshctl browser click --pane <paneId> --ref e1
 ```
 
-MCP tools: `gosh_browser_navigate`, `gosh_browser_snapshot`, `gosh_browser_click`, `gosh_browser_type`, `gosh_browser_get_url`, `gosh_browser_get_title`, and the other `browser.*` methods. See `tools/goshctl/README.md` and `tools/gosh-mcp/README.md`.
+MCP tools: `gosh_browser_navigate`, `gosh_browser_snapshot`, `gosh_browser_click`, `gosh_browser_type`, `gosh_browser_get_url`, `gosh_browser_get_title`, `gosh_browser_handle_dialog`, `gosh_browser_handle_newwindow`, and the other `browser.*` methods. See `tools/goshctl/README.md` and `tools/gosh-mcp/README.md`.
 
 ## Security notes
 
@@ -110,7 +123,6 @@ Semantic `browser.snapshot` remains the supported automation path when pixels ar
 - Mixed tabs support agent `pane.split` with optional `surface` to add terminal or browser leaves; the same split targets are available from the command palette and terminal context menu. `Ctrl+Shift+E` / `Ctrl+Shift+D` split a new terminal leaf when a terminal leaf is focused. `pane.zoom` toggles maximize for the focused mixed leaf (`Ctrl+Shift+Z` in the UI, same as Restty pane zoom on terminal-only tabs)
 - Browser-only and terminal-only tabs are unchanged; mixed tabs are a separate `kind: "mixed"`
 - Browser-only tabs restore from per-window `sessionStorage` tab layout on reload (same connection window); `about:blank` tabs are not saved
-- No `newwindow` / `dialog` automation yet
 - Dev vite server lacks a real `<controlledframe>` element
 - Enterprise-managed IWA install required on ChromeOS today
 - Some sites may still block automation or embedding at the network layer

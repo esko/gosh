@@ -45,6 +45,8 @@ If the client requests an unsupported major version, the server responds with `i
 | `browser.press` | `{ tabId?, paneId?, ref, key }` |
 | `browser.getUrl` | `{ tabId?, paneId? }` |
 | `browser.getTitle` | `{ tabId?, paneId? }` |
+| `browser.handleDialog` | `{ tabId?, paneId?, action: "accept" \| "dismiss", promptText? }` |
+| `browser.handleNewWindow` | `{ tabId?, paneId?, action: "deny" \| "open-tab", url? }` |
 | `events.subscribe` | `{ types?: string[] }` |
 
 Server push uses the notification `events.push` with `{ subscriptionId, event }`.
@@ -111,8 +113,10 @@ All events share `{ seq, type, at, windowId }` with monotonic `seq`. Optional fi
 | `terminal.disconnected` | `tabId`, `paneId` |
 | `browser.navigated` | `tabId`, `url`, `paneId?` |
 | `browser.load.failed` | `tabId`, `url`, `failureReason`, `paneId?` |
+| `browser.dialog` | `tabId`, `paneId?`, `dialogType` (`alert` \| `confirm` \| `prompt`), `message` |
+| `browser.newwindow` | `tabId`, `paneId?`, `url`, `name`, `windowOpenDisposition?` |
 
-`window.opened` is emitted when the workspace registry boots (one IWA terminal window). `window.closed` is emitted on teardown (`resetAgentControl` / `pagehide`). `terminal.disconnected` fires when a pane transport disconnects. `browser.load.failed` fires on Controlled Frame `loadabort` or navigation failure.
+`window.opened` is emitted when the workspace registry boots (one IWA terminal window). `window.closed` is emitted on teardown (`resetAgentControl` / `pagehide`). `terminal.disconnected` fires when a pane transport disconnects. `browser.load.failed` fires on Controlled Frame `loadabort` or navigation failure. `browser.dialog` and `browser.newwindow` fire when embedded content opens a JavaScript dialog or requests a new window; Gosh **denies by default** (dismiss / discard) after ~30s unless the agent calls `browser.handleDialog` or `browser.handleNewWindow` while a request is pending.
 
 ### `browser.snapshot`
 

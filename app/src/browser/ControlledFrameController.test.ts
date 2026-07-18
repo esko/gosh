@@ -128,4 +128,113 @@ describe('ControlledFrameController', () => {
     }
     expect(deny).toHaveBeenCalled();
   });
+
+  it('queues dialog requests and auto-dismisses after timeout', () => {
+    vi.useFakeTimers();
+    const frame = new MockControlledFrame();
+    const cancel = vi.fn();
+    const onDialog = vi.fn();
+    const controller = new ControlledFrameController(frame, {
+      tabId: 'tab_1',
+      pendingTimeoutMs: 30_000,
+      onDialog,
+    });
+
+    frame.emit('dialog', {
+      messageType: 'confirm',
+      messageText: 'Continue?',
+      dialog: { cancel, okay: vi.fn() },
+    });
+
+    expect(onDialog).toHaveBeenCalledWith({ messageType: 'confirm', messageText: 'Continue?' });
+    expect(controller.hasPendingDialog()).toBe(true);
+    expect(cancel).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(30_000);
+    expect(cancel).toHaveBeenCalled();
+    expect(controller.hasPendingDialog()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('handles dialog accept and dismiss via controller methods', () => {
+    const frame = new MockControlledFrame();
+    const okay = vi.fn();
+    const cancel = vi.fn();
+    const controller = new ControlledFrameController(frame, { tabId: 'tab_1' });
+
+    frame.emit('dialog', {
+      messageType: 'prompt',
+      messageText: 'Name?',
+      dialog: { okay, cancel },
+    });
+
+    expect(controller.handleDialog('accept', 'alice')).toEqual({ handled: true });
+    expect(okay).toHaveBeenCalledWith('alice');
+    expect(controller.handleDialog('dismiss')).toEqual({ handled: false });
+
+    frame.emit('dialog', { messageType: 'alert', messageText: 'Hi', dialog: { cancel } });
+    expect(controller.handleDialog('dismiss')).toEqual({ handled: true });
+    expect(cancel).toHaveBeenCalled();
+  });
+
+  it('queues newwindow requests and auto-discards after timeout', () => {
+    vi.useFakeTimers();
+    const frame = new MockControlledFrame();
+    const discard = vi.fn();
+    const onNewWindow = vi.fn();
+    const controller = new ControlledFrameController(frame, {
+      tabId: 'tab_1',
+      pendingTimeoutMs: 30_000,
+      onNewWindow,
+    });
+
+    frame.emit('newwindow', {
+      newWindow: {
+        targetUrl: 'https://popup.test',
+        name: '_blank',
+        windowOpenDisposition: 'new_foreground_tab',
+        window: { discard },
+      },
+    });
+
+    expect(onNewWindow).toHaveBeenCalledWith({
+      targetUrl: 'https://popup.test',
+      name: '_blank',
+      disposition: 'new_foreground_tab',
+    });
+    expect(controller.hasPendingNewWindow()).toBe(true);
+
+    vi.advanceTimersByTime(30_000);
+    expect(discard).toHaveBeenCalled();
+    expect(controller.hasPendingNewWindow()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('handles newwindow deny and open-tab actions', () => {
+    const frame = new MockControlledFrame();
+    const discard = vi.fn();
+    const controller = new ControlledFrameController(frame, { tabId: 'tab_1' });
+    const openTab = vi.fn(() => 'tab_new');
+
+    frame.emit('newwindow', {
+      targetUrl: 'https://child.test',
+      name: 'child',
+      window: { discard },
+    });
+
+    expect(controller.handleNewWindow('open-tab', undefined, openTab)).toEqual({
+      handled: true,
+      tabId: 'tab_new',
+    });
+    expect(openTab).toHaveBeenCalledWith('https://child.test');
+    expect(discard).toHaveBeenCalled();
+
+    frame.emit('newwindow', { targetUrl: 'https://blocked.test', window: { discard } });
+    expect(controller.handleNewWindow('deny')).toEqual({ handled: true });
+    expect(discard).toHaveBeenCalledTimes(2);
+
+    frame.emit('newwindow', { targetUrl: 'https://no-host.test', window: { discard } });
+    expect(controller.handleNewWindow('open-tab')).toEqual({ handled: true });
+    expect(discard).toHaveBeenCalledTimes(3);
+  });
 });
