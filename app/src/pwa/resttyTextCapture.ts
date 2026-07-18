@@ -170,7 +170,60 @@ export type PaneCaptureRuntime = {
   wasm: ResttyWasm;
   handle: number;
   exports: ResttyWasmExports;
+  /** Optional host hook to hide the live canvas during scroll-windowed history capture. */
+  suppressCanvasDuringScroll?: () => () => void;
 };
+
+/** True when a single `getRenderState` read covers the requested history without scrolling. */
+export function canCaptureHistoryWithoutScroll(
+  state: Pick<RenderState, 'rows'>,
+  scrollbar: ScrollbarSnapshot | null,
+  lastLines: number,
+): boolean {
+  if (!scrollbar || scrollbar.total <= 0) return true;
+
+  const viewportRows = scrollbar.len > 0 ? scrollbar.len : state.rows;
+  if (viewportRows <= 0) return true;
+
+  const historyLines = Math.max(0, scrollbar.total - viewportRows);
+  if (historyLines === 0 || lastLines <= viewportRows) return true;
+
+  return state.rows >= lastLines || state.rows >= scrollbar.total;
+}
+
+export function isViewportSizedRenderState(
+  state: Pick<RenderState, 'rows'>,
+  scrollbar: ScrollbarSnapshot | null,
+): boolean {
+  if (!scrollbar || scrollbar.len <= 0) return false;
+  return state.rows <= scrollbar.len + 1;
+}
+
+function captureFromRenderState(
+  state: RenderState,
+  runtime: PaneCaptureRuntime,
+  lastLines: number,
+): TerminalTextCapture {
+  const lines = extractLinesFromRenderState(state);
+  const capture: TerminalTextCapture = {
+    lines,
+    cols: state.cols,
+    rows: state.rows,
+    cursor: resolveCursorPosition(state),
+    wrapping: 'unknown',
+    coordinates: { origin: 'viewport', startLine: 0, endLine: Math.max(0, lines.length - 1) },
+    truncated: false,
+  };
+  const absolute = readAbsoluteScrollRange(runtime.exports, runtime.handle);
+  if (absolute) {
+    capture.coordinates = {
+      origin: 'absolute',
+      startLine: absolute.left,
+      endLine: absolute.right,
+    };
+  }
+  return sliceLastLines(capture, lastLines);
+}
 
 export function freshRenderState(runtime: PaneCaptureRuntime): RenderState | null {
   runtime.wasm.renderUpdate(runtime.handle);
@@ -242,34 +295,34 @@ function normalizeRangeEndpoint(rows: number, cols: number, pos: TerminalPositio
   };
 }
 
-export function captureHistory(
+function captureHistoryByScrolling(
   runtime: PaneCaptureRuntime,
   opts: { lastLines: number },
+  scrollbar: ScrollbarSnapshot,
 ): TerminalTextCapture {
   const lastLines = Math.max(1, Math.floor(opts.lastLines));
-  const scrollbar = readScrollbar(runtime.exports, runtime.handle);
-  const savedOffset = scrollbar?.offset ?? 0;
-
-  if (!scrollbar || scrollbar.total <= 0) {
-    const viewport = captureViewport(runtime);
-    return sliceLastLines(viewport, lastLines);
-  }
-
+  const savedOffset = scrollbar.offset;
   const viewportRows = scrollbar.len > 0 ? scrollbar.len : runtime.wasm.getRenderState(runtime.handle)?.rows ?? 0;
   if (viewportRows <= 0) {
-    return captureViewport(runtime);
-  }
-
-  const historyLines = Math.max(0, scrollbar.total - viewportRows);
-  if (historyLines === 0 || lastLines <= viewportRows) {
-    const viewport = captureViewport(runtime);
-    return sliceLastLines(viewport, lastLines);
+    const state = freshRenderState(runtime);
+    if (!state) {
+      return {
+        lines: [],
+        cols: 0,
+        rows: 0,
+        wrapping: 'unknown',
+        truncated: true,
+        truncationReason: 'WASM render state unavailable',
+      };
+    }
+    return captureFromRenderState(state, runtime, lastLines);
   }
 
   const linesNeeded = Math.min(lastLines, scrollbar.total);
   const collected: string[] = [];
   let truncated = false;
   let truncationReason: string | undefined;
+  const restoreCanvas = runtime.suppressCanvasDuringScroll?.();
 
   try {
     const maxOffset = Math.max(0, scrollbar.total - viewportRows);
@@ -295,6 +348,7 @@ export function captureHistory(
       truncationReason = 'Scrollback buffer did not yield the requested line count';
     }
   } finally {
+    restoreCanvas?.();
     const current = readScrollbar(runtime.exports, runtime.handle)?.offset ?? 0;
     const restore = savedOffset - current;
     if (restore !== 0) {
@@ -318,6 +372,35 @@ export function captureHistory(
     truncated,
     truncationReason,
   };
+}
+
+export function captureHistory(
+  runtime: PaneCaptureRuntime,
+  opts: { lastLines: number },
+): TerminalTextCapture {
+  const lastLines = Math.max(1, Math.floor(opts.lastLines));
+  const scrollbar = readScrollbar(runtime.exports, runtime.handle);
+  const state = freshRenderState(runtime);
+  if (!state) {
+    return {
+      lines: [],
+      cols: 0,
+      rows: 0,
+      wrapping: 'unknown',
+      truncated: true,
+      truncationReason: 'WASM render state unavailable',
+    };
+  }
+
+  if (canCaptureHistoryWithoutScroll(state, scrollbar, lastLines)) {
+    return captureFromRenderState(state, runtime, lastLines);
+  }
+
+  if (scrollbar && isViewportSizedRenderState(state, scrollbar)) {
+    return captureHistoryByScrolling(runtime, opts, scrollbar);
+  }
+
+  return captureFromRenderState(state, runtime, lastLines);
 }
 
 export function captureToPlainText(capture: TerminalTextCapture, maxBytes?: number): { text: string; truncated: boolean } {
