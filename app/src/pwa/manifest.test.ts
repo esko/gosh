@@ -58,11 +58,13 @@ describe('IWA window manifest', () => {
     // Image paste (Ctrl+Shift+V) reads ClipboardItem via navigator.clipboard.read.
     expect(manifest.permissions_policy?.['clipboard-read']).toEqual(['self']);
     expect(manifest.permissions_policy?.['clipboard-write']).toEqual(['self']);
+    expect(manifest.permissions_policy?.['controlled-frame']).toEqual(['self']);
   });
 
   it('keeps dev Permissions-Policy headers aligned with manifest clipboard keys', () => {
     expect(IWA_PERMISSIONS_POLICY).toContain('clipboard-read=(self)');
     expect(IWA_PERMISSIONS_POLICY).toContain('clipboard-write=(self)');
+    expect(IWA_PERMISSIONS_POLICY).toContain('controlled-frame=(self)');
     expect(IWA_PERMISSIONS_POLICY).toContain('window-management=(self)');
   });
 

@@ -153,6 +153,22 @@ describe('AgentControlService', () => {
     expect(service.paneFocus({ paneId: 'x' }).ok).toBe(false);
     expect(service.terminalRead({ paneId: 'x' }).ok).toBe(false);
   });
+
+  it('navigates browser tabs through BrowserHost', () => {
+    const registry = new WorkspaceRegistry();
+    const tabId = registry.openTab({ kind: 'browser', title: 'Browser' });
+    const browserHost = {
+      navigate: vi.fn(),
+      getUrl: vi.fn(() => 'https://example.com'),
+      getTitle: vi.fn(() => 'Example'),
+    };
+    const service = new AgentControlService({ registry, host: null, browserHost });
+    expect(service.capabilities().methods.browserNavigate.available).toBe(true);
+    const nav = service.browserNavigate({ tabId, url: 'https://example.com' });
+    expect(nav.ok).toBe(true);
+    expect(browserHost.navigate).toHaveBeenCalledWith(tabId, 'https://example.com');
+    expect(service.browserGetTitle({ tabId })).toEqual({ ok: true, value: { tabId, title: 'Example' } });
+  });
 });
 
 describe('AgentControlService.terminalRun', () => {

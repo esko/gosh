@@ -7,18 +7,21 @@ import {
   AgentControlService,
   WorkspaceRegistry,
   buildPaneDiagnostics,
+  type BrowserHost,
   type PaneDirection,
   type PaneHost,
   type SplitDirection,
   type TerminalPosition,
 } from '../agent';
+import type { ControlledFrameController } from '../browser/ControlledFrameController';
 import type { ResttyTerminalAdapter } from './resttyAdapter';
 import type { TerminalSubscription } from '../terminal/TerminalAdapter';
 
 export type AgentSessionRef = {
   id: string;
-  kind: 'launcher' | 'terminal';
+  kind: 'launcher' | 'terminal' | 'browser';
   terminal?: ResttyTerminalAdapter | null;
+  browser?: ControlledFrameController | null;
   panes: Map<number, { sink: { insertText(data: string): void } }>;
 };
 
@@ -167,10 +170,32 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
   };
 }
 
+export function createBrowserHost(lookup: AgentSessionLookup): BrowserHost {
+  const requireBrowserTab = (tabId: string): ControlledFrameController => {
+    const session = lookup.findByTabId(tabId);
+    if (!session || session.kind !== 'browser') throw new Error(`Unknown browser tab: ${tabId}`);
+    if (!session.browser) throw new Error(`Browser tab is not ready: ${tabId}`);
+    return session.browser;
+  };
+
+  return {
+    navigate(tabId, url) {
+      requireBrowserTab(tabId).navigate(url);
+    },
+    getUrl(tabId) {
+      return requireBrowserTab(tabId).getUrl();
+    },
+    getTitle(tabId) {
+      return requireBrowserTab(tabId).getTitle();
+    },
+  };
+}
+
 /** Install PaneHost + expose development CDP hook. */
 export function installAgentControl(lookup: AgentSessionLookup): AgentControlService {
   const agent = getAgentControlService();
   agent.setPaneHost(createPaneHost(lookup));
+  agent.setBrowserHost(createBrowserHost(lookup));
   const win = window as unknown as { __goshAgent?: AgentControlService };
   win.__goshAgent = agent;
   return agent;

@@ -116,6 +116,8 @@ import {
   stopAgentControlServer,
   syncAgentControlServer,
 } from './agentControlServerHost';
+import { mountBrowserSession } from '../browser/BrowserSession';
+import type { ControlledFrameController } from '../browser/ControlledFrameController';
 
 // `active*` always point at the focused tab's session, so the existing helpers
 // (copy, reconnect, settings sync, context menu) keep operating on it.
@@ -177,7 +179,7 @@ type PaneConn = {
  */
 type TermSession = {
   id: string;
-  kind: 'launcher' | 'terminal';
+  kind: 'launcher' | 'terminal' | 'browser';
   spec?: LaunchConnectionIntent;
   title: string;
   status: TerminalTransportStatus;
@@ -185,6 +187,8 @@ type TermSession = {
   container: HTMLElement;
   surface?: HTMLElement;
   terminal?: ResttyTerminalAdapter;
+  browser?: ControlledFrameController | null;
+  browserDispose?: () => void;
   panes: Map<number, PaneConn>;
   paneSubs: TerminalSubscription[];
   appliedFont?: string;
@@ -258,7 +262,7 @@ function currentSettings(): PwaTerminalSettings {
  * routes through the styled confirm modal (no native dialog).
  */
 function confirmCloseSession(session: TermSession, onConfirm: () => void): void {
-  if (session.kind !== 'terminal' || !session.spec) return onConfirm(); // launcher tab: nothing to confirm
+  if (session.kind !== 'terminal' || !session.spec) return onConfirm(); // launcher / browser: nothing to confirm
   if (!resolveSettings(session.spec.settingsProfileId).confirmClose || !sessionHasConnectedPane(session)) return onConfirm();
   openConfirmModal({
     title: 'Close tab',
@@ -2545,6 +2549,41 @@ function createLauncherTab(): TermSession {
   return session;
 }
 
+/** Open a Controlled Frame browser tab (IWA-only embedding; not an iframe). */
+function createBrowserTab(initialUrl?: string): TermSession {
+  const container = document.createElement('div');
+  sessionsHost!.append(container);
+  const tabId = getWorkspaceRegistry().openTab({ kind: 'browser', title: 'Browser' });
+  const session: TermSession = {
+    id: tabId,
+    kind: 'browser',
+    title: 'Browser',
+    status: 'idle',
+    statusError: undefined,
+    container,
+    browser: null,
+    panes: new Map(),
+    paneSubs: [],
+    titleSub: null,
+  };
+  sessions.push(session);
+  const handle = mountBrowserSession({
+    tabId,
+    container,
+    initialUrl,
+    onTitleChange: (title) => {
+      session.title = title;
+      getWorkspaceRegistry().setTabTitle(tabId, title);
+      if (session.id === activeSessionId) document.title = title;
+      scheduleTabRender();
+    },
+  });
+  session.browser = handle.controller;
+  session.browserDispose = handle.dispose;
+  renderTabs();
+  return session;
+}
+
 /** Upgrade a launcher tab to a live terminal once its host is chosen. */
 async function connectLauncherTab(session: TermSession, spec: LaunchConnectionIntent): Promise<void> {
   if (session.kind === 'terminal') return; // already connected (double pick)
@@ -2769,6 +2808,21 @@ function setActiveSession(id: string): void {
   appliedFontSelection = session.appliedFont ?? null;
   (window as unknown as { __resttyAdapter?: unknown }).__resttyAdapter = session.terminal;
 
+  if (session.kind === 'browser') {
+    setThemeColor('#202124');
+    clearTerminalChromeColors();
+    document.title = session.title;
+    if (sharedStatus) sharedStatus.dataset.show = 'false';
+    renderTabs();
+    saveTabLayout();
+    requestAnimationFrame(() => {
+      if (activeSessionId === id) {
+        session.container.querySelector<HTMLInputElement>('[data-browser-url]')?.focus();
+      }
+    });
+    return;
+  }
+
   if (session.kind !== 'terminal' || !session.spec || !session.terminal) {
     // Launcher tab: neutral chrome, hide the connection status, focus the search.
     setThemeColor('#000000');
@@ -2812,6 +2866,9 @@ function closeSession(session: TermSession): void {
   session.titleSub?.dispose();
   session.paneSubs.forEach((sub) => sub.dispose());
   session.paneSubs = [];
+  session.browserDispose?.();
+  session.browserDispose = undefined;
+  session.browser = null;
   for (const conn of session.panes.values()) {
     void conn.transport.disconnect().catch(() => undefined);
     conn.transport.dispose();
@@ -2934,15 +2991,18 @@ function renderTabs(): void {
   tabStrip.dataset.count = String(sessions.length);
   const tabs = sessions
     .map((s) => {
-      const launcher = s.kind !== 'terminal';
+      const launcher = s.kind === 'launcher';
+      const browser = s.kind === 'browser';
       const paneCount = s.panes.size;
       const splits = paneCount > 1 ? `<span class="term-tab-panes" title="${paneCount} panes">⊞${paneCount}</span>` : '';
-      // A launcher tab shows no status dot or panes badge — it isn't connected yet.
-      const status = launcher ? '' : `<span class="term-tab-status" data-state="${escapeHTML(tabStatus(s))}" aria-hidden="true"></span>`;
-      return `<div class="term-tab${launcher ? ' term-tab-launcher' : ''}" role="tab" draggable="true" data-id="${s.id}" aria-selected="${s.id === activeSessionId}" title="${escapeHTML(s.title)}">
+      const status = launcher || browser
+        ? ''
+        : `<span class="term-tab-status" data-state="${escapeHTML(tabStatus(s))}" aria-hidden="true"></span>`;
+      const tabClass = launcher ? ' term-tab-launcher' : browser ? ' term-tab-browser' : '';
+      return `<div class="term-tab${tabClass}" role="tab" draggable="true" data-id="${s.id}" aria-selected="${s.id === activeSessionId}" title="${escapeHTML(s.title)}">
         ${status}
         <span class="term-tab-title">${escapeHTML(s.title)}</span>
-        ${launcher ? '' : splits}
+        ${launcher || browser ? '' : splits}
         <span class="term-tab-close" data-close="${s.id}" role="button" aria-label="Close tab">×</span>
       </div>`;
     })
@@ -3033,6 +3093,7 @@ async function openNewTabMenu(anchor: HTMLElement): Promise<void> {
   // duplicate, and open-from-host all live in this one menu.
   const items: ContextMenuItem[] = [
     { type: 'item', label: 'New tab', onSelect: () => setActiveSession(createLauncherTab().id) },
+    { type: 'item', label: 'New browser tab', onSelect: () => setActiveSession(createBrowserTab().id) },
   ];
   if (activeSpec) items.push({ type: 'item', label: 'Duplicate current tab', onSelect: () => activeSpec && void openTab(activeSpec) });
   items.push({ type: 'separator' });
@@ -3058,15 +3119,17 @@ function tabOverviewBadgeHTML(entry: TabOverviewEntry): string {
     ? `<span class="tab-overview-badge">${escapeHTML(entry.protocol === 'et' ? 'ET' : entry.protocol === 'tsshd' ? 'TS' : entry.protocol.toUpperCase())}</span>`
     : '';
   const panes = entry.paneCount > 1 ? `<span class="tab-overview-badge">⊞ ${entry.paneCount}</span>` : '';
-  const statusLabel = entry.kind === 'launcher' ? 'New Tab' : entry.status;
+  const statusLabel = entry.kind === 'launcher' ? 'New Tab' : entry.kind === 'browser' ? 'Browser' : entry.status;
   return `${protocol}${panes}<span class="tab-overview-badge" data-state="${escapeHTML(entry.status)}">${escapeHTML(statusLabel)}</span>`;
 }
 
 function tabOverviewCardHTML(entry: TabOverviewEntry, index: number, selected: boolean): string {
   const preview = entry.previewUrl
     ? `<img class="tab-overview-img" src="${escapeHTML(entry.previewUrl)}" alt="">`
-    : `<div class="tab-overview-placeholder"><span>${entry.kind === 'launcher' ? 'New Tab' : 'No preview yet'}</span></div>`;
-  const subtitle = entry.target && entry.target !== entry.title ? entry.target : entry.kind === 'launcher' ? 'Choose a host' : '';
+    : `<div class="tab-overview-placeholder"><span>${entry.kind === 'launcher' ? 'New Tab' : entry.kind === 'browser' ? 'Browser' : 'No preview yet'}</span></div>`;
+  const subtitle = entry.target && entry.target !== entry.title
+    ? entry.target
+    : entry.kind === 'launcher' ? 'Choose a host' : entry.kind === 'browser' ? 'Web' : '';
   return `<div class="tab-overview-card" role="option" tabindex="${selected ? '0' : '-1'}" data-tab-overview-id="${escapeHTML(entry.id)}" data-index="${index}" aria-selected="${selected}" aria-current="${entry.active ? 'true' : 'false'}">
     <div class="tab-overview-thumb">
       ${preview}
@@ -3598,6 +3661,7 @@ function buildPaletteCommands(): PaletteCommand[] {
   const canCopy = (activeTerminal?.hasSelection() ?? false) || canCopyViaRenderer();
   const commands: PaletteCommand[] = [
     { label: 'New tab', group: 'Tabs', key: '⌃T', run: () => setActiveSession(createLauncherTab().id) },
+    { label: 'New browser tab', group: 'Tabs', run: () => setActiveSession(createBrowserTab().id) },
     { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: openTabOverview },
     { label: 'Duplicate session', group: 'Tabs', disabled: !activeSpec, run: duplicateSession },
     { label: 'Close tab', group: 'Tabs', key: '⌃W', disabled: !session, run: () => { if (session) confirmCloseSession(session, () => closeSession(session)); } },
@@ -4124,6 +4188,9 @@ export function disposeTerminal(): void {
   for (const session of sessions) {
     session.titleSub?.dispose();
     session.paneSubs.forEach((sub) => sub.dispose());
+    session.browserDispose?.();
+    session.browserDispose = undefined;
+    session.browser = null;
     for (const conn of session.panes.values()) {
       void conn.transport.disconnect().catch(() => undefined);
       conn.transport.dispose();

@@ -5,7 +5,7 @@ export type TabOverviewEntry = {
   title: string;
   target?: string;
   protocol?: string;
-  kind: 'launcher' | 'terminal';
+  kind: 'launcher' | 'terminal' | 'browser';
   status: TerminalTransportStatus;
   paneCount: number;
   active: boolean;
@@ -27,7 +27,7 @@ function entrySearchText(entry: TabOverviewEntry): string {
     entry.title,
     entry.target,
     entry.protocol,
-    entry.kind === 'launcher' ? 'new tab launcher' : undefined,
+    entry.kind === 'launcher' ? 'new tab launcher' : entry.kind === 'browser' ? 'browser web' : undefined,
     entry.status,
     entry.paneCount > 1 ? `${entry.paneCount} panes splits` : undefined,
   ]
