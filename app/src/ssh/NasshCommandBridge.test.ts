@@ -70,9 +70,13 @@ describe('isLoginPasswordPrompt', () => {
 
 type ExitHarness = {
   handleExit(code: number, source: 'nassh' | 'nassh-exit' | 'wassh'): void;
+  cancelSecureInput(instance: { terminateProgram_(): void }): string;
+  authCancelled: boolean;
+  hasExited: boolean;
   ioShim: { dispose(): void } | null;
   resizeSubscription: { dispose(): void } | null;
   hostKeyGuard: { reset(): void } | null;
+  commandInstance: unknown;
 };
 
 describe('NasshCommandBridge environment', () => {
@@ -119,5 +123,29 @@ describe('NasshCommandBridge exit lifecycle', () => {
     const bridge = new NasshCommandBridge({ host: 'host', port: 22, username: 'user', onStatus });
     (bridge as unknown as ExitHarness).handleExit(0, 'wassh');
     expect(onStatus).toHaveBeenCalledWith('disconnected', undefined, { disconnectReason: 'normal-exit' });
+  });
+
+  it('cancelSecureInput tears down once and suppresses a later transport exit status', () => {
+    const onStatus = vi.fn();
+    const bridge = new NasshCommandBridge({ host: 'host', port: 22, username: 'user', onStatus });
+    const harness = bridge as unknown as ExitHarness;
+    const terminate = vi.fn();
+    const disposeIo = vi.fn();
+    const resetGuard = vi.fn();
+    harness.ioShim = { dispose: disposeIo };
+    harness.hostKeyGuard = { reset: resetGuard };
+    harness.commandInstance = { terminateProgram_: terminate };
+
+    expect(harness.cancelSecureInput({ terminateProgram_: terminate })).toBe('');
+    expect(harness.authCancelled).toBe(true);
+    expect(harness.hasExited).toBe(true);
+    expect(terminate).toHaveBeenCalledOnce();
+    expect(disposeIo).toHaveBeenCalledOnce();
+    expect(resetGuard).toHaveBeenCalledOnce();
+    expect(onStatus).toHaveBeenCalledWith('disconnected', undefined, { disconnectReason: 'user' });
+
+    // Plugin exit after cancel must not overwrite the user-disconnect status.
+    harness.handleExit(255, 'wassh');
+    expect(onStatus).toHaveBeenCalledTimes(1);
   });
 });

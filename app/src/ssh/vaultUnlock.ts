@@ -9,20 +9,24 @@ import { showSecureInputPrompt } from './SecureInputPrompt';
 
 const MAX_ATTEMPTS = 3;
 
+/** Outcome of an interactive vault unlock attempt. */
+export type VaultUnlockResult = 'ready' | 'cancelled' | 'failed';
+
 /**
- * Ensure the vault is usable. Returns true when unlocked (or never locked),
- * false when the user cancelled or exhausted attempts — callers then fall back
- * to a normal password prompt rather than auto-fill.
+ * Ensure the vault is usable.
+ * - `ready`: unlocked (or never locked)
+ * - `cancelled`: user dismissed the master-password modal — callers must abort auth
+ * - `failed`: wrong master password exhausted — callers may fall back to a plain prompt
  */
-export async function ensureVaultUnlocked(): Promise<boolean> {
-  if (!(await credentialVault.isLocked())) return true;
+export async function ensureVaultUnlocked(): Promise<VaultUnlockResult> {
+  if (!(await credentialVault.isLocked())) return 'ready';
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
     const message = attempt === 0
       ? 'Enter your master password to use saved passwords'
       : 'Incorrect master password — try again';
     const { value } = await showSecureInputPrompt(message, 256, false);
-    if (value === null) return false; // cancelled
-    if (await credentialVault.unlock(value)) return true;
+    if (value === null) return 'cancelled';
+    if (await credentialVault.unlock(value)) return 'ready';
   }
-  return false;
+  return 'failed';
 }

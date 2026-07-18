@@ -129,6 +129,8 @@ export class NasshCommandBridge {
   private attachOptions: NasshIoShimOptions | undefined;
   private hostKeyGuard: HostKeyGuard | null = null;
   private hasExited = false;
+  /** Set when the user cancels auth UI; blocks OpenSSH re-prompt loops. */
+  private authCancelled = false;
   private disposed = false;
   private hostKeyRecovering = false;
   private hostKeyRecoveryAttempted = false;
@@ -170,6 +172,7 @@ export class NasshCommandBridge {
 
     this.options.onStatus?.('connecting');
     this.hasExited = false;
+    this.authCancelled = false;
     log.ssh.info('connecting via nassh CommandInstance', {
       host: this.options.host,
       port: this.options.port,
@@ -261,15 +264,26 @@ export class NasshCommandBridge {
     let loginPasswordProvided = false;
 
     instance.secureInput = async (message, bufLen, echo) => {
+      // OpenSSH often re-calls readpassphrase after an empty cancel response;
+      // never show another modal once the user has dismissed auth.
+      if (this.disposed || this.hasExited || this.authCancelled) return '';
+
       log.ssh.debug('secureInput requested', { echo, bufLen });
       const hostKeyResponse = await this.hostKeyGuard?.consumePendingHostKeyResponse(message);
       if (hostKeyResponse) return hostKeyResponse.slice(0, bufLen);
+      if (this.disposed || this.hasExited || this.authCancelled) return '';
 
       const eligible = isLoginPasswordPrompt(message, echo) && canSavePassword(credentialTarget);
-      // Unlock the vault once before touching saved passwords. If the user
-      // cancels the master-password prompt, fall back to a plain prompt with no
-      // save offer (vault stays locked, nothing is read or written).
-      const vaultReady = eligible ? await ensureVaultUnlocked() : false;
+      // Unlock the vault before touching saved passwords. Cancel must abort the
+      // connection — falling through to another "Authentication required" modal
+      // feels like the cancel was ignored.
+      let vaultReady = false;
+      if (eligible) {
+        const unlock = await ensureVaultUnlocked();
+        if (unlock === 'cancelled') return this.cancelSecureInput(instance);
+        vaultReady = unlock === 'ready';
+      }
+      if (this.disposed || this.hasExited || this.authCancelled) return '';
 
       if (eligible && vaultReady && !loginPasswordProvided) {
         // First login-password prompt: silently supply a stored password if present.
@@ -286,26 +300,7 @@ export class NasshCommandBridge {
 
       const offerSave = eligible && vaultReady;
       const { value, save } = await showSecureInputPrompt(message, bufLen, echo, { offerSave });
-      if (value === null) {
-        // Empty string makes OpenSSH re-prompt → modal reopens. Tear down the
-        // bridge first so a follow-up readpassphrase cannot schedule another UI.
-        log.ssh.warn('secureInput cancelled');
-        if (!this.disposed && !this.hasExited) {
-          this.hasExited = true;
-          try {
-            instance.terminateProgram_();
-          } catch {
-            /* already dead */
-          }
-          this.commandInstance = null;
-          this.ioShim?.dispose();
-          this.ioShim = null;
-          this.hostKeyGuard?.reset();
-          this.hostKeyGuard = null;
-          this.options.onStatus?.('disconnected', undefined, { disconnectReason: 'user' });
-        }
-        return '';
-      }
+      if (value === null) return this.cancelSecureInput(instance);
       if (offerSave) {
         loginPasswordProvided = true;
         if (save) {
@@ -517,8 +512,34 @@ export class NasshCommandBridge {
     this.resizeSubscription = null;
     this.hostKeyGuard?.reset();
     this.hostKeyGuard = null;
+    // User cancel already reported disconnected with reason `user`.
+    if (this.authCancelled) return;
     const disconnectReason: SessionDisconnectReason = code === 0 ? 'normal-exit' : 'transport';
     const error = code === 0 ? undefined : `SSH exited with status ${code}`;
     this.options.onStatus?.('disconnected', error, { disconnectReason });
+  }
+
+  /**
+   * Abort auth after the user dismisses a password / vault modal.
+   * Returning '' alone makes OpenSSH re-prompt; flag + tear-down stops the UI loop.
+   */
+  private cancelSecureInput(instance: NasshCommandInstance): string {
+    log.ssh.warn('secureInput cancelled');
+    this.authCancelled = true;
+    if (!this.disposed && !this.hasExited) {
+      this.hasExited = true;
+      try {
+        instance.terminateProgram_();
+      } catch {
+        /* already dead */
+      }
+      this.commandInstance = null;
+      this.ioShim?.dispose();
+      this.ioShim = null;
+      this.hostKeyGuard?.reset();
+      this.hostKeyGuard = null;
+      this.options.onStatus?.('disconnected', undefined, { disconnectReason: 'user' });
+    }
+    return '';
   }
 }

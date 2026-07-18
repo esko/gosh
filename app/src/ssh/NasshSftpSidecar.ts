@@ -99,10 +99,19 @@ export async function connectNasshSftpSidecar(spec: ConnectionIntent, signal?: A
   // the initialized client directly, so there is deliberately no CLI loop.
   instance.onSftpInitialised = () => undefined;
   instance.exit = () => instance.terminateProgram_();
+  let authCancelled = false;
   instance.secureInput = async (prompt, length, echo) => {
+    if (authCancelled) return '';
     const hostKey = await guard.consumePendingHostKeyResponse(prompt);
     if (hostKey) return hostKey.slice(0, length);
-    return ((await showSecureInputPrompt(prompt, length, echo)).value ?? '').slice(0, length);
+    const { value } = await showSecureInputPrompt(prompt, length, echo);
+    if (value === null) {
+      // Empty cancel makes OpenSSH re-prompt; tear down instead of looping the modal.
+      authCancelled = true;
+      instance.terminateProgram_();
+      return '';
+    }
+    return value.slice(0, length);
   };
   let identity: string | undefined;
   if (spec.identityId) identity = await stageIdentityForNassh(spec.identityId);
