@@ -2,11 +2,12 @@
  * DOM mounting for {@link MixedLayoutNode}. Keeps layout math in MixedLayout.ts.
  */
 
-import { DEFAULT_RESIZE_STEP, resizeLeaf as resizeLayoutLeaf, type MixedLayoutNode, type MixedResizeDirection } from './MixedLayout';
+import { DEFAULT_RESIZE_STEP, resizeLeaf as resizeLayoutLeaf, swapLeaves, walkLeaves, type MixedLayoutNode, type MixedResizeDirection } from './MixedLayout';
 
 export const MIXED_LAYOUT_ROOT_CLASS = 'mixed-layout-root';
 export const MIXED_SPLIT_CLASS = 'mixed-split';
 export const MIXED_LEAF_CLASS = 'mixed-leaf';
+export const MIXED_LEAF_DRAG_HANDLE_CLASS = 'mixed-leaf-drag-handle';
 export const MIXED_DIVIDER_CLASS = 'mixed-split-divider';
 
 const MIN_RATIO = 0.1;
@@ -35,6 +36,7 @@ export function mountMixedLayoutDom(
   const leafHosts = new Map<string, HTMLElement>();
   let currentLayout = layout;
   let zoomedLeafId: string | null = null;
+  let draggingLeafId: string | null = null;
   let prevRootPosition: string | null = null;
 
   const rootEl = document.createElement('div');
@@ -90,7 +92,21 @@ export function mountMixedLayoutDom(
     const preserved = preserveLeafChildren(leafHosts);
     currentLayout = next;
     leafHosts.clear();
-    renderNode(rootEl, next, leafHosts, preserved, options?.onLeafFocus);
+    const reorderEnabled = walkLeaves(next).length > 1;
+    renderNode(rootEl, next, leafHosts, preserved, {
+      onLeafFocus: options?.onLeafFocus,
+      onLeafSwap: (sourceLeafId, targetLeafId) => {
+        if (zoomedLeafId !== null) return;
+        const swapped = swapLeaves(currentLayout, sourceLeafId, targetLeafId);
+        applyLayout(swapped);
+      },
+      reorderEnabled,
+      rootEl,
+      getDraggingLeafId: () => draggingLeafId,
+      setDraggingLeafId: (leafId) => {
+        draggingLeafId = leafId;
+      },
+    });
     options?.onLayoutChange?.(next);
   };
 
@@ -156,7 +172,14 @@ function renderNode(
   node: MixedLayoutNode,
   leafHosts: Map<string, HTMLElement>,
   preserved: Map<string, DocumentFragment>,
-  onLeafFocus?: (leafId: string) => void,
+  renderOptions: {
+    onLeafFocus?: (leafId: string) => void;
+    onLeafSwap?: (sourceLeafId: string, targetLeafId: string) => void;
+    reorderEnabled?: boolean;
+    rootEl: HTMLElement;
+    getDraggingLeafId: () => string | null;
+    setDraggingLeafId: (leafId: string | null) => void;
+  },
 ): void {
   parent.replaceChildren();
   if (node.kind === 'leaf') {
@@ -165,7 +188,15 @@ function renderNode(
     leaf.dataset.mixedLeafId = node.leafId;
     leaf.dataset.mixedSurface = node.surface;
     leaf.tabIndex = -1;
-    leaf.addEventListener('pointerdown', () => onLeafFocus?.(node.leafId));
+    leaf.addEventListener('pointerdown', () => renderOptions.onLeafFocus?.(node.leafId));
+    if (renderOptions.reorderEnabled) {
+      const handle = document.createElement('div');
+      handle.className = MIXED_LEAF_DRAG_HANDLE_CLASS;
+      handle.title = 'Drag to reorder pane';
+      handle.draggable = true;
+      wireLeafDrag(handle, leaf, node.leafId, renderOptions);
+      leaf.append(handle);
+    }
     const saved = preserved.get(node.leafId);
     if (saved) leaf.append(saved);
     parent.append(leaf);
@@ -193,9 +224,62 @@ function renderNode(
 
   split.append(first, divider, second);
   parent.append(split);
-  renderNode(first, node.first, leafHosts, preserved, onLeafFocus);
-  renderNode(second, node.second, leafHosts, preserved, onLeafFocus);
+  renderNode(first, node.first, leafHosts, preserved, renderOptions);
+  renderNode(second, node.second, leafHosts, preserved, renderOptions);
   wireDivider(divider, split, first, second);
+}
+
+function wireLeafDrag(
+  handle: HTMLElement,
+  leaf: HTMLElement,
+  leafId: string,
+  options: {
+    onLeafSwap?: (sourceLeafId: string, targetLeafId: string) => void;
+    rootEl: HTMLElement;
+    getDraggingLeafId: () => string | null;
+    setDraggingLeafId: (leafId: string | null) => void;
+  },
+): void {
+  handle.addEventListener('dragstart', (event) => {
+    options.setDraggingLeafId(leafId);
+    leaf.classList.add('is-dragging');
+    event.dataTransfer?.setData('text/plain', leafId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  });
+
+  handle.addEventListener('dragend', () => {
+    options.setDraggingLeafId(null);
+    leaf.classList.remove('is-dragging');
+    for (const el of options.rootEl.querySelectorAll('.is-drop-target')) {
+      el.classList.remove('is-drop-target');
+    }
+  });
+
+  leaf.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  });
+
+  leaf.addEventListener('dragenter', (event) => {
+    event.preventDefault();
+    const sourceId = options.getDraggingLeafId();
+    if (sourceId && sourceId !== leafId) leaf.classList.add('is-drop-target');
+  });
+
+  leaf.addEventListener('dragleave', (event) => {
+    const related = event.relatedTarget;
+    if (!related || !leaf.contains(related as Node)) {
+      leaf.classList.remove('is-drop-target');
+    }
+  });
+
+  leaf.addEventListener('drop', (event) => {
+    event.preventDefault();
+    leaf.classList.remove('is-drop-target');
+    const sourceId = event.dataTransfer?.getData('text/plain');
+    if (!sourceId || sourceId === leafId) return;
+    options.onLeafSwap?.(sourceId, leafId);
+  });
 }
 
 function wireDivider(divider: HTMLElement, split: HTMLElement, first: HTMLElement, second: HTMLElement): void {

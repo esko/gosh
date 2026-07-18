@@ -2887,6 +2887,7 @@ async function mountMixedTabSession(input: {
     input.layout,
     (next) => {
       session.mixedLayout = next;
+      saveTabLayout();
     },
     (leaf) => focusMixedLeaf(session, leaf),
   );
@@ -2928,6 +2929,7 @@ async function splitBrowserBesideActiveTerminal(direction: 'vertical' | 'horizon
     layout,
     (next) => {
       session.mixedLayout = next;
+      saveTabLayout();
     },
     (leaf) => focusMixedLeaf(session, leaf),
   );

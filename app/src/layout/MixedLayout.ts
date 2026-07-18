@@ -130,6 +130,18 @@ export function splitLeaf(
   return { layout: replaceLeaf(root, leafId, split), newLeafId: siblingLeafId };
 }
 
+/** Exchange two leaves in-place; leaf ids and surfaces move with each leaf. */
+export function swapLeaves(root: MixedLayoutNode, leafIdA: string, leafIdB: string): MixedLayoutNode {
+  if (leafIdA === leafIdB) return root;
+  const leafA = findLeaf(root, leafIdA);
+  const leafB = findLeaf(root, leafIdB);
+  if (!leafA || !leafB) return root;
+  const tempLeafId = `__swap_${leafIdA}__${leafIdB}`;
+  let next = replaceLeaf(root, leafIdA, { ...leafB, leafId: tempLeafId });
+  next = replaceLeaf(next, leafIdB, { ...leafA });
+  return replaceLeaf(next, tempLeafId, { ...leafB });
+}
+
 export function removeLeaf(root: MixedLayoutNode, leafId: string): MixedLayoutNode | null {
   if (root.kind === 'leaf') {
     return root.leafId === leafId ? null : root;

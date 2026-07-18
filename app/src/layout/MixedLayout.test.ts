@@ -7,6 +7,7 @@ import {
   resizeLeaf,
   serializeLayout,
   splitLeaf,
+  swapLeaves,
   walkLeaves,
 } from './MixedLayout';
 
@@ -102,6 +103,57 @@ describe('MixedLayout', () => {
     expect(findLeaf(result.layout, 'term')?.surface).toBe('terminal');
     expect(findLeaf(result.layout, 'browser')?.surface).toBe('browser');
     expect(walkLeaves(result.layout)).toHaveLength(3);
+  });
+
+  it('swaps two leaves in a two-pane layout', () => {
+    const root = createTwoPaneLayout({
+      direction: 'vertical',
+      first: 'terminal',
+      second: 'browser',
+      ratio: 0.4,
+      firstLeafId: 'term',
+      secondLeafId: 'browser',
+    });
+    const swapped = swapLeaves(root, 'term', 'browser');
+    expect(swapped).toEqual({
+      kind: 'split',
+      direction: 'vertical',
+      ratio: 0.4,
+      first: { kind: 'leaf', leafId: 'browser', surface: 'browser' },
+      second: { kind: 'leaf', leafId: 'term', surface: 'terminal' },
+    });
+  });
+
+  it('swaps nested leaves without changing split ratios', () => {
+    const root = createTwoPaneLayout({
+      direction: 'vertical',
+      first: 'terminal',
+      second: 'browser',
+      ratio: 0.55,
+      firstLeafId: 'term',
+      secondLeafId: 'browser',
+    });
+    const split = splitLeaf(root, 'browser', 'horizontal', 'terminal', { newLeafId: 'term2' });
+    expect(split).not.toBeNull();
+    if (!split) return;
+    const swapped = swapLeaves(split.layout, 'term', 'term2');
+    expect(findLeaf(swapped, 'term')?.surface).toBe('terminal');
+    expect(findLeaf(swapped, 'term2')?.surface).toBe('terminal');
+    expect(findLeaf(swapped, 'browser')?.surface).toBe('browser');
+    const leaves = walkLeaves(swapped);
+    expect(leaves.map((leaf) => leaf.leafId)).toEqual(['term2', 'browser', 'term']);
+  });
+
+  it('returns root unchanged when swapping unknown or identical leaves', () => {
+    const root = createTwoPaneLayout({
+      direction: 'vertical',
+      first: 'terminal',
+      second: 'browser',
+      firstLeafId: 'term',
+      secondLeafId: 'browser',
+    });
+    expect(swapLeaves(root, 'term', 'term')).toBe(root);
+    expect(swapLeaves(root, 'term', 'missing')).toBe(root);
   });
 
   it('returns null when splitting an unknown leaf', () => {
