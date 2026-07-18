@@ -34,6 +34,8 @@ If `TCPServerSocket` is unavailable (plain browser tab, missing permission), ena
 
 ### Threat model (summary)
 
+Full analysis and release gate: [`docs/agent/THREAT_MODEL.md`](../agent/THREAT_MODEL.md).
+
 | Asset | Risk | Mitigation (this slice) |
 |-------|------|-------------------------|
 | Terminal sessions / pane control | Local process impersonates owner | Loopback bind; random token; disabled by default |

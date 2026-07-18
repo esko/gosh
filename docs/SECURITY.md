@@ -232,6 +232,22 @@ IWA Dev Mode Proxy assigns a **random** bundle ID — fine for development, not 
 
 Do not use dev proxy installs for secrets you would not put in a normal browser tab on an untrusted network.
 
+## Agent control (external)
+
+Gosh can expose a **local-only** agent control API so CLI tools and MCP adapters can drive terminal panes, layout, and (when wired) Controlled Frame browser tabs. This is **disabled by default** and is not a network service.
+
+| Posture | Detail |
+|---------|--------|
+| **Opt-in** | Settings → Security → *Allow local control* must be turned on |
+| **Loopback only** | Listener binds `127.0.0.1` with an ephemeral port — **no LAN / `0.0.0.0` bind** |
+| **Pairing** | Random bearer token stored in IndexedDB (`agentControl`); `gosh.authenticate` required before workspace RPC |
+| **Revocation** | Disable control or *Reset pairing token* stops the server and invalidates existing clients |
+| **Limits** | Max 4 clients, 30 req/s per connection, 1 MiB frames; in-memory audit ring (methods only, no payloads) |
+
+Full threat analysis, attacker scenarios, browser-tab risks, CDP caveats, and Chromebook validation gates: **[`docs/agent/THREAT_MODEL.md`](./agent/THREAT_MODEL.md)**. Transport details: [ADR 0013](./adr/0013-agent-control-transport.md).
+
+**Owner expectation:** Any local process that holds the pairing token (or can attach Chrome remote debugging to the Gosh page via `window.__goshAgent`) can read terminal output and inject input. Treat external control like leaving an unlocked shell on loopback.
+
 ## Non-goals
 
 Explicitly out of scope for this fork (upstream nassh may support some of these):
