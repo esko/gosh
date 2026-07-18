@@ -130,8 +130,10 @@ import {
   disposeMixedLeaf,
   focusMixedLeafDom,
   isMixedLeafZoomed,
+  mixedSplitAllowedForKeyboard,
   mountMixedLayout,
   resizeMixedLeaf,
+  resolveMixedSplitTarget,
   splitMixedLayoutLeaf,
   zoomMixedLeaf,
   browserLeafId,
@@ -3825,14 +3827,25 @@ function openTabOverview(): void {
   });
 }
 
-/** Split the focused Restty pane, or add a browser leaf in mixed tabs. */
-function splitActivePane(direction: 'vertical' | 'horizontal'): boolean {
+/** Split the focused Restty pane, or grow a mixed-tab layout leaf. */
+function splitActivePane(
+  direction: 'vertical' | 'horizontal',
+  options?: { surface?: 'terminal' | 'browser'; keyboard?: boolean },
+): boolean {
   const session = activeSession();
-  if (session?.kind === 'terminal') {
+  if (session?.kind === 'terminal' && options?.surface === undefined) {
     session.terminal?.split(direction);
     return true;
   }
-  return false;
+  if (session?.kind !== 'mixed') return false;
+  const panes = getWorkspaceRegistry().listPanes({ tabId: session.id });
+  const activePane = panes.find((p) => p.active);
+  if (!mixedSplitAllowedForKeyboard(activePane, options?.surface)) return false;
+  const target = resolveMixedSplitTarget(session.id, panes, options?.surface);
+  if (!target) return false;
+  if (target.surface === 'terminal' && !session.spec) return false;
+  void splitMixedPaneById(session.id, target.paneId, direction, options?.surface ?? target.surface);
+  return true;
 }
 
 /** Close the focused pane; mixed tabs close the active Gosh leaf. */
@@ -3896,8 +3909,8 @@ const shortcutHandlers: Record<ShortcutAction, () => boolean> = {
     cycleTab(-1);
     return true;
   },
-  splitVertical: () => splitActivePane('vertical'),
-  splitHorizontal: () => splitActivePane('horizontal'),
+  splitVertical: () => splitActivePane('vertical', { keyboard: true }),
+  splitHorizontal: () => splitActivePane('horizontal', { keyboard: true }),
   closePane: () => closeActivePane(),
   zoomPane: () => toggleZoomActivePane(),
   focusPaneLeft: () => focusPaneInDirection('left'),
@@ -4158,19 +4171,29 @@ function installTerminalContextMenu(terminalRoot: HTMLElement): void {
     const canCopy = (activeTerminal?.hasSelection() ?? false) || canCopyViaRenderer();
     const session = activeSession();
     const paneCount = session ? sessionPaneCount(session) : (activeTerminal?.paneCount() ?? 1);
+    const isMixed = session?.kind === 'mixed';
+    const canMixedTerminalSplit = isMixed && !!session?.spec;
+    const splitItems: ContextMenuItem[] = isMixed
+      ? [
+          { type: 'item', label: 'Split terminal right', key: '⌃⇧E', disabled: !canMixedTerminalSplit, onSelect: () => void splitActivePane('vertical', { surface: 'terminal' }) },
+          { type: 'item', label: 'Split terminal down', key: '⌃⇧D', disabled: !canMixedTerminalSplit, onSelect: () => void splitActivePane('horizontal', { surface: 'terminal' }) },
+          { type: 'item', label: 'Split browser right', onSelect: () => void splitActivePane('vertical', { surface: 'browser' }) },
+          { type: 'item', label: 'Split browser down', onSelect: () => void splitActivePane('horizontal', { surface: 'browser' }) },
+        ]
+      : [
+          { type: 'item', label: 'Split right', key: '⌃⇧E', onSelect: () => void splitActivePane('vertical') },
+          { type: 'item', label: 'Split down', key: '⌃⇧D', onSelect: () => void splitActivePane('horizontal') },
+        ];
     const items: ContextMenuItem[] = [
       { type: 'item', label: 'Copy', key: '⌃⇧C', disabled: !canCopy, onSelect: copySelection },
       { type: 'item', label: 'Paste', key: '⌃⇧V', onSelect: () => void pasteClipboard() },
       { type: 'item', label: 'Upload image and paste path', key: '⌃⌥⇧V', onSelect: () => void uploadClipboardImageAndPastePath() },
       { type: 'item', label: 'Copy path', onSelect: copyPath },
       { type: 'separator' },
-      ...([
-            { type: 'item', label: 'Split right', key: '⌃⇧E', onSelect: () => void splitActivePane('vertical') },
-            { type: 'item', label: 'Split down', key: '⌃⇧D', onSelect: () => void splitActivePane('horizontal') },
-            { type: 'item', label: isActivePaneZoomed() ? 'Restore pane' : 'Zoom pane', key: '⌃⇧Z', disabled: paneCount <= 1, onSelect: () => void toggleZoomActivePane() },
-            { type: 'item', label: 'Close pane', key: '⌃⇧W', disabled: paneCount <= 1, onSelect: () => void closeActivePane() },
-            { type: 'separator' },
-          ] as ContextMenuItem[]),
+      ...splitItems,
+      { type: 'item', label: isActivePaneZoomed() ? 'Restore pane' : 'Zoom pane', key: '⌃⇧Z', disabled: paneCount <= 1, onSelect: () => void toggleZoomActivePane() },
+      { type: 'item', label: 'Close pane', key: '⌃⇧W', disabled: paneCount <= 1, onSelect: () => void closeActivePane() },
+      { type: 'separator' },
       { type: 'item', label: 'Command palette…', key: '⌃⇧P', onSelect: openCommandPalette },
       { type: 'item', label: 'New window', onSelect: () => openWindow('/') },
       { type: 'item', label: 'Switch session…', onSelect: () => void openSessionPicker() },
@@ -4244,6 +4267,12 @@ function buildPaletteCommands(): PaletteCommand[] {
   const session = activeSession();
   const paneCount = session ? sessionPaneCount(session) : (activeTerminal?.paneCount() ?? 1);
   const canCopy = (activeTerminal?.hasSelection() ?? false) || canCopyViaRenderer();
+  const isMixed = session?.kind === 'mixed';
+  const mixedActivePane = isMixed && session
+    ? getWorkspaceRegistry().listPanes({ tabId: session.id }).find((p) => p.active)
+    : undefined;
+  const canMixedSplit = isMixed && !!mixedActivePane;
+  const canMixedTerminalSplit = canMixedSplit && !!session?.spec;
   const commands: PaletteCommand[] = [
     { label: 'New tab', group: 'Tabs', key: '⌃T', run: () => setActiveSession(createLauncherTab().id) },
     { label: 'New browser tab', group: 'Tabs', run: () => setActiveSession(createBrowserTab().id) },
@@ -4271,13 +4300,39 @@ function buildPaletteCommands(): PaletteCommand[] {
       disabled: session?.kind !== 'terminal' || !session.terminal,
       run: () => void splitBrowserBesideActiveTerminal('horizontal'),
     },
+    {
+      label: 'Split terminal right',
+      group: 'Panes',
+      key: '⌃⇧E',
+      disabled: !canMixedTerminalSplit,
+      run: () => void splitActivePane('vertical', { surface: 'terminal' }),
+    },
+    {
+      label: 'Split terminal down',
+      group: 'Panes',
+      key: '⌃⇧D',
+      disabled: !canMixedTerminalSplit,
+      run: () => void splitActivePane('horizontal', { surface: 'terminal' }),
+    },
+    {
+      label: 'Split browser right',
+      group: 'Panes',
+      disabled: !canMixedSplit,
+      run: () => void splitActivePane('vertical', { surface: 'browser' }),
+    },
+    {
+      label: 'Split browser down',
+      group: 'Panes',
+      disabled: !canMixedSplit,
+      run: () => void splitActivePane('horizontal', { surface: 'browser' }),
+    },
     { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: openTabOverview },
     { label: 'Duplicate session', group: 'Tabs', disabled: !activeSpec, run: duplicateSession },
     { label: 'Close tab', group: 'Tabs', key: '⌃W', disabled: !session, run: () => { if (session) confirmCloseSession(session, () => closeSession(session)); } },
     { label: 'Next tab', group: 'Tabs', key: '⌃Tab', disabled: sessions.length < 2, run: () => cycleTab(1) },
     { label: 'Previous tab', group: 'Tabs', key: '⌃⇧Tab', disabled: sessions.length < 2, run: () => cycleTab(-1) },
-    { label: 'Split right', group: 'Panes', key: '⌃⇧E', run: () => void splitActivePane('vertical') },
-    { label: 'Split down', group: 'Panes', key: '⌃⇧D', run: () => void splitActivePane('horizontal') },
+    { label: 'Split right', group: 'Panes', key: '⌃⇧E', disabled: session?.kind !== 'terminal' || !session.terminal, run: () => void splitActivePane('vertical') },
+    { label: 'Split down', group: 'Panes', key: '⌃⇧D', disabled: session?.kind !== 'terminal' || !session.terminal, run: () => void splitActivePane('horizontal') },
     { label: 'Focus next pane', group: 'Panes', disabled: paneCount <= 1, run: () => void activeTerminal?.cyclePane(1) },
     { label: 'Focus previous pane', group: 'Panes', disabled: paneCount <= 1, run: () => void activeTerminal?.cyclePane(-1) },
     { label: isActivePaneZoomed() ? 'Restore pane' : 'Zoom pane', group: 'Panes', key: '⌃⇧Z', disabled: paneCount <= 1, run: () => void toggleZoomActivePane() },
