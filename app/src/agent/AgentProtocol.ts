@@ -1,24 +1,8 @@
 /**
- * Shared method names and request/response shapes for the in-process agent
- * API (v0). External JSON-RPC adapters will reuse these names later.
+ * Back-compat re-exports. Prefer `app/src/agent/protocol` for JSON-RPC types.
  */
-
-export const AGENT_PROTOCOL_VERSION = 0;
-
-export const AGENT_METHODS = [
-  'gosh.capabilities',
-  'workspace.listWindows',
-  'workspace.listTabs',
-  'workspace.listPanes',
-  'pane.split',
-  'pane.focus',
-  'pane.resize',
-  'pane.zoom',
-  'pane.close',
-  'terminal.send',
-  'terminal.read',
-  'terminal.run',
-  'events.subscribe',
-] as const;
-
-export type AgentMethodName = (typeof AGENT_METHODS)[number];
+export {
+  AGENT_METHODS,
+  AGENT_PROTOCOL_VERSION,
+  type AgentMethodName,
+} from './protocol/methods';
