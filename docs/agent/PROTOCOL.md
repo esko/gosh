@@ -32,6 +32,7 @@ If the client requests an unsupported major version, the server responds with `i
 | `terminal.send` | `{ paneId, data }` |
 | `terminal.read` | `{ paneId, maxBytes? }` (stub) |
 | `terminal.run` | `{ paneId, command, timeoutMs? }` (stub) |
+| `pane.diagnostics` | `{ paneId }` |
 | `events.subscribe` | `{ types?: string[] }` |
 
 Server push uses the notification `events.push` with `{ subscriptionId, event }`.

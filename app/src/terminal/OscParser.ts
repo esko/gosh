@@ -12,15 +12,18 @@ export type Osc133State = {
   phase: Osc133Phase | null;
   commandRunning: boolean;
   exitCode: number | null;
+  /** Epoch ms when any OSC 133 marker was last applied; null before first marker. */
+  lastMarkerAt: number | null;
 };
 
 export function createOsc133State(): Osc133State {
-  return { phase: null, commandRunning: false, exitCode: null };
+  return { phase: null, commandRunning: false, exitCode: null, lastMarkerAt: null };
 }
 
 /** Apply an OSC 133 marker to pane-local prompt/command tracking state. */
-export function applyOsc133Event(state: Osc133State, event: Osc133Event): void {
+export function applyOsc133Event(state: Osc133State, event: Osc133Event, atMs = Date.now()): void {
   state.phase = event.phase;
+  state.lastMarkerAt = atMs;
   switch (event.phase) {
     case 'A':
     case 'B':

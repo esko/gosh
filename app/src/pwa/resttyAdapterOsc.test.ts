@@ -38,11 +38,11 @@ describe('ResttyTerminalAdapter OSC capture', () => {
     adapter.captureOsc(bridge, '\x1b]133;C\x07');
     adapter.captureOsc(bridge, '\x1b]133;D;0\x07');
 
-    expect(adapter.getOsc133State()).toEqual({
-      phase: 'D',
-      commandRunning: false,
-      exitCode: 0,
-    });
+    const osc = adapter.getOsc133State();
+    expect(osc?.phase).toBe('D');
+    expect(osc?.commandRunning).toBe(false);
+    expect(osc?.exitCode).toBe(0);
+    expect(osc?.lastMarkerAt).toBeTypeOf('number');
   });
 
   it('resets OSC carry and 133 state on pane reconnect', () => {
@@ -53,6 +53,7 @@ describe('ResttyTerminalAdapter OSC capture', () => {
       phase: null,
       commandRunning: false,
       exitCode: null,
+      lastMarkerAt: null,
     });
     expect(adapter.captureOsc(bridge, 'plain')).toBeUndefined();
   });

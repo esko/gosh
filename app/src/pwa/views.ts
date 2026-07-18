@@ -3357,6 +3357,13 @@ function installTerminalDebugHud(
       ];
       if (win.__resttyAdapter && renderer === 'restty') {
         lines.push(`restty debug: ${JSON.stringify(win.__resttyAdapter.getDebugSummary())}`);
+        const osc = win.__resttyAdapter.getOsc133State();
+        if (osc) {
+          const detected = osc.lastMarkerAt !== null;
+          lines.push(
+            `osc133: detected=${detected} phase=${osc.phase ?? '-'} running=${osc.commandRunning} exit=${osc.exitCode ?? '-'}`,
+          );
+        }
         const wheelLogs = (win.__resttyDebugLog ?? []).filter((e) => e.location.includes('wheel')).slice(-3);
         if (wheelLogs.length) {
           lines.push(`recent wheel: ${wheelLogs.map((e) => JSON.stringify(e.data)).join(' | ')}`);

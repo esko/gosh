@@ -6,6 +6,7 @@
 import {
   AgentControlService,
   WorkspaceRegistry,
+  buildPaneDiagnostics,
   type PaneDirection,
   type PaneHost,
   type SplitDirection,
@@ -128,6 +129,14 @@ export function createPaneHost(lookup: AgentSessionLookup): PaneHost {
       const conn = session.panes.get(pane.resttyPaneId);
       if (!conn) throw new Error(`Pane transport missing: ${paneId}`);
       conn.sink.insertText(data);
+    },
+
+    paneDiagnostics(paneId: string) {
+      const pane = requirePane(paneId);
+      const terminal = requireTerminal(pane.tabId);
+      const osc = terminal.getOsc133State(pane.resttyPaneId);
+      if (!osc) return null;
+      return buildPaneDiagnostics(osc);
     },
 
     isZoomed(paneId: string) {

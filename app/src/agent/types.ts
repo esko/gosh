@@ -69,10 +69,23 @@ export type AgentCapabilityMethod =
   | 'terminalSend'
   | 'terminalRead'
   | 'terminalRun'
+  | 'paneDiagnostics'
   | 'subscribe';
 
 export type AgentCapabilities = {
   methods: Record<AgentCapabilityMethod, { available: boolean; reason?: string }>;
+};
+
+export type PaneOsc133Diagnostics = {
+  detected: boolean;
+  phase: 'A' | 'B' | 'C' | 'D' | null;
+  lastMarkerAt?: number;
+  commandRunning: boolean;
+  exitCode: number | null;
+};
+
+export type PaneDiagnostics = {
+  osc133: PaneOsc133Diagnostics;
 };
 
 /**
@@ -86,6 +99,7 @@ export type PaneHost = {
   zoom(paneId: string, zoomed?: boolean): boolean;
   close(paneId: string): boolean;
   send(paneId: string, data: string): void;
+  paneDiagnostics?(paneId: string): PaneDiagnostics | null;
   isZoomed?(paneId: string): boolean;
 };
 
