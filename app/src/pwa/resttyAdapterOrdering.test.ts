@@ -10,13 +10,17 @@ describe('PaneBridge terminal reply ordering', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
-  const makeBridge = () => {
-    const owner = {
+  const stubOwner = (extra: Record<string, unknown> = {}) =>
+    ({
       notifyPaneOpen() {},
       captureOsc() {},
       focusPane() {},
-    } as unknown as ResttyTerminalAdapter;
-    const bridge = new PaneBridge(1, owner);
+      resetPaneOsc() {},
+      ...extra,
+    }) as unknown as ResttyTerminalAdapter;
+
+  const makeBridge = () => {
+    const bridge = new PaneBridge(1, stubOwner());
     const sent: string[] = [];
     const rendered: string[] = [];
     bridge.onInput((data) => sent.push(data));
@@ -47,12 +51,7 @@ describe('PaneBridge terminal reply ordering', () => {
   });
 
   it('does not answer queries before a transport connects', () => {
-    const owner = {
-      notifyPaneOpen() {},
-      captureOsc() {},
-      focusPane() {},
-    } as unknown as ResttyTerminalAdapter;
-    const bridge = new PaneBridge(1, owner);
+    const bridge = new PaneBridge(1, stubOwner());
     const sent: string[] = [];
     bridge.onInput((data) => sent.push(data));
 
@@ -63,13 +62,14 @@ describe('PaneBridge terminal reply ordering', () => {
 
   it('triggers the owner bell on BEL and forwards the byte to Restty', () => {
     const bellPaneIds: number[] = [];
-    const owner = {
-      notifyPaneOpen() {},
-      captureOsc() {},
-      focusPane() {},
-      triggerBell(paneId: number) { bellPaneIds.push(paneId); },
-    } as unknown as ResttyTerminalAdapter;
-    const bridge = new PaneBridge(7, owner);
+    const bridge = new PaneBridge(
+      7,
+      stubOwner({
+        triggerBell(paneId: number) {
+          bellPaneIds.push(paneId);
+        },
+      }),
+    );
     const rendered: string[] = [];
     bridge.connect({ callbacks: { onData: (d: string) => rendered.push(d) } });
 
@@ -81,13 +81,14 @@ describe('PaneBridge terminal reply ordering', () => {
 
   it('does not trigger the bell for output without BEL', () => {
     const bellPaneIds: number[] = [];
-    const owner = {
-      notifyPaneOpen() {},
-      captureOsc() {},
-      focusPane() {},
-      triggerBell(paneId: number) { bellPaneIds.push(paneId); },
-    } as unknown as ResttyTerminalAdapter;
-    const bridge = new PaneBridge(1, owner);
+    const bridge = new PaneBridge(
+      1,
+      stubOwner({
+        triggerBell(paneId: number) {
+          bellPaneIds.push(paneId);
+        },
+      }),
+    );
     bridge.connect({ callbacks: { onData: () => {} } });
 
     bridge.write('no bell here');
@@ -96,12 +97,7 @@ describe('PaneBridge terminal reply ordering', () => {
   });
 
   it('cleans up oninput and connects listeners when disposed', () => {
-    const owner = {
-      notifyPaneOpen() {},
-      captureOsc() {},
-      focusPane() {},
-    } as unknown as ResttyTerminalAdapter;
-    const bridge = new PaneBridge(1, owner);
+    const bridge = new PaneBridge(1, stubOwner());
     let inputTriggered = false;
     let resizeTriggered = false;
     bridge.onInput(() => { inputTriggered = true; });
