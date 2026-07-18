@@ -81,8 +81,15 @@ Typical flow:
 - Snapshot output is size-bounded to reduce exfiltration risk from large pages.
 - Secret inputs never leave the guest with real values in agent-visible payloads.
 
+## Screenshots (feasibility)
+
+Visual capture of Controlled Frame **guest** content is **not** implemented. CDP `Page.captureScreenshot` may only include the outer IWA shell unless Chromium exposes a nested guest target — see [ADR 0015](../adr/0015-browser-screenshot-feasibility.md) and `npm run probe:controlled-frame-screenshot` for the device-validation harness.
+
+Semantic `browser.snapshot` remains the supported automation path when pixels are unavailable.
+
 ## Known limitations
 
+- No `browser.screenshot` RPC; guest pixel capture unproven (ADR 0015)
 - No mixed terminal/browser splits (D4)
 - Browser tabs are not restored from `sessionStorage` tab layout
 - No `newwindow` / `dialog` automation yet
