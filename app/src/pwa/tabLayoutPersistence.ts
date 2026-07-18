@@ -3,7 +3,10 @@
  * Pure helpers for serialize/migrate — views.ts owns DOM/session wiring on restore.
  */
 
-import type { LaunchConnectionIntent } from '../connections/ConnectionIntent';
+import {
+  connectionLayoutKey,
+  type LaunchConnectionIntent,
+} from '../connections/ConnectionIntent';
 import {
   MIXED_LAYOUT_VERSION,
   serializeLayout,
@@ -27,12 +30,20 @@ export type SavedMixedTab = {
   browserUrls?: Record<string, string>;
 };
 
-export type SavedTabEntry = SavedTerminalTab | SavedMixedTab;
+export type SavedBrowserTab = {
+  kind: 'browser';
+  url: string;
+  title?: string;
+};
+
+export type SavedTabEntry = SavedTerminalTab | SavedMixedTab | SavedBrowserTab;
 
 export type SavedTabLayout = {
   version: typeof SAVED_TAB_LAYOUT_VERSION;
   tabs: SavedTabEntry[];
   activeIndex: number;
+  /** Window connection identity when tabs include browser-only entries. */
+  connectionKey?: string;
 };
 
 /** Legacy shape before mixed-tab support (no version field). */
@@ -41,13 +52,24 @@ export type LegacySavedTabLayout = {
   activeIndex: number;
 };
 
-export type RestorableSessionSnapshot = {
-  kind: 'terminal' | 'mixed';
-  spec: LaunchConnectionIntent;
-  resumeEtSessionId?: string;
-  mixedLayout?: MixedLayoutNode;
-  browserUrls?: Record<string, string>;
-};
+export type RestorableSessionSnapshot =
+  | {
+      kind: 'terminal';
+      spec: LaunchConnectionIntent;
+      resumeEtSessionId?: string;
+    }
+  | {
+      kind: 'mixed';
+      spec: LaunchConnectionIntent;
+      resumeEtSessionId?: string;
+      mixedLayout: MixedLayoutNode;
+      browserUrls?: Record<string, string>;
+    }
+  | {
+      kind: 'browser';
+      url: string;
+      title?: string;
+    };
 
 const CONNECTION_PROTOCOLS = new Set(['ssh', 'mosh', 'et', 'tsshd', 'echo']);
 
@@ -69,21 +91,30 @@ export function migrateLegacySavedTabLayout(legacy: LegacySavedTabLayout): Saved
   };
 }
 
-export function buildSavedTabLayout(tabs: SavedTabEntry[], activeIndex: number): SavedTabLayout {
+export function buildSavedTabLayout(
+  tabs: SavedTabEntry[],
+  activeIndex: number,
+  connectionKey?: string,
+): SavedTabLayout {
+  const key = connectionKey?.trim();
   return {
     version: SAVED_TAB_LAYOUT_VERSION,
     tabs,
     activeIndex: clampActiveIndex(activeIndex, tabs.length),
+    ...(key ? { connectionKey: key } : {}),
   };
 }
 
 export function snapshotToSavedTab(snapshot: RestorableSessionSnapshot): SavedTabEntry {
+  if (snapshot.kind === 'browser') {
+    const entry: SavedBrowserTab = { kind: 'browser', url: snapshot.url };
+    const title = snapshot.title?.trim();
+    if (title && title !== 'Browser') entry.title = title;
+    return entry;
+  }
   const spec = withResumeEtSession(snapshot.spec, snapshot.resumeEtSessionId);
   if (snapshot.kind === 'terminal') {
     return { kind: 'terminal', spec };
-  }
-  if (!snapshot.mixedLayout) {
-    throw new Error('mixed snapshot requires mixedLayout');
   }
   const entry: SavedMixedTab = {
     kind: 'mixed',
@@ -98,13 +129,30 @@ export function snapshotToSavedTab(snapshot: RestorableSessionSnapshot): SavedTa
 export function buildSavedTabLayoutFromSnapshots(
   snapshots: RestorableSessionSnapshot[],
   activeIndex: number,
+  connectionKey?: string,
 ): SavedTabLayout | null {
   if (snapshots.length === 0) return null;
-  return buildSavedTabLayout(snapshots.map(snapshotToSavedTab), activeIndex);
+  return buildSavedTabLayout(snapshots.map(snapshotToSavedTab), activeIndex, connectionKey);
+}
+
+export function firstConnectionSpec(layout: SavedTabLayout): LaunchConnectionIntent | null {
+  for (const tab of layout.tabs) {
+    if (tab.kind === 'terminal' || tab.kind === 'mixed') return tab.spec;
+  }
+  return null;
 }
 
 export function firstTabSpec(layout: SavedTabLayout): LaunchConnectionIntent {
-  return layout.tabs[0]!.spec;
+  const spec = firstConnectionSpec(layout);
+  if (!spec) throw new Error('layout has no connection spec');
+  return spec;
+}
+
+/** Connection identity for restore: stored key or first terminal/mixed tab spec. */
+export function layoutConnectionKey(layout: SavedTabLayout): string {
+  if (layout.connectionKey) return layout.connectionKey;
+  const spec = firstConnectionSpec(layout);
+  return spec ? connectionLayoutKey(spec) : '';
 }
 
 export function normalizeSavedTabLayout(raw: unknown): SavedTabLayout | null {
@@ -119,7 +167,9 @@ export function normalizeSavedTabLayout(raw: unknown): SavedTabLayout | null {
     if (tabs.length === 0) return null;
     const activeIndex =
       typeof record.activeIndex === 'number' ? record.activeIndex : 0;
-    return buildSavedTabLayout(tabs, activeIndex);
+    const connectionKey =
+      typeof record.connectionKey === 'string' ? record.connectionKey.trim() : undefined;
+    return buildSavedTabLayout(tabs, activeIndex, connectionKey);
   }
 
   if (isLegacySavedTabLayout(raw)) {
@@ -145,6 +195,14 @@ export function serializeSavedTabLayout(layout: SavedTabLayout): string {
 function parseSavedTabEntry(raw: unknown): SavedTabEntry | null {
   if (!raw || typeof raw !== 'object') return null;
   const record = raw as Record<string, unknown>;
+
+  if (record.kind === 'browser') {
+    const url = typeof record.url === 'string' ? record.url.trim() : '';
+    if (!url || url === 'about:blank') return null;
+    const title = typeof record.title === 'string' ? record.title.trim() : '';
+    return title ? { kind: 'browser', url, title } : { kind: 'browser', url };
+  }
+
   const spec = parseConnectionSpec(record.spec);
   if (!spec) return null;
 

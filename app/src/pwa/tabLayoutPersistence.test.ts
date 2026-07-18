@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createTwoPaneLayout, serializeLayout } from '../layout/MixedLayout';
 import type { LaunchConnectionIntent } from '../connections/ConnectionIntent';
+import { connectionLayoutKey } from '../connections/ConnectionIntent';
 import {
   buildSavedTabLayout,
   buildSavedTabLayoutFromSnapshots,
+  firstConnectionSpec,
   firstTabSpec,
   isLegacySavedTabLayout,
+  layoutConnectionKey,
   migrateLegacySavedTabLayout,
   normalizeSavedTabLayout,
   parseSavedTabLayout,
@@ -40,7 +43,7 @@ describe('tabLayoutPersistence', () => {
     });
   });
 
-  it('round-trips version 2 layouts with terminal and mixed tabs', () => {
+  it('round-trips version 2 layouts with terminal, mixed, and browser tabs', () => {
     const layout = createTwoPaneLayout({
       direction: 'vertical',
       first: 'terminal',
@@ -48,8 +51,10 @@ describe('tabLayoutPersistence', () => {
       firstLeafId: 'leaf_term',
       secondLeafId: 'leaf_browser',
     });
+    const connKey = connectionLayoutKey(sshSpec('host-a'));
     const saved: SavedTabLayout = buildSavedTabLayout(
       [
+        { kind: 'browser', url: 'https://docs.example.com', title: 'Docs' },
         { kind: 'terminal', spec: sshSpec('host-a') },
         {
           kind: 'mixed',
@@ -58,15 +63,31 @@ describe('tabLayoutPersistence', () => {
           browserUrls: { leaf_browser: 'https://example.com/docs' },
         },
       ],
-      1,
+      0,
+      connKey,
     );
     const json = serializeSavedTabLayout(saved);
     const parsed = parseSavedTabLayout(json);
     expect(parsed).toEqual(saved);
     expect(firstTabSpec(parsed!)).toEqual(sshSpec('host-a'));
+    expect(firstConnectionSpec(parsed!)).toEqual(sshSpec('host-a'));
+    expect(layoutConnectionKey(parsed!)).toBe(connKey);
   });
 
-  it('builds saved layout from session snapshots', () => {
+  it('restores browser-only layouts via stored connectionKey', () => {
+    const key = connectionLayoutKey(sshSpec('only-browser'));
+    const saved = buildSavedTabLayout(
+      [{ kind: 'browser', url: 'https://gosh.dev/guide' }],
+      0,
+      key,
+    );
+    const parsed = parseSavedTabLayout(serializeSavedTabLayout(saved));
+    expect(parsed).toEqual(saved);
+    expect(firstConnectionSpec(parsed!)).toBeNull();
+    expect(layoutConnectionKey(parsed!)).toBe(key);
+  });
+
+  it('builds saved layout from session snapshots including browser tabs', () => {
     const mixedLayout = createTwoPaneLayout({
       direction: 'horizontal',
       first: 'terminal',
@@ -76,6 +97,7 @@ describe('tabLayoutPersistence', () => {
     });
     const layout = buildSavedTabLayoutFromSnapshots(
       [
+        { kind: 'browser', url: 'https://example.com', title: 'Example' },
         { kind: 'terminal', spec: sshSpec('one'), resumeEtSessionId: 'et-old' },
         {
           kind: 'mixed',
@@ -84,17 +106,21 @@ describe('tabLayoutPersistence', () => {
           browserUrls: { b1: 'https://gosh.dev' },
         },
       ],
-      0,
+      2,
+      'conn-key',
     );
     expect(layout?.tabs[0]).toEqual({
+      kind: 'browser',
+      url: 'https://example.com',
+      title: 'Example',
+    });
+    expect(layout?.tabs[1]).toEqual({
       kind: 'terminal',
       spec: { ...sshSpec('one'), etSessionId: 'et-old' },
     });
-    expect(layout?.tabs[1]?.kind).toBe('mixed');
-    if (layout?.tabs[1]?.kind === 'mixed') {
-      expect(layout.tabs[1].browserUrls).toEqual({ b1: 'https://gosh.dev' });
-      expect(layout.tabs[1].layout.version).toBe(1);
-    }
+    expect(layout?.tabs[2]?.kind).toBe('mixed');
+    expect(layout?.activeIndex).toBe(2);
+    expect(layout?.connectionKey).toBe('conn-key');
   });
 
   it('normalizes legacy JSON and clamps active index', () => {
@@ -117,9 +143,16 @@ describe('tabLayoutPersistence', () => {
         activeIndex: 0,
       }),
     ).toBeNull();
+    expect(
+      normalizeSavedTabLayout({
+        version: 2,
+        tabs: [{ kind: 'browser', url: 'about:blank' }],
+        activeIndex: 0,
+      }),
+    ).toBeNull();
   });
 
-  it('snapshotToSavedTab omits blank browser URLs', () => {
+  it('snapshotToSavedTab omits blank browser URLs in mixed tabs', () => {
     const tab = snapshotToSavedTab({
       kind: 'mixed',
       spec: sshSpec('host'),
@@ -136,5 +169,14 @@ describe('tabLayoutPersistence', () => {
     if (tab.kind === 'mixed') {
       expect(tab.browserUrls).toBeUndefined();
     }
+  });
+
+  it('snapshotToSavedTab omits default browser title', () => {
+    expect(
+      snapshotToSavedTab({ kind: 'browser', url: 'https://example.com', title: 'Browser' }),
+    ).toEqual({ kind: 'browser', url: 'https://example.com' });
+    expect(
+      snapshotToSavedTab({ kind: 'browser', url: 'https://example.com', title: 'Example' }),
+    ).toEqual({ kind: 'browser', url: 'https://example.com', title: 'Example' });
   });
 });
