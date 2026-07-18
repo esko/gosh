@@ -1,5 +1,6 @@
 import { buildCapabilities } from './capabilities';
 import { CommandTracker, type CommandRecord, type Osc133FeedEvent } from './CommandTracker';
+import type { AgentActivityAction } from './agentActivityPulse';
 import type { AgentEventBus, AgentEventListener, AgentSubscription } from './AgentEventBus';
 import type { WorkspaceRegistry } from './WorkspaceRegistry';
 import {
@@ -30,6 +31,8 @@ import type {
 
 export type { CommandRecord, Osc133FeedEvent };
 
+export type AgentActivityListener = (input: { paneId: string; action: AgentActivityAction }) => void;
+
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
 const DEFAULT_RUN_MAX_OUTPUT_BYTES = 256_000;
 
@@ -54,6 +57,7 @@ export class AgentControlService {
   private host: PaneHost | null;
   private browserHost: BrowserHost | null;
   private readonly activeRuns = new Set<string>();
+  private activityListener: AgentActivityListener | null = null;
 
   constructor(options: AgentControlServiceOptions) {
     this.registry = options.registry;
@@ -76,6 +80,23 @@ export class AgentControlService {
 
   setBrowserHost(host: BrowserHost | null): void {
     this.browserHost = host;
+  }
+
+  /** UI hook for per-pane typing / terminal.run activity chrome (optional). */
+  setActivityListener(listener: AgentActivityListener | null): void {
+    this.activityListener = listener;
+  }
+
+  private notifyActivity(paneId: string, action: AgentActivityAction): void {
+    this.activityListener?.({ paneId, action });
+  }
+
+  private emitBrowserNavigated(tabId: string, url: string): void {
+    this.events.emit('browser.navigated', {
+      windowId: this.registry.windowId,
+      tabId,
+      url,
+    });
   }
 
   capabilities(): AgentCapabilities {
@@ -136,7 +157,9 @@ export class AgentControlService {
     }
     try {
       resolved.value.host.navigate(input.tabId, input.url);
-      return agentOk({ tabId: input.tabId, url: resolved.value.host.getUrl(input.tabId) });
+      const url = resolved.value.host.getUrl(input.tabId);
+      this.emitBrowserNavigated(input.tabId, url);
+      return agentOk({ tabId: input.tabId, url });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     }
@@ -147,6 +170,9 @@ export class AgentControlService {
     if (!resolved.ok) return resolved;
     try {
       const moved = await resolved.value.host.back(input.tabId);
+      if (moved) {
+        this.emitBrowserNavigated(input.tabId, resolved.value.host.getUrl(input.tabId));
+      }
       return agentOk({ tabId: input.tabId, moved });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
@@ -158,6 +184,9 @@ export class AgentControlService {
     if (!resolved.ok) return resolved;
     try {
       const moved = await resolved.value.host.forward(input.tabId);
+      if (moved) {
+        this.emitBrowserNavigated(input.tabId, resolved.value.host.getUrl(input.tabId));
+      }
       return agentOk({ tabId: input.tabId, moved });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
@@ -169,6 +198,7 @@ export class AgentControlService {
     if (!resolved.ok) return resolved;
     try {
       resolved.value.host.reload(input.tabId);
+      this.emitBrowserNavigated(input.tabId, resolved.value.host.getUrl(input.tabId));
       return agentOk({ tabId: input.tabId, reloaded: true });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
@@ -473,6 +503,7 @@ export class AgentControlService {
     }
     try {
       host.value.send(input.paneId, input.data);
+      this.notifyActivity(input.paneId, 'send');
       return agentOk({ paneId: input.paneId });
     } catch (err) {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
@@ -557,6 +588,7 @@ export class AgentControlService {
     }
 
     this.activeRuns.add(paneId);
+    this.notifyActivity(paneId, 'run-start');
     try {
       host.value.send(paneId, `${input.command}\n`);
 
@@ -616,6 +648,7 @@ export class AgentControlService {
       return agentErr('failed', err instanceof Error ? err.message : String(err));
     } finally {
       this.activeRuns.delete(paneId);
+      this.notifyActivity(paneId, 'run-end');
       linked?.dispose();
     }
   }

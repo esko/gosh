@@ -116,6 +116,7 @@ import {
   stopAgentControlServer,
   syncAgentControlServer,
 } from './agentControlServerHost';
+import { mountAgentPaneActivity } from './agentActivityUi';
 import { mountBrowserSession } from '../browser/BrowserSession';
 import type { ControlledFrameController } from '../browser/ControlledFrameController';
 
@@ -2399,7 +2400,18 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     sleep,
   });
   agentControlCleanup?.();
-  agentControlCleanup = mountAgentControlIndicator(root);
+  const disposeControlIndicator = mountAgentControlIndicator(root);
+  const disposePaneActivity = mountAgentPaneActivity({
+    lookup: {
+      findByTabId: (tabId) => sessions.find((s) => s.id === tabId),
+      sleep,
+    },
+    getService: getAgentControlService,
+  });
+  agentControlCleanup = () => {
+    disposeControlIndicator();
+    disposePaneActivity();
+  };
   void loadPairingState().then((pairing) => {
     if (pairing.enabled) void syncAgentControlServer(getAgentControlService()).catch(() => undefined);
   });
