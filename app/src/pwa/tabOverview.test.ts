@@ -1,9 +1,13 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { describe, expect, it } from 'vitest';
 import {
   TabPreviewCache,
   clampTabOverviewSelection,
   filterTabOverviewEntries,
   moveTabOverviewSelection,
+  patchTabOverviewPreviewImages,
   type TabOverviewEntry,
 } from './tabOverview';
 
@@ -74,5 +78,22 @@ describe('tab overview helpers', () => {
     expect(revoked).toEqual(['blob:1', 'blob:2', 'blob:3']);
     expect(cache.get('tab1')).toBeUndefined();
     expect(cache.get('tab2')).toBeUndefined();
+  });
+
+  it('patches overview card images in place when preview urls change', () => {
+    const root = document.createElement('div');
+    root.innerHTML = `
+      <div data-tab-overview-id="tab1">
+        <div class="tab-overview-thumb"><div class="tab-overview-placeholder"><span>No preview yet</span></div></div>
+      </div>
+      <div data-tab-overview-id="tab2">
+        <div class="tab-overview-thumb"><img class="tab-overview-img" src="blob:old" alt=""></div>
+      </div>
+    `;
+    const urls = new Map([['tab1', 'blob:new1'], ['tab2', 'blob:new2']]);
+    patchTabOverviewPreviewImages(root, (id) => urls.get(id));
+    expect(root.querySelector('[data-tab-overview-id="tab1"] img')?.getAttribute('src')).toBe('blob:new1');
+    expect(root.querySelector('[data-tab-overview-id="tab1"] .tab-overview-placeholder')).toBeNull();
+    expect(root.querySelector('[data-tab-overview-id="tab2"] img')?.getAttribute('src')).toBe('blob:new2');
   });
 });

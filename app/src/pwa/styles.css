@@ -2823,6 +2823,45 @@ html.app-chrome .term-shell {
   border-color: rgba(224, 87, 75, 0.4);
 }
 
+.expose-toggle {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 1201;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
+}
+
+.expose-toggle:hover {
+  color: var(--fg);
+  background: var(--wash-hover);
+  border-color: var(--line);
+}
+
+.expose-toggle[data-open='true'],
+.expose-toggle[aria-pressed='true'] {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent, #8caad2) 45%, var(--line-2));
+  background: color-mix(in srgb, var(--accent, #8caad2) 14%, var(--surface));
+}
+
+.expose-toggle svg {
+  display: block;
+}
+
+.has-expose-toggle .agent-control-indicator {
+  left: 52px;
+}
+
 .agent-control-indicator {
   position: fixed;
   top: 10px;

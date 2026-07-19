@@ -22,6 +22,9 @@ type ObjectUrlApi = {
   revokeObjectURL(url: string): void;
 };
 
+/** Poll interval while the Exposé / tab-overview overlay is open. */
+export const LIVE_TAB_PREVIEW_MS = 700;
+
 function entrySearchText(entry: TabOverviewEntry): string {
   return [
     entry.title,
@@ -86,5 +89,45 @@ export class TabPreviewCache {
 
   clear(): void {
     for (const tabId of [...this.previews.keys()]) this.revoke(tabId);
+  }
+}
+
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/** Update card preview images in place when blob URLs change (live Exposé). */
+export function patchTabOverviewPreviewImages(
+  root: ParentNode,
+  getPreviewUrl: (tabId: string) => string | undefined,
+): void {
+  for (const card of root.querySelectorAll<HTMLElement>('[data-tab-overview-id]')) {
+    const tabId = card.dataset.tabOverviewId;
+    if (!tabId) continue;
+    const thumb = card.querySelector('.tab-overview-thumb');
+    if (!thumb) continue;
+    const url = getPreviewUrl(tabId);
+    let img = thumb.querySelector<HTMLImageElement>('img.tab-overview-img');
+    if (!url) {
+      if (img) {
+        img.remove();
+        if (!thumb.querySelector('.tab-overview-placeholder')) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'tab-overview-placeholder';
+          placeholder.innerHTML = '<span>No preview yet</span>';
+          thumb.prepend(placeholder);
+        }
+      }
+      continue;
+    }
+    thumb.querySelector('.tab-overview-placeholder')?.remove();
+    if (!img) {
+      const holder = document.createElement('div');
+      holder.innerHTML = `<img class="tab-overview-img" alt="" src="${escapeAttr(url)}">`;
+      img = holder.firstElementChild as HTMLImageElement;
+      thumb.prepend(img);
+    } else if (img.getAttribute('src') !== url) {
+      img.setAttribute('src', url);
+    }
   }
 }

@@ -85,10 +85,12 @@ import { readClipboardPaste } from './clipboardMedia';
 import { shellQuotePath } from '../ssh/RemoteImageUploader';
 import { HEARTBEAT_INTERVAL_MS, LIVENESS_STORAGE_KEY, liveHostKeys } from '../storage/sessionLiveness';
 import {
+  LIVE_TAB_PREVIEW_MS,
   TabPreviewCache,
   clampTabOverviewSelection,
   filterTabOverviewEntries,
   moveTabOverviewSelection,
+  patchTabOverviewPreviewImages,
   type TabOverviewEntry,
 } from './tabOverview';
 import {
@@ -308,6 +310,11 @@ const previewCaptureInflight = new Map<string, Promise<void>>();
 /** True after freeze/BFCache suspend until resume reconnect finishes. */
 let terminalSuspended = false;
 let resumeTransportsPromise: Promise<void> | null = null;
+/** Close handler while Exposé / tab overview is open. */
+let exposeClose: (() => void) | null = null;
+let exposeLiveTimer = 0;
+let exposeToggleBtn: HTMLButtonElement | null = null;
+let exposeToggleCleanup: (() => void) | null = null;
 
 function activeSession(): TermSession | null {
   return sessions.find((s) => s.id === activeSessionId) ?? null;
@@ -659,7 +666,7 @@ function overlayFocusableElements(content: HTMLElement): HTMLElement[] {
   );
 }
 
-function openOverlay(build: (close: () => void) => HTMLElement): void {
+function openOverlay(build: (close: () => void) => HTMLElement, onClose?: () => void): void {
   const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const overlay = document.createElement('div');
   overlay.className = 'overlay';
@@ -699,6 +706,7 @@ function openOverlay(build: (close: () => void) => HTMLElement): void {
   function close(): void {
     if (closed) return;
     closed = true;
+    onClose?.();
     overlay.remove();
     const index = overlayStack.indexOf(overlay);
     if (index >= 0) overlayStack.splice(index, 1);
@@ -2575,6 +2583,8 @@ export async function renderTerminal(root: HTMLElement): Promise<void> {
     splitMixedPane: splitMixedPaneById,
   });
   agentControlCleanup?.();
+  exposeToggleCleanup?.();
+  exposeToggleCleanup = mountExposeToggle(root);
   const disposeControlIndicator = mountAgentControlIndicator(root);
   const disposePaneActivity = mountAgentPaneActivity({
     lookup: {
@@ -3554,25 +3564,118 @@ function paneStatusError(session: TermSession): string | undefined {
   return [...session.panes.values()].find((pane) => pane.status === 'error' && pane.error)?.error;
 }
 
-async function refreshSessionPreview(session: TermSession | null | undefined): Promise<void> {
+async function refreshSessionPreview(
+  session: TermSession | null | undefined,
+  options?: { persistHost?: boolean },
+): Promise<void> {
   if (!session) return;
   const target = session;
   const terminal = primaryTerminal(target);
   if (!terminal) return;
   const existing = previewCaptureInflight.get(target.id);
   if (existing) return existing;
+  const persistHost = options?.persistHost !== false;
   let work!: Promise<void>;
   work = (async () => {
     const blob = await terminal.capturePreview(TAB_PREVIEW_SIZE).catch(() => null);
     if (blob && sessions.includes(target)) {
       tabPreviewCache.set(target.id, blob);
-      if (target.spec) await saveHostScreenshot(hostTargetKey(target.spec), blob).catch(() => undefined);
+      if (persistHost && target.spec) await saveHostScreenshot(hostTargetKey(target.spec), blob).catch(() => undefined);
     }
   })().finally(() => {
     if (previewCaptureInflight.get(target.id) === work) previewCaptureInflight.delete(target.id);
   });
   previewCaptureInflight.set(target.id, work);
   return work;
+}
+
+function beginLiveExposeLayout(): void {
+  for (const session of sessions) {
+    const canPreview = !!primaryTerminal(session) || session.kind === 'browser' || session.kind === 'mixed';
+    if (!canPreview) {
+      clearSessionPreviewChrome(session);
+      session.container.hidden = true;
+      continue;
+    }
+    session.container.hidden = false;
+    session.container.style.pointerEvents = 'none';
+    session.container.style.zIndex = session.id === activeSessionId ? '1' : '0';
+    primaryTerminal(session)?.fit?.();
+  }
+}
+
+function endLiveExposeLayout(): void {
+  for (const session of sessions) {
+    clearSessionPreviewChrome(session);
+    session.container.hidden = session.id !== activeSessionId;
+  }
+}
+
+async function refreshAllLivePreviews(): Promise<void> {
+  await Promise.all(
+    sessions
+      .filter((session) => !!primaryTerminal(session))
+      .map((session) => refreshSessionPreview(session, { persistHost: false })),
+  );
+}
+
+function startLiveExposePreviews(onUpdated: () => void): void {
+  stopLiveExposePreviews();
+  beginLiveExposeLayout();
+  const tick = async (): Promise<void> => {
+    if (exposeClose === null) return;
+    beginLiveExposeLayout();
+    await refreshAllLivePreviews();
+    if (exposeClose !== null) onUpdated();
+  };
+  void tick();
+  exposeLiveTimer = window.setInterval(() => void tick(), LIVE_TAB_PREVIEW_MS);
+}
+
+function stopLiveExposePreviews(): void {
+  if (exposeLiveTimer) {
+    window.clearInterval(exposeLiveTimer);
+    exposeLiveTimer = 0;
+  }
+  endLiveExposeLayout();
+}
+
+function syncExposeTogglePressed(): void {
+  if (!exposeToggleBtn) return;
+  const open = exposeClose !== null;
+  exposeToggleBtn.setAttribute('aria-pressed', open ? 'true' : 'false');
+  exposeToggleBtn.dataset.open = open ? 'true' : 'false';
+  exposeToggleBtn.title = open ? 'Hide tab overview' : 'Show tab overview';
+  exposeToggleBtn.setAttribute('aria-label', open ? 'Hide tab overview' : 'Show tab overview');
+}
+
+function toggleExposeOverview(): void {
+  if (exposeClose) {
+    exposeClose();
+    return;
+  }
+  openTabOverview();
+}
+
+function mountExposeToggle(host: HTMLElement): () => void {
+  exposeToggleBtn?.remove();
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'expose-toggle';
+  btn.innerHTML = GRID_SVG;
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    toggleExposeOverview();
+  });
+  host.append(btn);
+  exposeToggleBtn = btn;
+  host.classList.add('has-expose-toggle');
+  syncExposeTogglePressed();
+  return () => {
+    host.classList.remove('has-expose-toggle');
+    btn.remove();
+    if (exposeToggleBtn === btn) exposeToggleBtn = null;
+  };
 }
 
 function tabOverviewEntry(session: TermSession): TabOverviewEntry {
@@ -3770,8 +3873,16 @@ function tabOverviewCardHTML(entry: TabOverviewEntry, index: number, selected: b
 
 function openTabOverview(): void {
   if (sessions.length === 0) return;
-  openOverlay((close) => {
-    const modal = elFromHTML(`
+  if (exposeClose) {
+    exposeClose();
+    return;
+  }
+  openOverlay(
+    (close) => {
+      exposeClose = close;
+      syncExposeTogglePressed();
+
+      const modal = elFromHTML(`
       <div class="modal tab-overview" role="dialog" aria-label="Tab overview">
         <header class="tab-overview-head">
           <span class="tab-overview-count" data-tab-overview-count></span>
@@ -3783,105 +3894,114 @@ function openTabOverview(): void {
         <div class="tab-overview-grid" role="listbox" aria-label="Open tabs" data-tab-overview-list></div>
       </div>
     `);
-    const input = modal.querySelector<HTMLInputElement>('[data-tab-overview-input]')!;
-    const list = modal.querySelector<HTMLElement>('[data-tab-overview-list]')!;
-    const count = modal.querySelector<HTMLElement>('[data-tab-overview-count]')!;
-    let matches: TabOverviewEntry[] = [];
-    let selected = 0;
+      const input = modal.querySelector<HTMLInputElement>('[data-tab-overview-input]')!;
+      const list = modal.querySelector<HTMLElement>('[data-tab-overview-list]')!;
+      const count = modal.querySelector<HTMLElement>('[data-tab-overview-count]')!;
+      let matches: TabOverviewEntry[] = [];
+      let selected = 0;
 
-    const syncSelection = (): void => {
-      const rows = [...list.querySelectorAll<HTMLElement>('.tab-overview-card')];
-      rows.forEach((row, i) => {
-        row.setAttribute('aria-selected', String(i === selected));
-        row.tabIndex = i === selected ? 0 : -1;
+      const syncSelection = (): void => {
+        const rows = [...list.querySelectorAll<HTMLElement>('.tab-overview-card')];
+        rows.forEach((row, i) => {
+          row.setAttribute('aria-selected', String(i === selected));
+          row.tabIndex = i === selected ? 0 : -1;
+        });
+        rows[selected]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      };
+
+      const patchLivePreviews = (): void => {
+        if (!modal.isConnected) return;
+        patchTabOverviewPreviewImages(list, (tabId) => tabPreviewCache.get(tabId)?.url);
+      };
+
+      const renderList = (query: string, preferredSelection = selected): void => {
+        const entries = sessions.map(tabOverviewEntry);
+        matches = filterTabOverviewEntries(entries, query);
+        selected = clampTabOverviewSelection(preferredSelection, matches.length);
+        const searching = query.trim().length > 0;
+        count.textContent = searching
+          ? `${matches.length} of ${entries.length} ${entries.length === 1 ? 'Tab' : 'Tabs'}`
+          : `${entries.length} ${entries.length === 1 ? 'Tab' : 'Tabs'}`;
+        list.innerHTML = matches.length
+          ? matches.map((entry, i) => tabOverviewCardHTML(entry, i, i === selected)).join('')
+          : '<p class="tab-overview-empty">No tabs match.</p>';
+        syncSelection();
+      };
+
+      const activate = (entry?: TabOverviewEntry): void => {
+        if (!entry) return;
+        close();
+        setActiveSession(entry.id);
+      };
+
+      const closeEntry = (tabId: string): void => {
+        const session = sessions.find((s) => s.id === tabId);
+        if (!session) return;
+        confirmCloseSession(session, () => {
+          const closingLast = sessions.length <= 1;
+          const closedIndex = matches.findIndex((entry) => entry.id === tabId);
+          closeSession(session);
+          if (closingLast) {
+            close();
+            return;
+          }
+          renderList(input.value, closedIndex >= 0 ? Math.min(closedIndex, selected) : selected);
+        });
+      };
+
+      input.addEventListener('input', () => renderList(input.value, 0));
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+          event.preventDefault();
+          selected = moveTabOverviewSelection(selected, 1, matches.length);
+          syncSelection();
+        } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+          event.preventDefault();
+          selected = moveTabOverviewSelection(selected, -1, matches.length);
+          syncSelection();
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          selected = 0;
+          syncSelection();
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          selected = Math.max(0, matches.length - 1);
+          syncSelection();
+        } else if (event.key === 'Enter') {
+          event.preventDefault();
+          activate(matches[selected]);
+        }
       });
-      rows[selected]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-    };
 
-    const renderList = (query: string, preferredSelection = selected): void => {
-      const entries = sessions.map(tabOverviewEntry);
-      matches = filterTabOverviewEntries(entries, query);
-      selected = clampTabOverviewSelection(preferredSelection, matches.length);
-      const searching = query.trim().length > 0;
-      count.textContent = searching
-        ? `${matches.length} of ${entries.length} ${entries.length === 1 ? 'Tab' : 'Tabs'}`
-        : `${entries.length} ${entries.length === 1 ? 'Tab' : 'Tabs'}`;
-      list.innerHTML = matches.length
-        ? matches.map((entry, i) => tabOverviewCardHTML(entry, i, i === selected)).join('')
-        : '<p class="tab-overview-empty">No tabs match.</p>';
-      syncSelection();
-    };
-
-    const activate = (entry?: TabOverviewEntry): void => {
-      if (!entry) return;
-      close();
-      setActiveSession(entry.id);
-    };
-
-    const closeEntry = (tabId: string): void => {
-      const session = sessions.find((s) => s.id === tabId);
-      if (!session) return;
-      confirmCloseSession(session, () => {
-        const closingLast = sessions.length <= 1;
-        const closedIndex = matches.findIndex((entry) => entry.id === tabId);
-        closeSession(session);
-        if (closingLast) {
-          close();
+      list.addEventListener('click', (event) => {
+        const closeBtn = (event.target as HTMLElement).closest<HTMLElement>('[data-close-overview-tab]');
+        if (closeBtn?.dataset.closeOverviewTab) {
+          event.stopPropagation();
+          closeEntry(closeBtn.dataset.closeOverviewTab);
           return;
         }
-        renderList(input.value, closedIndex >= 0 ? Math.min(closedIndex, selected) : selected);
+        const card = (event.target as HTMLElement).closest<HTMLElement>('[data-tab-overview-id]');
+        const entry = matches.find((item) => item.id === card?.dataset.tabOverviewId);
+        activate(entry);
       });
-    };
+      list.addEventListener('pointermove', (event) => {
+        const card = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
+        if (!card?.dataset.index) return;
+        selected = clampTabOverviewSelection(Number(card.dataset.index), matches.length);
+        syncSelection();
+      });
 
-    input.addEventListener('input', () => renderList(input.value, 0));
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        selected = moveTabOverviewSelection(selected, 1, matches.length);
-        syncSelection();
-      } else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
-        event.preventDefault();
-        selected = moveTabOverviewSelection(selected, -1, matches.length);
-        syncSelection();
-      } else if (event.key === 'Home') {
-        event.preventDefault();
-        selected = 0;
-        syncSelection();
-      } else if (event.key === 'End') {
-        event.preventDefault();
-        selected = Math.max(0, matches.length - 1);
-        syncSelection();
-      } else if (event.key === 'Enter') {
-        event.preventDefault();
-        activate(matches[selected]);
-      }
-    });
-
-    list.addEventListener('click', (event) => {
-      const closeBtn = (event.target as HTMLElement).closest<HTMLElement>('[data-close-overview-tab]');
-      if (closeBtn?.dataset.closeOverviewTab) {
-        event.stopPropagation();
-        closeEntry(closeBtn.dataset.closeOverviewTab);
-        return;
-      }
-      const card = (event.target as HTMLElement).closest<HTMLElement>('[data-tab-overview-id]');
-      const entry = matches.find((item) => item.id === card?.dataset.tabOverviewId);
-      activate(entry);
-    });
-    list.addEventListener('pointermove', (event) => {
-      const card = (event.target as HTMLElement).closest<HTMLElement>('[data-index]');
-      if (!card?.dataset.index) return;
-      selected = clampTabOverviewSelection(Number(card.dataset.index), matches.length);
-      syncSelection();
-    });
-
-    renderList('');
-    void refreshSessionPreview(activeSession()).then(() => {
-      if (modal.isConnected) renderList(input.value, selected);
-    });
-    setTimeout(() => input.focus(), 0);
-    return modal;
-  });
+      renderList('');
+      startLiveExposePreviews(patchLivePreviews);
+      setTimeout(() => input.focus(), 0);
+      return modal;
+    },
+    () => {
+      exposeClose = null;
+      stopLiveExposePreviews();
+      syncExposeTogglePressed();
+    },
+  );
 }
 
 /** Split the focused Restty pane, or grow a mixed-tab layout leaf. */
@@ -4383,7 +4503,7 @@ function buildPaletteCommands(): PaletteCommand[] {
       disabled: !canMixedSplit,
       run: () => void splitActivePane('horizontal', { surface: 'browser' }),
     },
-    { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: openTabOverview },
+    { label: 'Tab overview', group: 'Tabs', disabled: sessions.length === 0, run: toggleExposeOverview },
     { label: 'Duplicate session', group: 'Tabs', disabled: !activeSpec, run: duplicateSession },
     { label: 'Close tab', group: 'Tabs', key: '⌃W', disabled: !session, run: () => { if (session) confirmCloseSession(session, () => closeSession(session)); } },
     { label: 'Next tab', group: 'Tabs', key: '⌃Tab', disabled: sessions.length < 2, run: () => cycleTab(1) },
@@ -4906,6 +5026,14 @@ export function disposeTerminal(): void {
   if (tabRenderFrame) window.cancelAnimationFrame(tabRenderFrame);
   tabRenderFrame = 0;
   previewCaptureInflight.clear();
+  if (exposeClose) {
+    const close = exposeClose;
+    exposeClose = null;
+    stopLiveExposePreviews();
+    close();
+  }
+  exposeToggleCleanup?.();
+  exposeToggleCleanup = null;
   for (const session of sessions) {
     session.titleSub?.dispose();
     session.paneSubs.forEach((sub) => sub.dispose());
