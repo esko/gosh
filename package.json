@@ -31,6 +31,7 @@
     "goshctl": "node --experimental-strip-types tools/goshctl/src/main.ts",
     "test:goshctl": "vitest run --config vitest.goshctl.config.ts",
     "verify:agent-control": "node scripts/verify-agent-control.mjs",
+    "verify:expose": "node scripts/verify-expose.mjs",
     "verify:splits": "node scripts/verify-splits.mjs",
     "probe:agent-control-transport": "node scripts/probe-agent-control-transport.mjs",
     "probe:agent-control-negative": "node scripts/probe-agent-control-negative.mjs",
